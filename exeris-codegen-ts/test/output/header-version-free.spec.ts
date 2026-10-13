@@ -117,7 +117,7 @@ describe('emitted headers and footers carry no release-varying version (ADR-092 
       .toBeGreaterThan(20);
     expect(paths.some((p) => p.endsWith('.html'))).toBe(true);
     expect(paths.some((p) => p.endsWith('app.component.ts'))).toBe(true);
-    expect(paths.some((p) => p.includes('guard'))).toBe(true);
+    expect(paths.some((p) => p.includes('auth.service'))).toBe(true);
     expect(paths.some((p) => p.includes('saga'))).toBe(true);
   });
 

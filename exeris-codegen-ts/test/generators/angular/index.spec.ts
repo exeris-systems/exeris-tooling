@@ -26,7 +26,6 @@ describe('angular barrel exports — function set', () => {
     'generateAppStructure',
     'generateAuthInterceptor',
     'generateDetail',
-    'generateGuard',
     'generateView',
     'generateViewRoute',
   ] as const)('re-exports function "%s"', (name) => {

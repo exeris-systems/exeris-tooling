@@ -244,7 +244,8 @@ Java side already acts on the field; the TS side catches up to it.
   backend binds no route policy, so every route is permit-all. A front guard mirroring a backend
   that enforces nothing repeats ADR-079's defect in the other emitter. This is **T53**'s subject,
   and consumes the `@RouteAccess` extraction once the processor writes it.
-  Interim, the only safe move is to stop emitting the invented constants.
+  The invented constants and the role bypass are deleted (ADR-105 obligation 22); guards from
+  declared names follow the extraction (obligation 21).
 
 ### Stage 2 — backend-less emission rules
 

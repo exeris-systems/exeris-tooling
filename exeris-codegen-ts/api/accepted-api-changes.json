@@ -226,5 +226,11 @@
     "since": "0.10",
     "adr": "ADR-044",
     "justification": "ADR-044 Amendment 2 decision 7: a realTimeApi entity serves GET {base}/{id}/stream, the open-ended stream of one row's events, and the generated client opens it with a native EventSource. spectate(id) parses each domain-event frame's JSON payload and types it by the event that names the frame, drops the keep-alive frame, and errors the Observable with <Entity>SpectateError on a stream-error frame after closing the source so the browser does not reconnect into the refusal. Additive: the existing stream() and STREAM_EVENT_TYPES are unchanged, an entity without realTimeApi regenerates byte-identically, and a tenant-partitioned entity still gets no stream client. No consumer step."
+  },
+  {
+    "signature": "guard-gen.ts (registered by registerAllGenerators, invoked by no CLI run): - <ENTITY>_PERMISSIONS constants, - canView<Entity> / canCreate<Entity> / canEdit<Entity> / canDelete<Entity> route guards, - guards/index.ts barrel, - generateGuard; AuthService seed: - hasRole, - roles",
+    "since": "0.10",
+    "adr": "ADR-105",
+    "justification": "ADR-105 obligation 22: the permission names were derived from the entity name and no declaration backed them, and every guard also admitted a caller holding the ADMIN role, which the route policy cannot honour because RouteRequirement has no role kind. No CLI run invoked the generator, so no generated tree contained these files and no consumer step is needed; guards from declared names are obligation 21."
   }
 ]
