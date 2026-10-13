@@ -1,4 +1,6 @@
 // Runs the exeris-initializr jar this reactor built, as a separate process, into generated/.
+// H2, not the PostgreSQL default: the offline reactor build resolves the H2 driver from its own
+// repository, and building and testing the project need no database server.
 def jar = new File(initializrJar)
 assert jar.isFile() : "no initializr jar at ${jar}"
 def java = new File(System.getProperty('java.home'), 'bin/java').path
