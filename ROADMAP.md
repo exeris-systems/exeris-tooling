@@ -3898,12 +3898,19 @@ enters only if its upstream half is final first.
       lint gate over emitted Java (#353); SonarCloud analysis runs from CI after `mvn verify` with the
       JaCoCo and vitest lcov coverage, and the root POM excludes `src/it` from copy-paste detection
       (#377, which replaces automatic analysis and drops `.sonarcloud.properties`).
-- [ ] **T53 in full** (RFC accepted as ADR-105; gate: ADR-105): `@RouteAccess` + `permissions` compiled into `RouteRequirement`. D10 resolves
-      with it.
+- [x] **T53, the seam (J3a)** (RFC accepted as ADR-105; founder ruling 2026-10-13: 0.10.0 cuts with
+      the seam only): J3-1 (ADR-105, #359) and J3-2 (#369). The extraction, the table, the OpenAPI
+      security block and the data half of S3 move to 0.11.0 (see **0.11.0**). D10 resolves with S3's
+      data-independent half.
       *Landed:* J3-2 (#369), the seam: `Application` binds `HTTP_ROUTE_POLICY` and a generated
-      policy abstains everywhere; J3-1 is ADR-105 itself (#359). *Open:* J3-3, gated on
-      exeris-sdk#161 in a final SDK (otherwise it moves whole to 0.11.0); J3-4, gated on J3-3; and
-      S3, after J3-2 for shape and J3-3 for data.
+      policy abstains everywhere; J3-1 is ADR-105 itself (#359).
+      *Moved to 0.11.0:* J3-3 (processor extraction, the obligation-12 table, `route-policy.json`
+      and its conformance test), J3-4 (the ADR-079 OpenAPI security block) and the data half of S3,
+      gated on exeris-sdk#161 in a final SDK 0.13; the latest final SDK is 0.12.0, which 0.10.0 pins.
+      *Open in 0.10.0:* S3's data-independent half (ADR-105 obligations 22 and 23): the invented
+      `<ENTITY>_PERMISSIONS` constants and the role bypass are deleted, the bearer interceptor is
+      emitted only when a route demands identity (none does yet), and
+      `KernelStrategy.getDefaultHeaders` is deleted.
 - [x] **TS wave S6 — `@View` pages for exeris-web:** CUSTOM blocks compile with their props, LIST
       items are `<li>`, the generated `<h1>` can be omitted, pages-only output into an existing app with
       manifest-owned rewrites, a views-only `init`, and opt-in SSG. HERO's look waits on `.exeris-hero`
@@ -4076,6 +4083,10 @@ Pairs with SDK 0.13, which 0.10.0 does not wait for. Order, gates and the Java/T
       grouped sections in the generated forms and detail views.
 - [ ] **J3 + S2 `@Blob`**, **J4 + S3 `@Channel`**: each after its wave 0 ADR.
 - [ ] **J5 + S4 `@QueryParam`, `@NavMenu`, `@Tab`**: after exeris-sdk#186.
+- [ ] **J6 + S5 T53 route policy, the data half**: processor extraction of `permissions` and
+      `routeAccess`, the obligation-12 table, `route-policy.json` with its conformance test, the
+      OpenAPI security block (ADR-079), and the TS guards that read the declared names
+      (ADR-105 J3-3, J3-4 and S3). Gate: exeris-sdk#161 in a final SDK 0.13.
 
 Not in 0.11.0: `@Encrypted` / `@RowLevelSecurity` (C2) and `@GraphQuery`, with the reasons in the
 plan.
