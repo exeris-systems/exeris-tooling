@@ -46,7 +46,7 @@ jobs:
       # (the CLI jar shades exeris-codegen-java, which is listed); exeris-e2e-tests,
       # exeris-app-starter-it and exeris-coverage-aggregate, which are not published; and
       # exeris-codegen-ts, which is not a Maven module.
-      diff-modules: exeris-diagnostics,exeris-processor,exeris-codegen-core,exeris-codegen-java,exeris-codegen-maven-plugin
+      diff-modules: exeris-diagnostics,exeris-processor,exeris-codegen-core,exeris-codegen-java,exeris-codegen-maven-plugin,exeris-initializr
       # `documented`, rule 1 as written: every public member carries a doc comment. `exempt` is for a
       # repository where something else carries that coverage, and nothing does here.
       trivial-accessors: documented
