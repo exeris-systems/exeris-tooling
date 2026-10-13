@@ -1,0 +1,12 @@
+{
+  "name": "{{npmName}}-frontend",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Runs the Exeris TypeScript generator on the backend build's metadata; the Angular application it writes is under app/.",
+  "scripts": {
+    "generate": "exeris-gen generate --input ../backend/target/classes/exeris-metadata --output app --app-name {{npmName}}"
+  },
+  "devDependencies": {
+    "@exeris/codegen-ts": "{{toolingVersion}}"
+  }
+}

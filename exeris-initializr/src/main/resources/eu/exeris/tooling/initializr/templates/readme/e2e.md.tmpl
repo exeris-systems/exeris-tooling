@@ -1,0 +1,34 @@
+# {{name}}
+
+An Exeris application in two parts:
+
+- `backend/` is a Maven project with one entity, `{{packageName}}.domain.{{entityName}}`. Its build
+  generates the rest from it: the HTTP handler, service and repository, the database migration, the
+  OpenAPI document, the application's entry point, and tests for all of them. The build is
+  `eu.exeris:exeris-app-parent` and `eu.exeris:exeris-app-starter` {{toolingVersion}}, and
+  `backend/pom.xml` adds only the {{databaseLabel}} JDBC driver and the generated tests' JUnit 5
+  and AssertJ.
+- `frontend/` is an npm project that runs the Exeris TypeScript generator, `@exeris/codegen-ts`,
+  on the metadata the backend build writes. The generator writes an Angular application into
+  `frontend/app/`.
+
+{{buildSection}}
+## Generate the frontend
+
+From the project root, after a backend build:
+
+```bash
+cd frontend
+npm install
+npm run generate
+cd app
+npm install
+npm start
+```
+
+`npm run generate` reads `../backend/target/classes/exeris-metadata` and writes the Angular
+application, with its own `package.json`, into `frontend/app/`. Run it again after a backend build
+that changed an entity. The development server forwards API requests to `localhost:{{httpPort}}`.
+
+{{npmSection}}
+{{runSection}}

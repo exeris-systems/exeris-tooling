@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-08
+last-verified: 2026-10-13
 ---
 
 # Diagnostic identifiers
@@ -33,7 +33,7 @@ every one of them, anywhere in a line, is `\[Exeris\] (EXT-[A-Z]+-\d{4}): `.
 | Part | Meaning |
 |---|---|
 | `EXT` | exeris-tooling. Distinct from the kernel's `EX-<DOMAIN>-<NNNN>` codes (`KernelErrorCodes`), so a tool can route a code to its owner by prefix alone. |
-| `PROC` / `PLUG` / `GEN` | The annotation processor (inside `javac`), the Maven plugin, or the code-generation pipeline. `TS` is reserved for the TypeScript emitter and has no identifiers yet. |
+| `PROC` / `PLUG` / `GEN` | The annotation processor (inside `javac`), the Maven plugin, or the code-generation pipeline and the tooling command lines (`exeris-codegen-cli`, `exeris-initializr`). `TS` is reserved for the TypeScript emitter and has no identifiers yet. |
 | `NNNN` | `PROC` uses 1xxx, `PLUG` 2xxx, `GEN` 3xxx; 4xxx is reserved for `TS`. The hundreds digit groups codes by what they were allocated for (below). |
 
 **Stability.** An identifier names one meaning for as long as it exists. It is never renumbered and
@@ -154,6 +154,9 @@ identifiers: `EXT-PLUG-2001` for the empty-metadata refusal (pass `--allow-empty
 and `EXT-PLUG-2201` for an unresolved capability graph, which the command line always validates
 fail-fast.
 
+`exeris-initializr`, the command line that writes a new project ([ADR-091](adr/ADR-091-opt-in-application-starter.md),
+Amendment 5), uses the same exit statuses and prints `EXT-GEN-3005` to `3007`.
+
 ### 30xx — errors
 
 | ID | Meaning | What to do |
@@ -162,6 +165,9 @@ fail-fast.
 | `EXT-GEN-3002` | The codegen command line was given missing or malformed arguments, or a switch it does not know. Exit status 2. | Pass `--metadata-dir` and `--output-dir`, and only the switches the usage text printed under it lists. A switch a newer release added fails on an older jar. |
 | `EXT-GEN-3003` | An entity field has a type the generated repository cannot store and read back: a parameterised type other than `List<…>` (`Map`, `Set`, `Optional`, …), a `List` whose element is not a plain type (`List<Map<String, String>>`, `List<List<X>>`, `List<X[]>`), an array (`byte[]`, …), `char` / `Character`, `BigInteger`, or a JDK value type with no static `valueOf(String)` (`LocalTime`, `OffsetTime`, `Duration`, `Period`, `Year`, `YearMonth`, `MonthDay`, `ZoneId`, `ZoneOffset`, `java.util.Date`, `Currency`, `Locale`, `URI`, `URL`, `Object`). An enum is never refused. Nothing is generated. Raised by the Java pipeline only: the limit is the Java repository's column encoding. | Declare the field as a `List<…>` of a plain element type (stored as a JSON column) or as a supported scalar (`String`, `UUID`, `Long`, `Integer`, `Short`, `Byte`, `Boolean`, `Float`, `Double`, `BigDecimal`, `Instant`, `LocalDateTime`, `OffsetDateTime`, `ZonedDateTime`, `LocalDate`, an enum) — `BigDecimal` in place of `BigInteger`, a `String` for a time of day or a duration. The message names every such field. |
 | `EXT-GEN-3004` | The codegen command line could not read the generator catalogue it carries. | `--print-catalogue` found no `META-INF/exeris/generator-catalogue.json` on its classpath: run it from the `exeris-codegen-cli` jar, or with `exeris-codegen-java` on the classpath, of one release. |
+| `EXT-GEN-3005` | The initializr command line (`exeris-initializr`) was given a switch it does not know, a switch without its value, a positional argument, or a value it cannot use (an unknown topology or database, a groupId, artifactId, package or entity name that is not valid). Exit status 2. | Pass only the switches the usage text printed under it lists, each as `--switch=value`. |
+| `EXT-GEN-3006` | The initializr refused to write a project into a directory that is not empty, or over an archive file that exists. Nothing is written. Exit status 1. | Choose another `--output-dir` or `--zip`, or pass `--force` to write over it; files of the same path are replaced and every other file is left in place. |
+| `EXT-GEN-3007` | The initializr failed writing the project. Exit status 1. | Read the cause printed with it; check the path, permissions and disk space of the output directory or archive. |
 
 ### 31xx — warnings
 

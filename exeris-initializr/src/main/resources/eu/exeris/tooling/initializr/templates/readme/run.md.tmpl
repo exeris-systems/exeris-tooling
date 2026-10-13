@@ -1,0 +1,38 @@
+## Run the backend
+
+The generated `{{packageName}}.Application` has a `main` method. The community kernel driver reads
+its configuration from system properties named `exeris.<key>` and environment variables named
+`EXERIS_<KEY>`, and from no file. `exeris.http.port` starts the HTTP server on that port, and
+`exeris.persistence.runMigrations` creates the kernel's own tables at start. The application's own
+tables come from the generated migrations in `src/main/generated/java/db/migration`. They are
+PostgreSQL SQL, and the kernel does not apply them: apply them with Flyway or `psql`.
+{{#postgresql}}
+| System property | Value |
+|---|---|
+| `exeris.http.port` | `{{httpPort}}` |
+| `exeris.persistence.jdbcUrl` | `{{jdbcUrl}}` |
+| `exeris.persistence.username` | `exeris` |
+| `exeris.persistence.password` | `exeris` |
+| `exeris.persistence.runMigrations` | `true` |
+
+From the project root, after a build:
+
+```bash
+docker compose up -d --wait
+for migration in {{backendDir}}src/main/generated/java/db/migration/V*.sql; do
+  docker compose exec -T postgres psql -q -U exeris -d {{databaseName}} -v ON_ERROR_STOP=1 < "$migration"
+done
+{{#e2e}}cd backend
+{{/e2e}}mvn dependency:build-classpath -DincludeScope=runtime -Dmdep.outputFile=target/classpath.txt
+java -Dexeris.http.port={{httpPort}} \
+    -Dexeris.persistence.jdbcUrl={{jdbcUrl}} \
+    -Dexeris.persistence.username=exeris -Dexeris.persistence.password=exeris \
+    -Dexeris.persistence.runMigrations=true \
+    -cp "target/classes:$(cat target/classpath.txt)" {{packageName}}.Application
+```
+{{/postgresql}}{{^postgresql}}
+H2 builds the project and runs its generated tests with no database server, but it does not run the
+generated migrations, so an application started on it has no tables of its own. To run the
+application, generate the project with `--database=postgresql`; its README starts the database,
+applies the migrations and starts the application.
+{{/postgresql}}

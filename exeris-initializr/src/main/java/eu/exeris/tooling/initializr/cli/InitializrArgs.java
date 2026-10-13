@@ -1,0 +1,159 @@
+package eu.exeris.tooling.initializr.cli;
+
+import eu.exeris.tooling.initializr.model.DatabaseType;
+import eu.exeris.tooling.initializr.model.ProjectScaffoldRequest;
+import eu.exeris.tooling.initializr.model.ProjectTopology;
+
+import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * Parsed command-line arguments of {@link InitializrCliMain}.
+ *
+ * <p>Every argument is one of the switches below, a value switch written {@code --switch=value}.
+ * An unknown switch, a positional argument, a switch given twice, a value switch without its value,
+ * a flag with one, and a value the request does not accept are argument errors, so a run never
+ * goes ahead with an option silently dropped. {@code --database}, {@code --entity},
+ * {@code --package} and {@code --group-id} describe a backend and are argument errors with
+ * {@code --topology=frontend-only}.
+ *
+ * <pre>
+ * --topology=backend-only|e2e|frontend-only   default backend-only
+ * --group-id=&lt;groupId&gt;                        default com.example
+ * --artifact-id=&lt;artifactId&gt;                  default demo
+ * --package=&lt;package&gt;                         default derived from the groupId and the artifactId
+ * --name=&lt;text&gt;                               default the artifactId
+ * --database=h2|postgresql                    default h2
+ * --entity=&lt;TypeName&gt;                         default Item
+ * --output-dir=&lt;dir&gt;                          default ./&lt;artifactId&gt;
+ * --zip=&lt;file&gt;                                write a ZIP archive instead of a directory
+ * --force                                     write into a non-empty directory or over an archive
+ * --version                                   print the version and exit
+ * --help                                      print the usage and exit
+ * </pre>
+ *
+ * @param action    what the run does
+ * @param request   the project to write; {@code null} unless {@code action} is
+ *                  {@link Action#GENERATE}
+ * @param outputDir the directory to write the project into; {@code null} when {@code zip} is set
+ *                  or {@code action} is not {@link Action#GENERATE}
+ * @param zip       the archive to write instead of a directory, or {@code null}
+ * @param force     whether to write into a non-empty directory or over an existing archive
+ * @since 0.10
+ */
+public record InitializrArgs(Action action, ProjectScaffoldRequest request, Path outputDir, Path zip,
+                             boolean force) {
+
+    private static final String TOPOLOGY = "--topology";
+    private static final String GROUP_ID = "--group-id";
+    private static final String ARTIFACT_ID = "--artifact-id";
+    private static final String PACKAGE = "--package";
+    private static final String NAME = "--name";
+    private static final String DATABASE = "--database";
+    private static final String ENTITY = "--entity";
+    private static final String OUTPUT_DIR = "--output-dir";
+    private static final String ZIP = "--zip";
+    private static final String FORCE = "--force";
+    private static final String VERSION = "--version";
+    private static final String HELP = "--help";
+
+    private static final Set<String> VALUE_SWITCHES =
+            Set.of(TOPOLOGY, GROUP_ID, ARTIFACT_ID, PACKAGE, NAME, DATABASE, ENTITY, OUTPUT_DIR, ZIP);
+    private static final Set<String> FLAGS = Set.of(FORCE, VERSION, HELP);
+    private static final List<String> BACKEND_SWITCHES = List.of(GROUP_ID, PACKAGE, DATABASE, ENTITY);
+
+    /**
+     * What a run of the command line does.
+     *
+     * @since 0.10
+     */
+    public enum Action {
+        /** Writes the project the request describes. */
+        GENERATE,
+        /** Prints the initializr's version. */
+        VERSION,
+        /** Prints the usage text. */
+        HELP
+    }
+
+    /**
+     * Parses the command line.
+     *
+     * @param args the arguments, as passed to {@code main}
+     * @return the parsed arguments
+     * @throws IllegalArgumentException with a message naming the offending argument when an
+     *                                  argument is not one of the switches, is given twice or
+     *                                  without its value, or holds a value the request does not
+     *                                  accept; the command line turns it into exit status 2
+     * @since 0.10
+     */
+    public static InitializrArgs parse(String[] args) {
+        Map<String, String> values = new HashMap<>();
+        for (String arg : args) {
+            int eq = arg.indexOf('=');
+            String name = eq < 0 ? arg : arg.substring(0, eq);
+            String value = eq < 0 ? null : arg.substring(eq + 1);
+            if (VALUE_SWITCHES.contains(name)) {
+                if (value == null || value.isEmpty()) {
+                    throw new IllegalArgumentException(name + " takes a value: " + name + "=<value>");
+                }
+            } else if (FLAGS.contains(name)) {
+                if (value != null) {
+                    throw new IllegalArgumentException(name + " takes no value");
+                }
+            } else {
+                throw new IllegalArgumentException(arg.startsWith("--")
+                        ? "Unknown switch: " + name
+                        : "Unexpected argument: " + arg + " (every argument is a --switch)");
+            }
+            if (values.putIfAbsent(name, value == null ? "" : value) != null) {
+                throw new IllegalArgumentException(name + " is given more than once");
+            }
+        }
+
+        if (values.containsKey(HELP)) {
+            return new InitializrArgs(Action.HELP, null, null, null, false);
+        }
+        if (values.containsKey(VERSION)) {
+            return new InitializrArgs(Action.VERSION, null, null, null, false);
+        }
+
+        ProjectTopology topology = ProjectTopology.BACKEND_ONLY;
+        if (values.containsKey(TOPOLOGY)) {
+            topology = ProjectTopology.fromCliValue(values.get(TOPOLOGY)).orElseThrow(() ->
+                    new IllegalArgumentException(TOPOLOGY + " is one of backend-only, e2e, frontend-only: "
+                            + values.get(TOPOLOGY)));
+        }
+        if (!topology.hasBackend()) {
+            for (String backendOnly : BACKEND_SWITCHES) {
+                if (values.containsKey(backendOnly)) {
+                    throw new IllegalArgumentException(backendOnly + " describes a backend and is not read with "
+                            + TOPOLOGY + "=" + topology.cliValue());
+                }
+            }
+        }
+        DatabaseType database = DatabaseType.H2;
+        if (values.containsKey(DATABASE)) {
+            database = DatabaseType.fromCliValue(values.get(DATABASE)).orElseThrow(() ->
+                    new IllegalArgumentException(DATABASE + " is one of h2, postgresql: " + values.get(DATABASE)));
+        }
+        if (values.containsKey(OUTPUT_DIR) && values.containsKey(ZIP)) {
+            throw new IllegalArgumentException(OUTPUT_DIR + " and " + ZIP + " are alternatives; pass one");
+        }
+
+        ProjectScaffoldRequest request = new ProjectScaffoldRequest(
+                values.getOrDefault(GROUP_ID, "com.example"),
+                values.getOrDefault(ARTIFACT_ID, "demo"),
+                values.get(PACKAGE),
+                values.get(NAME),
+                topology,
+                database,
+                values.get(ENTITY));
+        Path zip = values.containsKey(ZIP) ? Path.of(values.get(ZIP)) : null;
+        Path outputDir = zip != null ? null : Path.of(values.getOrDefault(OUTPUT_DIR, request.artifactId()));
+        return new InitializrArgs(Action.GENERATE, request, outputDir, zip, values.containsKey(FORCE));
+    }
+}

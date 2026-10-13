@@ -1,0 +1,14 @@
+# The PostgreSQL server the README's run configuration connects to.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: {{databaseName}}
+      POSTGRES_USER: exeris
+      POSTGRES_PASSWORD: exeris
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "exeris", "-d", "{{databaseName}}"]
+      interval: 2s
+      retries: 30

@@ -1,173 +1,114 @@
 package eu.exeris.tooling.initializr.engine;
 
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
-import java.util.Collection;
 import java.util.Map;
 import java.util.Objects;
 
 /**
- * Lightweight, zero-dependency template engine supporting variable substitution ({{key}}),
- * conditional sections ({{#key}}...{{/key}}), and inverted sections ({{^key}}...{{/key}}).
+ * Renders the initializr's text templates: {@code {{key}}} is replaced by a value, and
+ * {@code {{#key}}…{{/key}}} keeps its body when {@code key} is {@code true} while
+ * {@code {{^key}}…{{/key}}} keeps it when {@code key} is {@code false}.
+ *
+ * <p>Rendering is strict. A variable or a section whose key the context does not hold, a section
+ * key that is not a {@link Boolean}, and a section without its closing tag each raise
+ * {@link IllegalArgumentException}, so a template and the code that fills it cannot drift apart
+ * without a test noticing. A substituted value is not scanned again. Sections with different keys
+ * nest; a section does not nest inside one with the same key.
+ *
+ * @since 0.10
  */
 public final class TemplateRenderer {
 
-    private TemplateRenderer() {}
+    private static final String OPEN = "{{";
+    private static final String CLOSE = "}}";
+
+    private TemplateRenderer() {
+    }
 
     /**
-     * Reads a template resource from the classpath.
+     * Reads a template from the classpath, as UTF-8.
+     *
+     * @param resource the absolute resource name, starting with {@code /}
+     * @return the template text
+     * @throws IllegalArgumentException if no resource has that name
+     * @throws UncheckedIOException     if the resource cannot be read
+     * @since 0.10
      */
-    public static String readResource(String resourcePath) {
-        String path = resourcePath.startsWith("/") ? resourcePath : "/" + resourcePath;
-        try (InputStream is = TemplateRenderer.class.getResourceAsStream(path)) {
-            if (is == null) {
-                throw new IllegalArgumentException("Template resource not found: " + path);
+    public static String readResource(String resource) {
+        try (InputStream in = TemplateRenderer.class.getResourceAsStream(resource)) {
+            if (in == null) {
+                throw new IllegalArgumentException("no template resource " + resource);
             }
-            StringBuilder sb = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
-                String line = reader.readLine();
-                while (line != null) {
-                    sb.append(line).append("\n");
-                    line = reader.readLine();
-                }
-            }
-            return sb.toString();
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
-            throw new IllegalStateException("Failed to read template resource: " + path, e);
+            throw new UncheckedIOException("reading template resource " + resource + " failed", e);
         }
     }
 
     /**
-     * Renders a template string given a context map of variables and booleans.
+     * Renders a template against a context.
+     *
+     * @param template the template text
+     * @param context  the values: a {@link Boolean} for every section key, and any value, rendered
+     *                 with {@link String#valueOf(Object)}, for every variable
+     * @return the rendered text
+     * @throws IllegalArgumentException if the template names a key the context does not hold, uses
+     *                                  a non-boolean as a section key, or leaves a section or a tag
+     *                                  unclosed
+     * @since 0.10
      */
-    public static String render(String template, Map<String, Object> context) {
-        if (template == null || template.isEmpty()) {
-            return "";
-        }
-        Objects.requireNonNull(context, "context must not be null");
-
-        String result = renderSections(template, context);
-        return renderVariables(result, context);
-    }
-
-    private static String renderSections(String text, Map<String, Object> context) {
-        StringBuilder out = new StringBuilder();
+    public static String render(String template, Map<String, ?> context) {
+        Objects.requireNonNull(template, "template");
+        Objects.requireNonNull(context, "context");
+        StringBuilder out = new StringBuilder(template.length());
         int cursor = 0;
-
-        while (cursor < text.length()) {
-            int openIdx = text.indexOf("{{", cursor);
-            if (openIdx == -1) {
-                out.append(text.substring(cursor));
-                break;
+        while (true) {
+            int open = template.indexOf(OPEN, cursor);
+            if (open < 0) {
+                out.append(template, cursor, template.length());
+                return out.toString();
             }
-
-            out.append(text, cursor, openIdx);
-            int closeIdx = text.indexOf("}}", openIdx);
-            if (closeIdx == -1) {
-                out.append(text.substring(openIdx));
-                break;
+            out.append(template, cursor, open);
+            int close = template.indexOf(CLOSE, open + OPEN.length());
+            if (close < 0) {
+                throw new IllegalArgumentException("unclosed tag at offset " + open);
             }
-
-            String tag = text.substring(openIdx + 2, closeIdx).trim();
-
-            if (tag.startsWith("#")) {
-                // Conditional section: {{#key}} ... {{/key}}
+            String tag = template.substring(open + OPEN.length(), close).trim();
+            cursor = close + CLOSE.length();
+            char kind = tag.isEmpty() ? ' ' : tag.charAt(0);
+            if (kind == '#' || kind == '^') {
                 String key = tag.substring(1).trim();
-                String endTag = "{{/" + key + "}}";
-                int endIdx = text.indexOf(endTag, closeIdx + 2);
-                if (endIdx == -1) {
-                    // Malformed section, output as-is
-                    out.append(text, openIdx, closeIdx + 2);
-                    cursor = closeIdx + 2;
-                    continue;
+                String end = OPEN + "/" + key + CLOSE;
+                int endAt = template.indexOf(end, cursor);
+                if (endAt < 0) {
+                    throw new IllegalArgumentException("section '" + key + "' has no " + end);
                 }
-
-                String sectionBody = text.substring(closeIdx + 2, endIdx);
-                boolean conditionMet = isTruthy(context.get(key));
-
-                if (conditionMet) {
-                    out.append(renderSections(sectionBody, context));
+                if (section(context, key) == (kind == '#')) {
+                    out.append(render(template.substring(cursor, endAt), context));
                 }
-                cursor = endIdx + endTag.length();
-
-            } else if (tag.startsWith("^")) {
-                // Inverted section: {{^key}} ... {{/key}}
-                String key = tag.substring(1).trim();
-                String endTag = "{{/" + key + "}}";
-                int endIdx = text.indexOf(endTag, closeIdx + 2);
-                if (endIdx == -1) {
-                    out.append(text, openIdx, closeIdx + 2);
-                    cursor = closeIdx + 2;
-                    continue;
-                }
-
-                String sectionBody = text.substring(closeIdx + 2, endIdx);
-                boolean conditionMet = !isTruthy(context.get(key));
-
-                if (conditionMet) {
-                    out.append(renderSections(sectionBody, context));
-                }
-                cursor = endIdx + endTag.length();
-
+                cursor = endAt + end.length();
+            } else if (kind == '/') {
+                throw new IllegalArgumentException("closing tag {{" + tag + "}} without its section");
             } else {
-                // Ordinary tag, leave for variable pass or output now
-                out.append(text, openIdx, closeIdx + 2);
-                cursor = closeIdx + 2;
+                out.append(variable(context, tag));
             }
         }
-
-        return out.toString();
     }
 
-    private static String renderVariables(String text, Map<String, Object> context) {
-        StringBuilder out = new StringBuilder();
-        int cursor = 0;
-
-        while (cursor < text.length()) {
-            int openIdx = text.indexOf("{{", cursor);
-            if (openIdx == -1) {
-                out.append(text.substring(cursor));
-                break;
-            }
-
-            out.append(text, cursor, openIdx);
-            int closeIdx = text.indexOf("}}", openIdx);
-            if (closeIdx == -1) {
-                out.append(text.substring(openIdx));
-                break;
-            }
-
-            String key = text.substring(openIdx + 2, closeIdx).trim();
-            Object value = context.get(key);
-
-            if (value != null) {
-                out.append(value);
-            }
-            cursor = closeIdx + 2;
+    private static boolean section(Map<String, ?> context, String key) {
+        if (!(context.get(key) instanceof Boolean value)) {
+            throw new IllegalArgumentException("section key '" + key + "' is not a boolean in the context");
         }
-
-        return out.toString();
+        return value;
     }
 
-    private static boolean isTruthy(Object val) {
-        if (val == null) {
-            return false;
+    private static String variable(Map<String, ?> context, String key) {
+        if (!context.containsKey(key)) {
+            throw new IllegalArgumentException("no value for '" + key + "' in the context");
         }
-        if (val instanceof Boolean b) {
-            return b;
-        }
-        if (val instanceof String s) {
-            return !s.isBlank();
-        }
-        if (val instanceof Collection<?> c) {
-            return !c.isEmpty();
-        }
-        if (val instanceof Number n) {
-            return n.doubleValue() != 0.0;
-        }
-        return true;
+        return String.valueOf(context.get(key));
     }
 }

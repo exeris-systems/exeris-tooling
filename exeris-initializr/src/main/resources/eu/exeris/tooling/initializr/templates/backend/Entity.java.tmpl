@@ -1,0 +1,47 @@
+package {{packageName}}.domain;
+
+import eu.exeris.sdk.annotation.ExerisDomain;
+import eu.exeris.sdk.annotation.Field;
+
+import java.util.UUID;
+
+/**
+ * The application's first entity. The build generates its HTTP handler, service, repository,
+ * migration, OpenAPI document and tests from this class; add a field with {@code @Field} and
+ * rebuild to extend all of them.
+ */
+@ExerisDomain(module = "{{entityModule}}", path = "/{{entityModule}}")
+public class {{entityName}} {
+
+    private UUID id;
+
+    @Field(label = "Title", required = true, filterable = true)
+    private String title;
+
+    @Field(label = "Description")
+    private String description;
+
+    public UUID getId() {
+        return id;
+    }
+
+    public void setId(UUID id) {
+        this.id = id;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+}

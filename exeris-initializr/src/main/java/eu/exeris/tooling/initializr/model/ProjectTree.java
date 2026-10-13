@@ -1,46 +1,53 @@
 package eu.exeris.tooling.initializr.model;
 
-import java.util.Collections;
-import java.util.LinkedHashMap;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 /**
- * An immutable in-memory tree of scaffolded files.
+ * The files of one generated project, in the order they are written, each path once.
+ *
+ * @param files the files; the tree keeps an unmodifiable copy
+ * @since 0.10
  */
 public record ProjectTree(List<ScaffoldFile> files) {
 
+    /**
+     * Copies the files and checks that no path appears twice.
+     *
+     * @throws NullPointerException     if {@code files} or one of its elements is {@code null}
+     * @throws IllegalArgumentException if two files share a path
+     */
     public ProjectTree {
-        Objects.requireNonNull(files, "files must not be null");
-        files = List.copyOf(files);
-    }
-
-    public static ProjectTree of(List<ScaffoldFile> files) {
-        return new ProjectTree(files);
-    }
-
-    public Map<String, byte[]> asMap() {
-        Map<String, byte[]> map = new LinkedHashMap<>();
+        files = List.copyOf(Objects.requireNonNull(files, "files"));
+        Set<String> seen = new HashSet<>();
         for (ScaffoldFile file : files) {
-            map.put(file.path(), file.content());
+            if (!seen.add(file.path())) {
+                throw new IllegalArgumentException("two files share the path " + file.path());
+            }
         }
-        return Collections.unmodifiableMap(map);
     }
 
+    /**
+     * Finds the file at a path.
+     *
+     * @param path the path relative to the project root, with forward slashes
+     * @return the file, or empty when the tree has none at {@code path}
+     * @since 0.10
+     */
     public Optional<ScaffoldFile> find(String path) {
-        String normalized = path.startsWith("/") ? path.substring(1) : path;
-        return files.stream()
-                .filter(f -> f.path().equals(normalized))
-                .findFirst();
+        return files.stream().filter(f -> f.path().equals(path)).findFirst();
     }
 
-    public boolean hasFile(String path) {
-        return find(path).isPresent();
-    }
-
-    public int size() {
-        return files.size();
+    /**
+     * Returns the paths of every file, in the order the files are written.
+     *
+     * @return the paths
+     * @since 0.10
+     */
+    public List<String> paths() {
+        return files.stream().map(ScaffoldFile::path).toList();
     }
 }

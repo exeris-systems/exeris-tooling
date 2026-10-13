@@ -1,133 +1,172 @@
 package eu.exeris.tooling.initializr.engine;
 
 import eu.exeris.tooling.initializr.model.DatabaseType;
-import eu.exeris.tooling.initializr.model.ExerisCapability;
 import eu.exeris.tooling.initializr.model.ProjectScaffoldRequest;
 import eu.exeris.tooling.initializr.model.ProjectTopology;
 import eu.exeris.tooling.initializr.model.ProjectTree;
 import eu.exeris.tooling.initializr.model.ScaffoldFile;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-
-import java.util.List;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ProjectGeneratorTest {
 
-    @Test
-    @DisplayName("E2E project scaffolding creates full monorepo with backend, frontend, and presentation view")
-    void e2eScaffolding() {
-        ProjectScaffoldRequest request = ProjectScaffoldRequest.builder()
-                .name("Inventory Hub")
-                .slug("inventory-hub")
-                .groupId("eu.exeris.demo")
-                .artifactId("inventory-hub")
-                .packageName("eu.exeris.demo.inventory")
-                .topology(ProjectTopology.E2E)
-                .database(DatabaseType.POSTGRESQL)
-                .capabilities(List.of(ExerisCapability.AUDIT_TRAIL, ExerisCapability.JWT_VALIDATION))
-                .entityName("Item")
-                .build();
+    private static final ScaffoldVersions VERSIONS = new ScaffoldVersions("9.8.7", "2.3.232", "42.7.13", "5.11.4",
+            "3.27.7");
 
-        ProjectTree tree = ProjectGenerator.generate(request);
-        assertThat(tree.size()).isGreaterThanOrEqualTo(12);
+    private static ProjectTree generate(ProjectTopology topology, DatabaseType database) {
+        return ProjectGenerator.generate(new ProjectScaffoldRequest("com.example", "order-service", null,
+                "Orders & Co", topology, database, "OrderLine"), VERSIONS);
+    }
 
-        // Root files
-        assertThat(tree.hasFile("README.md")).isTrue();
-        assertThat(tree.hasFile(".gitignore")).isTrue();
-        assertThat(tree.hasFile("docker-compose.yml")).isTrue();
-
-        // Backend files
-        assertThat(tree.hasFile("backend/pom.xml")).isTrue();
-        assertThat(tree.hasFile("backend/src/main/resources/application.properties")).isTrue();
-        assertThat(tree.hasFile("backend/src/main/java/eu/exeris/demo/inventory/domain/Item.java")).isTrue();
-        assertThat(tree.hasFile("backend/src/main/java/eu/exeris/demo/inventory/view/ItemDashboardView.java")).isTrue();
-        assertThat(tree.hasFile("backend/src/main/java/eu/exeris/demo/inventory/caps/ApplicationModule.java")).isTrue();
-        assertThat(tree.hasFile("backend/src/test/java/eu/exeris/demo/inventory/ItemE2ETest.java")).isTrue();
-
-        // Frontend files
-        assertThat(tree.hasFile("frontend/package.json")).isTrue();
-        assertThat(tree.hasFile("frontend/proxy.conf.json")).isTrue();
-        assertThat(tree.hasFile("frontend/tsconfig.json")).isTrue();
-        assertThat(tree.hasFile("frontend/src/main.ts")).isTrue();
-        assertThat(tree.hasFile("frontend/src/app/app.component.ts")).isTrue();
-        assertThat(tree.hasFile("frontend/src/app/components/item-list.component.ts")).isTrue();
-
-        // Inspect backend pom.xml
-        ScaffoldFile pom = tree.find("backend/pom.xml").orElseThrow();
-        String pomContent = pom.contentAsString();
-        assertThat(pomContent).contains("exeris-app-starter");
-        assertThat(pomContent).contains("exeris-caps-audit-trail");
-        assertThat(pomContent).contains("exeris-caps-jwt-validation");
-        assertThat(pomContent).contains("postgresql");
-
-        // Inspect domain Item.java
-        ScaffoldFile entity = tree.find("backend/src/main/java/eu/exeris/demo/inventory/domain/Item.java").orElseThrow();
-        String entityContent = entity.contentAsString();
-        assertThat(entityContent).contains("@ExerisDomain(module = \"inventory\", path = \"/items\")");
-        assertThat(entityContent).contains("@UI(");
-        assertThat(entityContent).contains("@Field(label = \"Title\"");
-        assertThat(entityContent).contains("@Validation(minLength = 3");
-        assertThat(entityContent).contains("public class Item");
-
-        // Inspect ItemDashboardView.java
-        ScaffoldFile view = tree.find("backend/src/main/java/eu/exeris/demo/inventory/view/ItemDashboardView.java").orElseThrow();
-        String viewContent = view.contentAsString();
-        assertThat(viewContent).contains("@View(");
-        assertThat(viewContent).contains("name = \"ItemDashboard\"");
-        assertThat(viewContent).contains("@Region(slot = \"header\")");
-        assertThat(viewContent).contains("@Block(type = Block.BlockType.HERO)");
-
-        // Inspect frontend package.json
-        ScaffoldFile pkgJson = tree.find("frontend/package.json").orElseThrow();
-        assertThat(pkgJson.contentAsString()).contains("@angular/core");
-        assertThat(pkgJson.contentAsString()).contains("@exeris/codegen-ts");
-        assertThat(pkgJson.contentAsString()).contains("tailwindcss");
+    private static String text(ProjectTree tree, String path) {
+        return tree.find(path).map(ScaffoldFile::contentAsString)
+                .orElseThrow(() -> new AssertionError("no " + path + " in " + tree.paths()));
     }
 
     @Test
-    @DisplayName("Backend only scaffolding generates clean microservice layout")
-    void backendOnlyScaffolding() {
-        ProjectScaffoldRequest request = ProjectScaffoldRequest.builder()
-                .name("Order Service")
-                .slug("order-service")
-                .groupId("eu.exeris.order")
-                .artifactId("order-service")
-                .packageName("eu.exeris.order")
-                .topology(ProjectTopology.BACKEND_ONLY)
-                .database(DatabaseType.H2)
-                .entityName("Order")
-                .build();
-
-        ProjectTree tree = ProjectGenerator.generate(request);
-
-        assertThat(tree.hasFile("pom.xml")).isTrue();
-        assertThat(tree.hasFile("src/main/java/eu/exeris/order/domain/Order.java")).isTrue();
-        assertThat(tree.hasFile("src/test/java/eu/exeris/order/OrderE2ETest.java")).isTrue();
-        assertThat(tree.hasFile("README.md")).isTrue();
-        assertThat(tree.hasFile("frontend/package.json")).isFalse();
+    @DisplayName("backend-only writes a Maven project with one entity and the two-pass build script")
+    void backendOnlyFiles() {
+        ProjectTree tree = generate(ProjectTopology.BACKEND_ONLY, DatabaseType.H2);
+        assertThat(tree.paths()).containsExactly(
+                ".gitignore",
+                "README.md",
+                "pom.xml",
+                "first-build.sh",
+                "src/main/java/com/example/order/service/domain/OrderLine.java");
+        assertThat(tree.find("first-build.sh")).get().extracting(ScaffoldFile::executable).isEqualTo(true);
     }
 
     @Test
-    @DisplayName("Frontend only scaffolding generates Angular 22 app with codegen tooling")
-    void frontendOnlyScaffolding() {
-        ProjectScaffoldRequest request = ProjectScaffoldRequest.builder()
-                .name("Order Console")
-                .slug("order-console")
-                .groupId("eu.exeris.order")
-                .artifactId("order-console")
-                .packageName("eu.exeris.order")
-                .topology(ProjectTopology.FRONTEND_ONLY)
-                .database(DatabaseType.H2)
-                .entityName("Order")
-                .build();
+    @DisplayName("the backend POM is the parent, the starter, a JDBC driver and the generated tests' libraries")
+    void backendPom() {
+        String pom = text(generate(ProjectTopology.BACKEND_ONLY, DatabaseType.H2), "pom.xml");
+        assertThat(pom)
+                .contains("<artifactId>exeris-app-parent</artifactId>\n        <version>9.8.7</version>")
+                .contains("<groupId>com.example</groupId>\n    <artifactId>order-service</artifactId>")
+                .contains("<description>Orders &amp; Co</description>")
+                .contains("<artifactId>exeris-app-starter</artifactId>\n            <type>pom</type>")
+                .contains("<groupId>com.h2database</groupId>\n            <artifactId>h2</artifactId>\n"
+                        + "            <version>2.3.232</version>\n            <scope>runtime</scope>")
+                .contains("<artifactId>junit-jupiter</artifactId>\n            <version>5.11.4</version>")
+                .contains("<artifactId>assertj-core</artifactId>\n            <version>3.27.7</version>")
+                .contains("<exeris.tests>true</exeris.tests>")
+                .contains("<url/>", "<license/>", "<developer/>", "<developerConnection/>");
+        assertThat(pom.split("<dependency>", -1)).hasSize(5);
+        assertThat(pom).doesNotContain("exeris-caps", "<plugin>", "SNAPSHOT</version>\n        <relativePath/>");
+    }
 
-        ProjectTree tree = ProjectGenerator.generate(request);
+    @Test
+    @DisplayName("PostgreSQL declares its driver and adds the compose file the README's values connect to")
+    void postgresql() {
+        ProjectTree tree = generate(ProjectTopology.BACKEND_ONLY, DatabaseType.POSTGRESQL);
+        assertThat(text(tree, "pom.xml")).contains("<groupId>org.postgresql</groupId>\n"
+                + "            <artifactId>postgresql</artifactId>\n            <version>42.7.13</version>");
+        assertThat(text(tree, "docker-compose.yml")).contains("POSTGRES_DB: order_service",
+                "POSTGRES_USER: exeris", "POSTGRES_PASSWORD: exeris");
+        assertThat(text(tree, "README.md")).contains(
+                "| `exeris.http.port` | `8080` |",
+                "| `exeris.persistence.jdbcUrl` | `jdbc:postgresql://localhost:5432/order_service` |",
+                "| `exeris.persistence.username` | `exeris` |",
+                "| `exeris.persistence.runMigrations` | `true` |",
+                "docker compose up -d --wait\nfor migration in src/main/generated/java/db/migration/V*.sql; do\n"
+                        + "  docker compose exec -T postgres psql -q -U exeris -d order_service",
+                "-Dexeris.persistence.username=exeris -Dexeris.persistence.password=exeris",
+                "-cp \"target/classes:$(cat target/classpath.txt)\" com.example.order.service.Application")
+                .doesNotContain("H2 builds", "\n\n\n", "{{");
+    }
 
-        assertThat(tree.hasFile("package.json")).isTrue();
-        assertThat(tree.hasFile("proxy.conf.json")).isTrue();
-        assertThat(tree.hasFile("src/main.ts")).isTrue();
-        assertThat(tree.hasFile("pom.xml")).isFalse();
+    @Test
+    @DisplayName("the entity is an @ExerisDomain in <package>.domain, served at its kebab-case plural")
+    void entity() {
+        String entity = text(generate(ProjectTopology.BACKEND_ONLY, DatabaseType.H2),
+                "src/main/java/com/example/order/service/domain/OrderLine.java");
+        assertThat(entity)
+                .startsWith("package com.example.order.service.domain;\n")
+                .contains("@ExerisDomain(module = \"order-lines\", path = \"/order-lines\")")
+                .contains("public class OrderLine {")
+                .contains("private UUID id;")
+                .doesNotContain("@CapabilityModule", "@View", "@UI");
+    }
+
+    @Test
+    @DisplayName("the build script runs the two passes the starter's fixture runs, without clean")
+    void firstBuildScript() {
+        String script = text(generate(ProjectTopology.BACKEND_ONLY, DatabaseType.H2), "first-build.sh");
+        assertThat(script).startsWith("#!/bin/sh\n")
+                .contains("\nmvn -Dexeris.codegen.skip=true compile \"$@\"\nmvn verify \"$@\"\n")
+                .doesNotContain("mvn clean");
+    }
+
+    @Test
+    @DisplayName("the README documents the two passes, and that H2 builds and tests but runs no migration")
+    void readmeH2() {
+        String readme = text(generate(ProjectTopology.BACKEND_ONLY, DatabaseType.H2), "README.md");
+        assertThat(readme)
+                .startsWith("# Orders & Co\n")
+                .contains("sh first-build.sh", "mvn -Dexeris.codegen.skip=true compile", "then `mvn verify`")
+                .contains("the H2 JDBC driver", "H2 builds the project and runs its generated tests",
+                        "--database=postgresql", "com.example.order.service.Application")
+                .doesNotContain("exeris.datasource", "exeris.application", "| System property |", "{{", "}}",
+                        "\n\n\n");
+    }
+
+    @Test
+    @DisplayName("e2e writes the backend under backend/ and, under frontend/, only what runs exeris-gen")
+    void e2eFiles() {
+        ProjectTree tree = generate(ProjectTopology.E2E, DatabaseType.POSTGRESQL);
+        assertThat(tree.paths()).containsExactly(
+                ".gitignore",
+                "README.md",
+                "backend/pom.xml",
+                "backend/first-build.sh",
+                "backend/src/main/java/com/example/order/service/domain/OrderLine.java",
+                "frontend/package.json",
+                "docker-compose.yml");
+    }
+
+    @Test
+    @DisplayName("the e2e frontend runs the TypeScript emitter on the backend build's metadata, into app/")
+    void e2eFrontend() {
+        ProjectTree tree = generate(ProjectTopology.E2E, DatabaseType.POSTGRESQL);
+        String packageJson = text(tree, "frontend/package.json");
+        assertThat(packageJson)
+                .contains("\"name\": \"order-service-frontend\"")
+                .contains("\"generate\": \"exeris-gen generate --input ../backend/target/classes/exeris-metadata"
+                        + " --output app --app-name order-service\"")
+                .contains("\"@exeris/codegen-ts\": \"9.8.7\"")
+                .doesNotContain("@angular", "vite", "\"start\"");
+        // exeris-gen writes its own package.json, angular.json and src/ into app/; nothing here may
+        // sit at a path it writes.
+        assertThat(tree.paths()).noneMatch(path -> path.startsWith("frontend/app/") || path.startsWith("frontend/src/"));
+        assertThat(text(tree, "README.md")).contains("cd backend\nsh first-build.sh", "npm run generate",
+                "| `exeris.http.port` | `8443` |", "`localhost:8443`", "npm install <path>/exeris-codegen-ts",
+                "for migration in backend/src/main/generated/java/db/migration/V*.sql; do",
+                "done\ncd backend\nmvn dependency:build-classpath")
+                .doesNotContain("\n\n\n", "{{");
+    }
+
+    @Test
+    @DisplayName("frontend-only writes the npm project and a peer contract config, and no Java")
+    void frontendOnly() {
+        ProjectTree tree = ProjectGenerator.generate(new ProjectScaffoldRequest("com.example", "shop-ui", null, null,
+                ProjectTopology.FRONTEND_ONLY, DatabaseType.POSTGRESQL, null), VERSIONS);
+        assertThat(tree.paths()).containsExactly(".gitignore", "README.md", "package.json", "exeris-codegen.json");
+        assertThat(text(tree, "package.json")).contains("\"name\": \"shop-ui\"", "\"generate\": \"exeris-gen generate\"",
+                "\"@exeris/codegen-ts\": \"9.8.7\"");
+        assertThat(text(tree, "exeris-codegen.json")).contains("\"outputPath\": \"app\"", "\"name\": \"backend\"",
+                "\"path\": \"contracts/backend\"").doesNotContain("inputPath");
+        assertThat(text(tree, "README.md")).startsWith("# shop-ui\n").contains("cap-manifest.json", "contracts/backend/")
+                .doesNotContain("exeris.persistence");
+    }
+
+    @ParameterizedTest
+    @EnumSource(ProjectTopology.class)
+    @DisplayName("the same request gives the same tree, byte for byte")
+    void deterministic(ProjectTopology topology) {
+        assertThat(generate(topology, DatabaseType.POSTGRESQL)).isEqualTo(generate(topology, DatabaseType.POSTGRESQL));
     }
 }

@@ -1,157 +1,130 @@
 package eu.exeris.tooling.initializr.cli;
 
+import eu.exeris.tooling.diagnostics.DiagnosticId;
 import eu.exeris.tooling.initializr.engine.ProjectGenerator;
-import eu.exeris.tooling.initializr.engine.ZipArchiveGenerator;
-import eu.exeris.tooling.initializr.model.DatabaseType;
-import eu.exeris.tooling.initializr.model.ExerisCapability;
+import eu.exeris.tooling.initializr.engine.ProjectWriter;
+import eu.exeris.tooling.initializr.engine.ScaffoldVersions;
+import eu.exeris.tooling.initializr.engine.TargetExistsException;
 import eu.exeris.tooling.initializr.model.ProjectScaffoldRequest;
-import eu.exeris.tooling.initializr.model.ProjectTopology;
 import eu.exeris.tooling.initializr.model.ProjectTree;
-import eu.exeris.tooling.initializr.model.ScaffoldFile;
 
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.nio.file.Files;
+import java.io.PrintStream;
 import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
 
 /**
- * Command-line interface for the Exeris Initializr engine.
+ * Command-line entry point of the initializr, and the {@code Main-Class} of the
+ * {@code exeris-initializr} jar: writes a new Exeris project as a directory or a ZIP archive
+ * (ADR-091 Amendment 5).
+ *
+ * <p>The exit status says how the run ended, as for the {@code exeris-codegen-cli} jar (ADR-097):
+ * <ul>
+ *   <li>{@code 0}: the project was written, or the version or usage was printed;</li>
+ *   <li>{@code 1}: the write was refused, because the target exists, or failed;</li>
+ *   <li>{@code 2}: the arguments were invalid.</li>
+ * </ul>
+ * Every non-zero exit prints a line carrying a {@link DiagnosticId} to {@code stderr}.
+ *
+ * <p>The version printed by {@code --version} and written as the generated parent's version is the
+ * one this initializr was built as ({@link ScaffoldVersions#bundled()}).
+ *
+ * @since 0.10
  */
 public final class InitializrCliMain {
 
+    /** Status of a run that succeeded. */
+    static final int EXIT_OK = 0;
+    /** Status of a run whose write was refused or failed. */
+    static final int EXIT_FAILED = 1;
+    /** Status of a run whose arguments were invalid. */
+    static final int EXIT_USAGE = 2;
+
+    private InitializrCliMain() {
+    }
+
+    /**
+     * Runs the initializr and exits the JVM with the run's status: {@code 0} on success, {@code 1}
+     * when the write is refused or fails, {@code 2} when the arguments are invalid.
+     *
+     * @param args the command-line switches, as {@link InitializrArgs#parse(String[])} reads them
+     * @since 0.10
+     */
     public static void main(String[] args) {
-        if (args.length == 0 || hasArg(args, "--help") || hasArg(args, "-h")) {
-            printHelp();
-            return;
-        }
+        System.exit(run(args, System.out, System.err));
+    }
 
-        String name = getArgValue(args, "--name", "my-exeris-app");
-        String slug = getArgValue(args, "--slug", name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9-]", "-"));
-        String groupId = getArgValue(args, "--group-id", "eu.exeris.sample");
-        String artifactId = getArgValue(args, "--artifact-id", slug);
-        String packageName = getArgValue(args, "--package", groupId + "." + slug.replace('-', '.'));
-        String topologyStr = getArgValue(args, "--type", "E2E").toUpperCase(Locale.ROOT);
-        String dbStr = getArgValue(args, "--db", "H2").toUpperCase(Locale.ROOT);
-        String outputDir = getArgValue(args, "--output", null);
-        String zipFile = getArgValue(args, "--zip", null);
-        String entityName = getArgValue(args, "--entity", "Item");
-
-        ProjectTopology topology;
+    /**
+     * Runs the initializr without exiting the JVM.
+     *
+     * @param args the command-line switches
+     * @param out  receives the version, the usage under {@code --help}, and the line naming what was
+     *             written
+     * @param err  receives every failure line, and the usage after an argument error
+     * @return the exit status: {@link #EXIT_OK}, {@link #EXIT_FAILED} or {@link #EXIT_USAGE}
+     */
+    static int run(String[] args, PrintStream out, PrintStream err) {
+        InitializrArgs parsed;
         try {
-            topology = ProjectTopology.valueOf(topologyStr);
-        } catch (IllegalArgumentException e) {
-            System.err.println("Unknown topology: " + topologyStr + ". Available: E2E, BACKEND_ONLY, FRONTEND_ONLY");
-            System.exit(1);
-            return;
+            parsed = InitializrArgs.parse(args);
+        } catch (IllegalArgumentException badArgs) {
+            err.println(DiagnosticId.INITIALIZR_ARGUMENTS_INVALID.format(badArgs.getMessage()));
+            printUsage(err);
+            return EXIT_USAGE;
         }
+        return switch (parsed.action()) {
+            case HELP -> {
+                printUsage(out);
+                yield EXIT_OK;
+            }
+            case VERSION -> {
+                out.println("exeris-initializr " + ScaffoldVersions.bundled().tooling());
+                yield EXIT_OK;
+            }
+            case GENERATE -> generate(parsed, out, err);
+        };
+    }
 
-        DatabaseType database;
+    private static int generate(InitializrArgs args, PrintStream out, PrintStream err) {
+        ProjectScaffoldRequest request = args.request();
+        Path target = args.zip() != null ? args.zip() : args.outputDir();
         try {
-            database = DatabaseType.valueOf(dbStr);
-        } catch (IllegalArgumentException e) {
-            System.err.println("Unknown database: " + dbStr + ". Available: H2, POSTGRESQL");
-            System.exit(1);
-            return;
-        }
-
-        List<ExerisCapability> capabilities = new ArrayList<>();
-        String capsStr = getArgValue(args, "--capabilities", "");
-        if (!capsStr.isBlank()) {
-            for (String capKey : capsStr.split(",")) {
-                try {
-                    capabilities.add(ExerisCapability.fromKey(capKey.trim()));
-                } catch (IllegalArgumentException e) {
-                    System.err.println("Warning: ignoring unknown capability " + capKey);
-                }
+            ProjectTree tree = ProjectGenerator.generate(request, ScaffoldVersions.bundled());
+            if (args.zip() != null) {
+                ProjectWriter.writeArchive(tree, request.artifactId(), args.zip(), args.force());
+            } else {
+                ProjectWriter.writeDirectory(tree, args.outputDir(), args.force());
             }
-        }
-
-        ProjectScaffoldRequest request = ProjectScaffoldRequest.builder()
-                .name(name)
-                .slug(slug)
-                .groupId(groupId)
-                .artifactId(artifactId)
-                .packageName(packageName)
-                .topology(topology)
-                .database(database)
-                .capabilities(capabilities)
-                .entityName(entityName)
-                .build();
-
-        System.out.println("Scaffolding Exeris project: " + name + " [" + topology + "]...");
-        ProjectTree tree = ProjectGenerator.generate(request);
-        System.out.println("Generated " + tree.size() + " files.");
-
-        if (zipFile != null) {
-            byte[] zipBytes = ZipArchiveGenerator.toZipBytes(tree, slug);
-            try (FileOutputStream fos = new FileOutputStream(zipFile)) {
-                fos.write(zipBytes);
-            } catch (IOException e) {
-                System.err.println("Failed to write zip file: " + e.getMessage());
-                System.exit(1);
-            }
-            System.out.println("Wrote archive to " + zipFile);
-        }
-
-        if (outputDir != null || zipFile == null) {
-            Path targetPath = Paths.get(outputDir != null ? outputDir : "./" + slug);
-            try {
-                for (ScaffoldFile file : tree.files()) {
-                    Path filePath = targetPath.resolve(file.path());
-                    Files.createDirectories(filePath.getParent());
-                    Files.write(filePath, file.content());
-                }
-            } catch (IOException e) {
-                System.err.println("Failed to write files to disk: " + e.getMessage());
-                System.exit(1);
-            }
-            System.out.println("Scaffolded project created at: " + targetPath.toAbsolutePath());
+            out.println("Wrote the " + request.topology().cliValue() + " project " + request.artifactId()
+                    + " (" + tree.files().size() + " files) to " + target.toAbsolutePath().normalize());
+            return EXIT_OK;
+        } catch (TargetExistsException refused) {
+            err.println(DiagnosticId.INITIALIZR_TARGET_NOT_EMPTY.format(refused.getMessage()
+                    + "; nothing was written. Pass --force to write over it."));
+            return EXIT_FAILED;
+        } catch (IOException | RuntimeException e) {
+            err.println(DiagnosticId.INITIALIZR_WRITE_FAILED.format("Writing " + target + " failed: " + e));
+            return EXIT_FAILED;
         }
     }
 
-    private static void printHelp() {
-        System.out.println("""
-                Exeris Initializr CLI
-                Usage: java -cp ... eu.exeris.tooling.initializr.cli.InitializrCliMain [options]
-                
-                Options:
-                  --name <name>            Project display name (default: my-exeris-app)
-                  --slug <slug>            Project slug / folder name
-                  --type <type>            Topology: E2E | BACKEND_ONLY | FRONTEND_ONLY (default: E2E)
-                  --db <db>                Database: H2 | POSTGRESQL (default: H2)
-                  --group-id <group>       Maven groupId (default: eu.exeris.sample)
-                  --artifact-id <artifact> Maven artifactId (default: slug)
-                  --package <pkg>          Java package (default: eu.exeris.sample.<slug>)
-                  --entity <name>          Demo domain entity name (default: Item)
-                  --capabilities <caps>    Comma-separated list (e.g. audit-trail,jwt-validation)
-                  --output <dir>           Directory to write files to
-                  --zip <file>             Path to write ZIP archive to
-                  -h, --help               Show this help message
-                """);
-    }
-
-    private static boolean hasArg(String[] args, String flag) {
-        for (String arg : args) {
-            if (arg.equalsIgnoreCase(flag)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static String getArgValue(String[] args, String key, String defaultValue) {
-        for (int i = 0; i < args.length; i++) {
-            if (args[i].equalsIgnoreCase(key) && i + 1 < args.length) {
-                return args[i + 1];
-            }
-            if (args[i].toLowerCase(Locale.ROOT).startsWith(key.toLowerCase(Locale.ROOT) + "=")) {
-                return args[i].substring(key.length() + 1);
-            }
-        }
-        return defaultValue;
+    private static void printUsage(PrintStream stream) {
+        stream.println("Usage: java -jar exeris-initializr-<version>.jar [options]");
+        stream.println("Writes a new Exeris project built on eu.exeris:exeris-app-parent and exeris-app-starter.");
+        stream.println("Options, each written --switch=value:");
+        stream.println("  --topology=<t>        backend-only (default), e2e (backend/ and frontend/),");
+        stream.println("                        or frontend-only");
+        stream.println("  --group-id=<id>       Maven groupId (default: com.example)");
+        stream.println("  --artifact-id=<id>    Maven artifactId and npm package name (default: demo)");
+        stream.println("  --package=<pkg>       Base package (default: derived from the groupId and artifactId)");
+        stream.println("  --name=<text>         Display name (default: the artifactId)");
+        stream.println("  --database=<db>       h2 (default) or postgresql");
+        stream.println("  --entity=<Name>       The first @ExerisDomain entity (default: Item)");
+        stream.println("  --output-dir=<dir>    Directory to write (default: ./<artifactId>)");
+        stream.println("  --zip=<file>          Write a ZIP archive instead of a directory");
+        stream.println("  --force               Write into a non-empty directory, or over an existing archive");
+        stream.println("  --version             Print the version and exit");
+        stream.println("  --help                Print this text and exit");
+        stream.println("--group-id, --package, --database and --entity are read only with a backend.");
+        stream.println("Exit status: 0 success, 1 write refused or failed, 2 invalid arguments.");
     }
 }

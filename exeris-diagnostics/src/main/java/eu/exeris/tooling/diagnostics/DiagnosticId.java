@@ -10,7 +10,8 @@ package eu.exeris.tooling.diagnostics;
  * <pre>
  * EXT     – exeris-tooling prefix, distinct from the kernel's EX- namespace
  * [AREA]  – PROC (annotation processor, inside javac), PLUG (Maven plugin goals),
- *           GEN (code-generation pipeline); TS is reserved for the TypeScript emitter
+ *           GEN (code-generation pipeline and the tooling command lines); TS is reserved
+ *           for the TypeScript emitter
  * [ID]    – 4-digit identifier: 1xxx in PROC, 2xxx in PLUG, 3xxx in GEN, 4xxx reserved for TS
  * </pre>
  *
@@ -315,6 +316,24 @@ public enum DiagnosticId {
      */
     CLI_CATALOGUE_UNREADABLE("EXT-GEN-3004",
             "The codegen command line could not read the generator catalogue it carries."),
+
+    /**
+     * The {@code exeris-initializr} command line was given an argument it does not know, a switch
+     * without its value, a positional argument, or a value it cannot use; it exits with status 2.
+     */
+    INITIALIZR_ARGUMENTS_INVALID("EXT-GEN-3005",
+            "The initializr command line was given missing, unknown or malformed arguments."),
+
+    /**
+     * The {@code exeris-initializr} command line refuses to write a project into a directory that
+     * is not empty, or over an archive that exists, without {@code --force}; nothing is written.
+     */
+    INITIALIZR_TARGET_NOT_EMPTY("EXT-GEN-3006",
+            "The initializr refused to write into a non-empty directory or over an existing archive."),
+
+    /** The {@code exeris-initializr} command line failed writing the project; the cause follows. */
+    INITIALIZR_WRITE_FAILED("EXT-GEN-3007",
+            "The initializr failed to write the project."),
 
     // -----------------------------------------------------------------------
     // EXT-GEN-31xx — code-generation pipeline warnings

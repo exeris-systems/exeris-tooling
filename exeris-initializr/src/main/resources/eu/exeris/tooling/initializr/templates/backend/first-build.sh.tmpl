@@ -1,0 +1,10 @@
+#!/bin/sh
+# The first build of this project takes two passes. The annotation processor writes
+# target/classes/exeris-metadata during compile, and compile runs after exeris:generate, so pass 1
+# compiles with generation skipped to write the metadata, and pass 2 is an ordinary build that
+# generates, compiles, verifies and runs the tests. There is no clean between the passes: it would
+# delete the metadata pass 1 wrote. Arguments are passed to both, for example -o.
+set -e
+cd "$(dirname "$0")"
+mvn -Dexeris.codegen.skip=true compile "$@"
+mvn verify "$@"
