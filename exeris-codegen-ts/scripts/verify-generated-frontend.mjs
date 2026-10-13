@@ -527,8 +527,9 @@ check(
 // The server sends each as the nested object (or array, or map of them), so the entity type and
 // the parsed schema carry the referenced entity's type and agree in both directions. A value type
 // the metadata does not describe (`Money`), or one named like an enum (`PaymentMode`), is
-// `unknown`; an enum the enum module declares is the enum's type, inside a collection as well. The
-// spectate stream's payload types name the same types, imported the same way.
+// `unknown`, and `Object` is `Object`; an enum the enum module declares is the enum's type, inside
+// a collection as well. The spectate stream's payload types name the same types, imported the same
+// way.
 check(
   'cross-entity-fields',
   [
@@ -546,6 +547,7 @@ check(
         { name: 'total', type: 'com.x.Money' },
         { name: 'payment', type: 'com.x.PaymentMode' },
         { name: 'priorities', type: 'java.util.List<com.x.Priority>' },
+        { name: 'raw', type: 'java.lang.Object', required: true },
       ],
       path: '/orders',
       realTimeApi: true,
@@ -602,6 +604,7 @@ check(
     'export const grandparent = (l: Line): Line | undefined => l.parent?.parent;',
     'export const part = (o: Order): ComponentModel | undefined => o.part;',
     'export const priorities = (o: Order): Priority[] | undefined => o.priorities;',
+    'export const raw = (o: Order): Object => o.raw;',
     'export const parsedCustomer = (p: Parsed): Customer => p.customer;',
     '',
     "// @ts-expect-error — a value type the metadata does not describe is not a string",

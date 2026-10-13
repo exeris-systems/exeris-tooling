@@ -125,6 +125,18 @@ describe('mapScopedType — the DTO type and the Zod expression', () => {
     expect(mapScopedType('com.x.Page<com.x.Customer>', SCOPE).tsType).toBe('unknown');
   });
 
+  it('keeps Object the TypeScript Object, with a schema that admits any present value', () => {
+    for (const type of ['Object', 'java.lang.Object']) {
+      expect(mapScopedType(type, SCOPE)).toMatchObject({
+        tsType: 'Object',
+        zodType: 'z.custom<Object>((value) => value !== null && value !== undefined)',
+      });
+      expect(DslMapper.mapType(type).tsType).toBe('Object');
+      expect(isUndescribedValue(type, SCOPE)).toBe(false);
+      expect(referencesNonScalar(type, SCOPE)).toBe(true);
+    }
+  });
+
   it('keeps the mapper\'s own mapping for an enum and for every type the table names', () => {
     expect(mapScopedType('com.x.Priority', SCOPE)).toEqual(DslMapper.mapType('com.x.Priority'));
     for (const type of ['java.lang.String', 'java.lang.Integer', 'java.util.UUID', 'java.util.List<java.lang.String>',

@@ -14,7 +14,8 @@
  *   exported by the enum module;
  * - **any other type** is `unknown` and `z.unknown()`. The metadata carries no shape for it, and
  *   what the JSON codec writes for it depends on the type's own serialisation (an object of its
- *   properties, or one value), which no type name tells.
+ *   properties, or one value), which no type name tells. `Object` is the TypeScript `Object`, with
+ *   a Zod schema that admits any present value.
  *
  * The emitters that print a field's type take both the type and the imports it needs from here, so
  * a module imports exactly the names its types reference.
@@ -87,6 +88,9 @@ export const KNOWN_JAVA_TYPES: ReadonlySet<string> = new Set([
   'Date', 'java.util.Date',
   'byte[]', 'Object', 'java.lang.Object',
 ]);
+
+/** `java.lang.Object` in both spellings. */
+const JAVA_OBJECT: ReadonlySet<string> = new Set(['Object', 'java.lang.Object']);
 
 /** The simple name of a type: what follows its last dot. */
 export function simpleTypeName(javaType: string): string {
@@ -163,7 +167,9 @@ export function typeResolver(scope: TypeScope, onReference?: (reference: TypeRef
         return { tsType: typeName, zodType: `z.lazy((): z.ZodType<${typeName}> => ${typeName}Schema)` };
       }
       case 'opaque':
-        return { tsType: 'unknown', zodType: 'z.unknown()' };
+        return JAVA_OBJECT.has(javaType)
+          ? { tsType: 'Object', zodType: 'z.custom<Object>((value) => value !== null && value !== undefined)' }
+          : { tsType: 'unknown', zodType: 'z.unknown()' };
       default:
         return undefined;
     }
