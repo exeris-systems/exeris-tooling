@@ -503,6 +503,23 @@ binds the storage context, so its client is generated in its final shape and is 
 then; a `GLOBAL` entity's client is not affected. All of these are emitted with services
 (`generateServices`, the default).
 
+## Bearer token
+
+The kernel application reads a caller's identity from an `Authorization: Bearer` header only. When
+some route of the application demands identity (its access requirement is `authenticated` or
+`anyScope`, as in `contract/route-policy.json`, ADR-105), the generator emits
+`core/auth.interceptor.ts`, a functional `HttpInterceptorFn` that sets
+`Authorization: Bearer <AuthService.token()>` on every `HttpClient` request under `apiBasePath`
+while a token is held, together with the `core/auth.service.ts` seed it reads the token from, and
+`app.config.ts` registers it with `provideHttpClient(withInterceptors([authInterceptor]))`. The
+token is whatever your sign-in passes to `AuthService.setUser`; the interceptor reads no storage of
+its own. With `scaffold: false`, add `withInterceptors([authInterceptor])` to your own
+`provideHttpClient(...)`.
+
+Route requirements come from declared route access (`@RouteAccess`, `permissions`), which this
+version does not read: every route is public, so neither file is emitted and `app.config.ts`
+registers no interceptor. The stream clients do not go through `HttpClient` and send no token.
+
 ## Type Mapping
 
 | Java Type | TypeScript Type | Form Control |

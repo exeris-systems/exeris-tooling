@@ -24,6 +24,7 @@ describe('angular barrel exports — function set', () => {
     'generateSaga',
     'generateEventHandler',
     'generateAppStructure',
+    'generateAuthInterceptor',
     'generateDetail',
     'generateGuard',
     'generateView',
