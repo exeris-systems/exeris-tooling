@@ -3898,7 +3898,7 @@ enters only if its upstream half is final first.
       lint gate over emitted Java (#353); SonarCloud analysis runs from CI after `mvn verify` with the
       JaCoCo and vitest lcov coverage, and the root POM excludes `src/it` from copy-paste detection
       (#377, which replaces automatic analysis and drops `.sonarcloud.properties`).
-- [x] **T53, the seam (J3a)** (RFC accepted as ADR-105; founder ruling 2026-10-13: 0.10.0 cuts with
+- [ ] **T53, the seam (J3a)** (RFC accepted as ADR-105; founder ruling 2026-10-13: 0.10.0 cuts with
       the seam only): J3-1 (ADR-105, #359) and J3-2 (#369). The extraction, the table, the OpenAPI
       security block and the data half of S3 move to 0.11.0 (see **0.11.0**). D10 resolves with S3's
       data-independent half.
