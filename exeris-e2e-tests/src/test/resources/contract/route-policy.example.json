@@ -1,0 +1,18 @@
+{
+  "description": "Representative rows of contract/route-policy.json, for building against the row shape before the generator fills it. Checked for shape only by RoutePolicyContractE2ETest; never held against emitted code. Order declares scopes on the entity, so every route inherits anyScope; its approve action declares its own scope and replaces the entity's. Invoice is authenticated(), and its export action is public. Catalog is public; its live-view stream route is a row like any other. HEAD has no row.",
+  "routes": [
+    { "entity": "Order",   "method": "GET",    "path": "{base}",                       "requirement": { "kind": "anyScope", "scopes": ["order:read", "order:write"] }, "source": "entity" },
+    { "entity": "Order",   "method": "POST",   "path": "{base}",                       "requirement": { "kind": "anyScope", "scopes": ["order:read", "order:write"] }, "source": "entity" },
+    { "entity": "Order",   "method": "GET",    "path": "{base}/stream",                "requirement": { "kind": "anyScope", "scopes": ["order:read", "order:write"] }, "source": "entity" },
+    { "entity": "Order",   "method": "GET",    "path": "{base}/{id}",                  "requirement": { "kind": "anyScope", "scopes": ["order:read", "order:write"] }, "source": "entity" },
+    { "entity": "Order",   "method": "PUT",    "path": "{base}/{id}",                  "requirement": { "kind": "anyScope", "scopes": ["order:read", "order:write"] }, "source": "entity" },
+    { "entity": "Order",   "method": "DELETE", "path": "{base}/{id}",                  "requirement": { "kind": "anyScope", "scopes": ["order:read", "order:write"] }, "source": "entity" },
+    { "entity": "Order",   "method": "POST",   "path": "{base}/{id}/actions/{action}", "action": "cancel",  "requirement": { "kind": "anyScope", "scopes": ["order:read", "order:write"] }, "source": "entity" },
+    { "entity": "Order",   "method": "POST",   "path": "{base}/{id}/actions/{action}", "action": "approve", "requirement": { "kind": "anyScope", "scopes": ["order:approve"] }, "source": "action" },
+    { "entity": "Invoice", "method": "GET",    "path": "{base}",                       "requirement": { "kind": "authenticated" }, "source": "entity" },
+    { "entity": "Invoice", "method": "GET",    "path": "{base}/{id}/stream",           "requirement": { "kind": "authenticated" }, "source": "entity" },
+    { "entity": "Invoice", "method": "POST",   "path": "{base}/{id}/actions/{action}", "action": "export",  "requirement": { "kind": "permitAll" }, "source": "action" },
+    { "entity": "Catalog", "method": "GET",    "path": "{base}",                       "requirement": { "kind": "permitAll" }, "source": "entity" },
+    { "entity": "Catalog", "method": "GET",    "path": "{base}/stream",                "requirement": { "kind": "permitAll" }, "source": "entity" }
+  ]
+}
