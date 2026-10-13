@@ -1,18 +1,14 @@
 /**
  * Angular Route Guard Generator
  *
- * Generates Angular 22+ functional route guards with:
- * - Permission-based access control
- * - Role-based access control
- * - Authentication checks
+ * Emits no route guard. A guard may check only names the author declared, and no declared
+ * permission reaches this generator, so a guard would authorize against names it invented.
+ * The generator emits the auth service seed the guards will read.
  */
 
 import type { DomainMetadata, CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
-import { DslMapper } from '../../models/dsl-mapper.js';
-import type { GeneratorConfig } from '../../config.js';
 import type { BackendType } from '../../core/backend-strategy.js';
-import { outPath } from '../../core/paths.js';
-import { fileHeader, fileHeaderLines } from '../file-header.js';
+import { fileHeader } from '../file-header.js';
 
 /** The auth service template, relative to the generated tree's root: a seed file
  *  (`overwritable: false`) the consumer completes with its own authentication. */
@@ -24,19 +20,11 @@ export class GuardGenerator implements CodeGenerator {
   readonly supportedBackends: BackendType[] = [];
   readonly priority = 15;
 
-  generate(domain: DomainMetadata, context: GeneratorContext): GeneratedFile | null {
-    const kebab = DslMapper.toKebabCase(domain.entityName);
-    const content = this.generateGuardContent(domain, context);
-
-    return {
-      path: outPath('guards', `${kebab}.guard.ts`),
-      content,
-      artifactType: 'GUARD',
-      overwritable: true,
-    };
+  generate(_domain: DomainMetadata, _context: GeneratorContext): GeneratedFile | null {
+    return null;
   }
 
-  generateAggregate(domains: DomainMetadata[], _context: GeneratorContext): GeneratedFile[] {
+  generateAggregate(_domains: DomainMetadata[], _context: GeneratorContext): GeneratedFile[] {
     return [
       {
         path: AUTH_SERVICE_PATH,
@@ -44,76 +32,7 @@ export class GuardGenerator implements CodeGenerator {
         artifactType: 'GUARD',
         overwritable: false,
       },
-      {
-        path: 'guards/index.ts',
-        content: this.generateBarrelExport(domains),
-        artifactType: 'GUARD',
-        overwritable: true,
-      },
     ];
-  }
-
-  private generateGuardContent(domain: DomainMetadata, _context: GeneratorContext): string {
-    const { entityName } = domain;
-    const kebab = DslMapper.toKebabCase(entityName);
-    const permission = kebab.replace(/-/g, '_');
-    const isReadOnly = domain.internalApi?.readOnly ?? false;
-
-    const lines: string[] = [];
-
-    lines.push(...fileHeaderLines({ title: `${entityName} Route Guards` }));
-    lines.push(``);
-    lines.push(`import { inject } from '@angular/core';`);
-    lines.push(`import { Router, type CanActivateFn, type ActivatedRouteSnapshot, type RouterStateSnapshot } from '@angular/router';`);
-    lines.push(`import { AuthService } from '../core/auth.service';`);
-    lines.push(``);
-
-    lines.push(`export const ${entityName.toUpperCase()}_PERMISSIONS = {`);
-    lines.push(`  READ: '${permission}:read',`);
-    lines.push(`  CREATE: '${permission}:create',`);
-    lines.push(`  UPDATE: '${permission}:update',`);
-    lines.push(`  DELETE: '${permission}:delete',`);
-    lines.push(`} as const;`);
-    lines.push(``);
-
-    lines.push(`export const canView${entityName}: CanActivateFn = (route, state) => {`);
-    lines.push(`  const auth = inject(AuthService);`);
-    lines.push(`  const router = inject(Router);`);
-    lines.push(`  if (!auth.isAuthenticated()) return router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } });`);
-    lines.push(`  if (!auth.hasPermission(${entityName.toUpperCase()}_PERMISSIONS.READ) && !auth.hasRole('ADMIN')) return router.createUrlTree(['/forbidden']);`);
-    lines.push(`  return true;`);
-    lines.push(`};`);
-    lines.push(``);
-
-    if (!isReadOnly) {
-      lines.push(`export const canCreate${entityName}: CanActivateFn = (route, state) => {`);
-      lines.push(`  const auth = inject(AuthService);`);
-      lines.push(`  const router = inject(Router);`);
-      lines.push(`  if (!auth.isAuthenticated()) return router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } });`);
-      lines.push(`  if (!auth.hasPermission(${entityName.toUpperCase()}_PERMISSIONS.CREATE) && !auth.hasRole('ADMIN')) return router.createUrlTree(['/forbidden']);`);
-      lines.push(`  return true;`);
-      lines.push(`};`);
-      lines.push(``);
-
-      lines.push(`export const canEdit${entityName}: CanActivateFn = (route, state) => {`);
-      lines.push(`  const auth = inject(AuthService);`);
-      lines.push(`  const router = inject(Router);`);
-      lines.push(`  if (!auth.isAuthenticated()) return router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } });`);
-      lines.push(`  if (!auth.hasPermission(${entityName.toUpperCase()}_PERMISSIONS.UPDATE) && !auth.hasRole('ADMIN')) return router.createUrlTree(['/forbidden']);`);
-      lines.push(`  return true;`);
-      lines.push(`};`);
-      lines.push(``);
-
-      lines.push(`export const canDelete${entityName}: CanActivateFn = (route, state) => {`);
-      lines.push(`  const auth = inject(AuthService);`);
-      lines.push(`  const router = inject(Router);`);
-      lines.push(`  if (!auth.isAuthenticated()) return router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } });`);
-      lines.push(`  if (!auth.hasPermission(${entityName.toUpperCase()}_PERMISSIONS.DELETE) && !auth.hasRole('ADMIN')) return router.createUrlTree(['/forbidden']);`);
-      lines.push(`  return true;`);
-      lines.push(`};`);
-    }
-
-    return lines.join('\n');
   }
 
   private generateAuthService(): string {
@@ -129,7 +48,6 @@ export interface User {
   id: string;
   username: string;
   email: string;
-  roles: string[];
   permissions: string[];
 }
 
@@ -141,12 +59,7 @@ export class AuthService {
   readonly user = this._user.asReadonly();
   readonly token = this._token.asReadonly();
   readonly isAuthenticated = computed(() => this._user() !== null);
-  readonly roles = computed(() => this._user()?.roles ?? []);
   readonly permissions = computed(() => this._user()?.permissions ?? []);
-
-  hasRole(role: string): boolean {
-    return this.roles().includes(role);
-  }
 
   hasPermission(permission: string): boolean {
     return this.permissions().includes(permission);
@@ -172,27 +85,4 @@ export class AuthService {
 }
 `;
   }
-
-  private generateBarrelExport(domains: DomainMetadata[]): string {
-    const lines: string[] = [
-      ...fileHeaderLines({ title: 'Route Guards - Barrel Export', doNotEdit: 'omit' }),
-      ``,
-    ];
-
-    for (const domain of domains) {
-      const kebab = DslMapper.toKebabCase(domain.entityName);
-      lines.push(`export * from './${kebab}.guard';`);
-    }
-
-    return lines.join('\n');
-  }
 }
-
-export function generateGuard(metadata: DomainMetadata, config: GeneratorConfig): GeneratedFile | null {
-  // Typed `| null` like the sibling generateForm convenience, so a generator that skips a domain
-  // never needs a non-null assertion at the call site.
-  const generator = new GuardGenerator();
-  const context: GeneratorContext = { config, backend: config.backend ?? 'KERNEL', allDomains: [metadata], enums: [] };
-  return generator.generate(metadata, context);
-}
-

@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-08
+last-verified: 2026-10-13
 ---
 
 # Generator catalogue
@@ -212,7 +212,7 @@ declared name.
 | `angular/app-structure-gen.ts` | `package.json`; `angular.json`; `tsconfig.json`; `tsconfig.app.json`; `tsconfig.spec.json`; `.postcssrc.json`; `proxy.conf.js`; `src/styles.css`; `src/index.html`; `src/favicon.ico`; `src/main.ts`; `src/environments/environment.ts`; `src/environments/environment.development.ts`; `src/app/app.config.ts`; `src/app/app.component.ts`; `src/app/app.routes.ts`; `src/app/index.ts`; `src/main.server.ts`; `src/app/app.config.server.ts`; `src/app/app.routes.server.ts` | Every run that is not contracts-only, with `scaffold` on (the default). Every file except `src/favicon.ico` and the barrel `src/app/index.ts` is a seed. `tsconfig.spec.json` only under `generateTests`. `src/main.server.ts`, `src/app/app.config.server.ts` and `src/app/app.routes.server.ts` only under `render: 'ssg'` (`--render ssg`), which also adds the static prerender options to `angular.json`, `@angular/ssr` and `@angular/platform-server` to `package.json`, the server entry to `tsconfig.app.json` and client hydration to `app.config.ts`; with `scaffold: false` it emits nothing. `proxy.conf.js` only when the app has a backend: at least one entity, or an emitted file that imports `@angular/common/http`; it has one rule per entity path (`apiBasePath` followed by the path the emitted services call), sorted, each forwarding to the kernel application except a request whose `Accept` includes `text/html`, which gets `index.html`, and `package.json` starts `ng serve --proxy-config proxy.conf.js`. `proxy.conf.json` is not emitted; an existing one stays a seed and is kept. `src/app/index.ts` only when at least one entity or enum is loaded; with `scaffold: false` the same barrel is written as `index.ts`. | project |
 | `api/enum-gen.ts` | none in a CLI run | Not invoked by `orchestrator.ts`; registered only by `registerAllGenerators`, which no production path calls. `src/app/types/enums.ts` comes from `enum-module-gen.ts`. | none |
 | `api/query-builder-gen.ts` | none in a CLI run | Not invoked by `orchestrator.ts`; registered only by `registerAllGenerators`. | none |
-| `angular/guard-gen.ts` | none in a CLI run | Not invoked by `orchestrator.ts`; registered only by `registerAllGenerators`. | none |
+| `angular/guard-gen.ts` | none in a CLI run | Not invoked by `orchestrator.ts`; registered only by `registerAllGenerators`. Emits no route guard and no permission constant, because a guard checks only names the author declared (ADR-105 obligations 21 and 22); its one file is the `core/auth.service.ts` seed. | none |
 | `angular/landing-gen.ts` | none in a CLI run | Not invoked by `orchestrator.ts`; registered only by `registerAllGenerators`. | none |
 <!-- catalogue:ts:end -->
 
