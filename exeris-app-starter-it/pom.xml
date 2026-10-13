@@ -16,8 +16,9 @@
     <name>Exeris Tooling :: Application Starter IT</name>
     <description>
         ADR-091 obligation 7: an application built on exeris-app-parent and exeris-app-starter, run
-        through the real exeris-codegen-maven-plugin in a separate Maven build. Holds no code of
-        its own and is never published.
+        through the real exeris-codegen-maven-plugin in a separate Maven build; and, for ADR-091
+        Amendment 5, the projects exeris-initializr writes, built the same way. Holds no code of its
+        own and is never published.
     </description>
 
     <properties>
@@ -73,6 +74,12 @@
             <version>${project.version}</version>
             <type>maven-plugin</type>
         </dependency>
+        <!-- The initializr-* fixtures run this jar, from the fixture repository, to write the
+             project they build. -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-initializr</artifactId>
+        </dependency>
     </dependencies>
 
     <build>
@@ -112,16 +119,22 @@
                     <localRepositoryPath>${project.build.directory}/it-repo</localRepositoryPath>
                     <settingsFile>src/it/settings.xml</settingsFile>
                     <mergeUserSettings>false</mergeUserSettings>
+                    <!-- An initializr-* fixture holds no pom.xml: its prebuild.groovy writes the
+                         project, and its invoker.properties points each pass at that project's POM. -->
                     <pomIncludes>
                         <pomInclude>*/pom.xml</pomInclude>
+                        <pomInclude>initializr-*</pomInclude>
                     </pomIncludes>
+                    <preBuildHookScript>prebuild</preBuildHookScript>
                     <postBuildHookScript>verify</postBuildHookScript>
                     <streamLogsOnFailures>true</streamLogsOnFailures>
                     <skipInvocation>${skipTests}</skipInvocation>
                     <!-- The tooling version this reactor built, for verify.groovy to hold the
-                         fixture's effective tooling, plugin and processor versions against. -->
+                         fixture's effective tooling, plugin and processor versions against; and
+                         the initializr jar invoker:install copied, for prebuild.groovy to run. -->
                     <scriptVariables>
                         <toolingVersion>${project.version}</toolingVersion>
+                        <initializrJar>${project.build.directory}/it-repo/eu/exeris/exeris-initializr/${project.version}/exeris-initializr-${project.version}.jar</initializrJar>
                     </scriptVariables>
                 </configuration>
                 <executions>
