@@ -111,20 +111,19 @@ public final class InitializrCliMain {
         stream.println("Usage: java -jar exeris-initializr-<version>.jar [options]");
         stream.println("Writes a new Exeris project built on eu.exeris:exeris-app-parent and exeris-app-starter.");
         stream.println("Options, each written --switch=value:");
-        stream.println("  --topology=<t>        backend-only (default), e2e (backend/ and frontend/),");
-        stream.println("                        or frontend-only");
+        stream.println("  --topology=<t>        backend-only (default), or e2e (backend/ and frontend/)");
         stream.println("  --group-id=<id>       Maven groupId (default: com.example)");
         stream.println("  --artifact-id=<id>    Maven artifactId and npm package name (default: demo)");
         stream.println("  --package=<pkg>       Base package (default: derived from the groupId and artifactId)");
         stream.println("  --name=<text>         Display name (default: the artifactId)");
-        stream.println("  --database=<db>       h2 (default) or postgresql");
+        stream.println("  --database=<db>       postgresql (default; with a docker-compose.yml), or h2, which");
+        stream.println("                        builds and runs the generated tests but cannot run the application");
         stream.println("  --entity=<Name>       The first @ExerisDomain entity (default: Item)");
         stream.println("  --output-dir=<dir>    Directory to write (default: ./<artifactId>)");
         stream.println("  --zip=<file>          Write a ZIP archive instead of a directory");
         stream.println("  --force               Write into a non-empty directory, or over an existing archive");
         stream.println("  --version             Print the version and exit");
         stream.println("  --help                Print this text and exit");
-        stream.println("--group-id, --package, --database and --entity are read only with a backend.");
         stream.println("Exit status: 0 success, 1 write refused or failed, 2 invalid arguments.");
     }
 }

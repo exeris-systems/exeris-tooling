@@ -84,8 +84,7 @@ class ModelTest {
         }
         assertThat(ProjectTopology.fromCliValue("E2E")).isEmpty();
         assertThat(DatabaseType.fromCliValue("H2")).isEmpty();
-        assertThat(ProjectTopology.FRONTEND_ONLY.hasBackend()).isFalse();
-        assertThat(ProjectTopology.E2E.hasBackend()).isTrue();
+        assertThat(ProjectTopology.fromCliValue("frontend-only")).isEmpty();
     }
 
     @ParameterizedTest

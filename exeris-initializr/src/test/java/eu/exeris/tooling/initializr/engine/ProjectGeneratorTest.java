@@ -149,20 +149,6 @@ class ProjectGeneratorTest {
                 .doesNotContain("\n\n\n", "{{");
     }
 
-    @Test
-    @DisplayName("frontend-only writes the npm project and a peer contract config, and no Java")
-    void frontendOnly() {
-        ProjectTree tree = ProjectGenerator.generate(new ProjectScaffoldRequest("com.example", "shop-ui", null, null,
-                ProjectTopology.FRONTEND_ONLY, DatabaseType.POSTGRESQL, null), VERSIONS);
-        assertThat(tree.paths()).containsExactly(".gitignore", "README.md", "package.json", "exeris-codegen.json");
-        assertThat(text(tree, "package.json")).contains("\"name\": \"shop-ui\"", "\"generate\": \"exeris-gen generate\"",
-                "\"@exeris/codegen-ts\": \"9.8.7\"");
-        assertThat(text(tree, "exeris-codegen.json")).contains("\"outputPath\": \"app\"", "\"name\": \"backend\"",
-                "\"path\": \"contracts/backend\"").doesNotContain("inputPath");
-        assertThat(text(tree, "README.md")).startsWith("# shop-ui\n").contains("cap-manifest.json", "contracts/backend/")
-                .doesNotContain("exeris.persistence");
-    }
-
     @ParameterizedTest
     @EnumSource(ProjectTopology.class)
     @DisplayName("the same request gives the same tree, byte for byte")

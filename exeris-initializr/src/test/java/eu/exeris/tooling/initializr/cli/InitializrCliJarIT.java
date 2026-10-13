@@ -72,14 +72,14 @@ class InitializrCliJarIT {
     }
 
     @Test
-    @DisplayName("exits 2 with EXT-GEN-3005 on an unknown switch, and 1 with EXT-GEN-3006 on a non-empty directory")
+    @DisplayName("exits 2 with EXT-INIT-5001 on an unknown switch, and 1 with EXT-INIT-5002 on a non-empty directory")
     void failures() throws IOException, InterruptedException {
         Result unknown = run("--capabilities=audit-trail");
         assertThat(unknown.status()).isEqualTo(2);
-        assertThat(unknown.err()).contains("[Exeris] EXT-GEN-3005: Unknown switch: --capabilities");
+        assertThat(unknown.err()).contains("[Exeris] EXT-INIT-5001: Unknown switch: --capabilities");
 
         Result refused = run("--output-dir=.");
         assertThat(refused.status()).isEqualTo(1);
-        assertThat(refused.err()).contains("[Exeris] EXT-GEN-3006: ");
+        assertThat(refused.err()).contains("[Exeris] EXT-INIT-5002: ");
     }
 }

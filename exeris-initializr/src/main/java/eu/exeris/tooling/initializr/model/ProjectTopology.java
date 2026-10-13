@@ -4,7 +4,8 @@ import java.util.Arrays;
 import java.util.Optional;
 
 /**
- * The three shapes an Exeris application takes (ADR-091 Amendment 1), as the initializr writes them.
+ * The shapes of an Exeris application the initializr writes: Amendment 1's shapes 1 and 3 of
+ * ADR-091. Shape 2, a frontend with no backend of its own, is not written (ADR-091 Amendment 5).
  *
  * @since 0.10
  */
@@ -21,13 +22,7 @@ public enum ProjectTopology {
      * TypeScript emitter on the backend build's own metadata. Amendment 1, shape 3, in its same-build
      * form.
      */
-    E2E("e2e"),
-
-    /**
-     * An npm project that runs the TypeScript emitter on a backend's published contract artifact
-     * (ADR-048), with no Java of its own. Amendment 1, shape 2.
-     */
-    FRONTEND_ONLY("frontend-only");
+    E2E("e2e");
 
     private final String cliValue;
 
@@ -43,16 +38,6 @@ public enum ProjectTopology {
      */
     public String cliValue() {
         return cliValue;
-    }
-
-    /**
-     * Returns whether the project carries a Maven backend.
-     *
-     * @return {@code true} for {@link #BACKEND_ONLY} and {@link #E2E}
-     * @since 0.10
-     */
-    public boolean hasBackend() {
-        return this != FRONTEND_ONLY;
     }
 
     /**

@@ -16,8 +16,8 @@
     <name>Exeris Tooling :: Initializr</name>
     <description>
         Writes a new Exeris project, as a directory or a ZIP archive, from one self-contained jar
-        (ADR-091 Amendment 5): a backend on exeris-app-parent and exeris-app-starter, a frontend that
-        runs @exeris/codegen-ts, or both. A tool, not an application dependency.
+        (ADR-091 Amendment 5): a backend on exeris-app-parent and exeris-app-starter, alone or with a
+        frontend that runs @exeris/codegen-ts on its metadata. A tool, not an application dependency.
     </description>
     <url>https://github.com/exeris-systems/exeris-tooling</url>
 

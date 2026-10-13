@@ -6,7 +6,6 @@ import eu.exeris.tooling.initializr.model.ProjectTopology;
 
 import java.nio.file.Path;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -16,17 +15,15 @@ import java.util.Set;
  * <p>Every argument is one of the switches below, a value switch written {@code --switch=value}.
  * An unknown switch, a positional argument, a switch given twice, a value switch without its value,
  * a flag with one, and a value the request does not accept are argument errors, so a run never
- * goes ahead with an option silently dropped. {@code --database}, {@code --entity},
- * {@code --package} and {@code --group-id} describe a backend and are argument errors with
- * {@code --topology=frontend-only}.
+ * goes ahead with an option silently dropped.
  *
  * <pre>
- * --topology=backend-only|e2e|frontend-only   default backend-only
+ * --topology=backend-only|e2e                default backend-only
  * --group-id=&lt;groupId&gt;                        default com.example
  * --artifact-id=&lt;artifactId&gt;                  default demo
  * --package=&lt;package&gt;                         default derived from the groupId and the artifactId
  * --name=&lt;text&gt;                               default the artifactId
- * --database=h2|postgresql                    default h2
+ * --database=postgresql|h2                    default postgresql
  * --entity=&lt;TypeName&gt;                         default Item
  * --output-dir=&lt;dir&gt;                          default ./&lt;artifactId&gt;
  * --zip=&lt;file&gt;                                write a ZIP archive instead of a directory
@@ -63,7 +60,6 @@ public record InitializrArgs(Action action, ProjectScaffoldRequest request, Path
     private static final Set<String> VALUE_SWITCHES =
             Set.of(TOPOLOGY, GROUP_ID, ARTIFACT_ID, PACKAGE, NAME, DATABASE, ENTITY, OUTPUT_DIR, ZIP);
     private static final Set<String> FLAGS = Set.of(FORCE, VERSION, HELP);
-    private static final List<String> BACKEND_SWITCHES = List.of(GROUP_ID, PACKAGE, DATABASE, ENTITY);
 
     /**
      * What a run of the command line does.
@@ -124,21 +120,13 @@ public record InitializrArgs(Action action, ProjectScaffoldRequest request, Path
         ProjectTopology topology = ProjectTopology.BACKEND_ONLY;
         if (values.containsKey(TOPOLOGY)) {
             topology = ProjectTopology.fromCliValue(values.get(TOPOLOGY)).orElseThrow(() ->
-                    new IllegalArgumentException(TOPOLOGY + " is one of backend-only, e2e, frontend-only: "
+                    new IllegalArgumentException(TOPOLOGY + " is one of backend-only, e2e: "
                             + values.get(TOPOLOGY)));
         }
-        if (!topology.hasBackend()) {
-            for (String backendOnly : BACKEND_SWITCHES) {
-                if (values.containsKey(backendOnly)) {
-                    throw new IllegalArgumentException(backendOnly + " describes a backend and is not read with "
-                            + TOPOLOGY + "=" + topology.cliValue());
-                }
-            }
-        }
-        DatabaseType database = DatabaseType.H2;
+        DatabaseType database = DatabaseType.POSTGRESQL;
         if (values.containsKey(DATABASE)) {
             database = DatabaseType.fromCliValue(values.get(DATABASE)).orElseThrow(() ->
-                    new IllegalArgumentException(DATABASE + " is one of h2, postgresql: " + values.get(DATABASE)));
+                    new IllegalArgumentException(DATABASE + " is one of postgresql, h2: " + values.get(DATABASE)));
         }
         if (values.containsKey(OUTPUT_DIR) && values.containsKey(ZIP)) {
             throw new IllegalArgumentException(OUTPUT_DIR + " and " + ZIP + " are alternatives; pass one");

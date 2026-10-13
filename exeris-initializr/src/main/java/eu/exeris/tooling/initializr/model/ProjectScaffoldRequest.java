@@ -23,9 +23,9 @@ import java.util.regex.Pattern;
  *                    derives it from {@code groupId} and {@code artifactId}
  * @param name        the project's display name, used as the README title and the POM description;
  *                    {@code null} uses {@code artifactId}
- * @param topology    which of the three application shapes to write
+ * @param topology    which application shape to write
  * @param database    which JDBC driver the backend declares and which connection its README
- *                    configures; read only when {@code topology} has a backend
+ *                    configures
  * @param entityName  the simple name of the starting {@code @ExerisDomain} entity, an upper-case
  *                    ASCII identifier; {@code null} uses {@value #DEFAULT_ENTITY}
  * @since 0.10

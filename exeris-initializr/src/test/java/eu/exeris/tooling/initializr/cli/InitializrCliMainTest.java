@@ -43,7 +43,7 @@ class InitializrCliMainTest {
         assertThat(target.resolve("backend/pom.xml")).content()
                 .contains("<version>" + ScaffoldVersions.bundled().tooling() + "</version>");
         assertThat(target.resolve("frontend/package.json")).exists();
-        assertThat(out()).contains("Wrote the e2e project shop (6 files) to " + target.toAbsolutePath());
+        assertThat(out()).contains("Wrote the e2e project shop (7 files) to " + target.toAbsolutePath());
         assertThat(err()).isEmpty();
     }
 
@@ -56,11 +56,11 @@ class InitializrCliMainTest {
     }
 
     @Test
-    @DisplayName("refuses a non-empty directory with EXT-GEN-3006 and exit 1, and writes into it with --force")
+    @DisplayName("refuses a non-empty directory with EXT-INIT-5002 and exit 1, and writes into it with --force")
     void refusesNonEmptyDirectory() throws IOException {
         Files.writeString(tmp.resolve("keep.txt"), "mine");
         assertThat(run("--output-dir=" + tmp)).isEqualTo(1);
-        assertThat(err()).startsWith("[Exeris] EXT-GEN-3006: ").contains("is not empty", "--force");
+        assertThat(err()).startsWith("[Exeris] EXT-INIT-5002: ").contains("is not empty", "--force");
         assertThat(tmp.resolve("pom.xml")).doesNotExist();
 
         assertThat(run("--output-dir=" + tmp, "--force")).isEqualTo(0);
@@ -69,18 +69,18 @@ class InitializrCliMainTest {
     }
 
     @Test
-    @DisplayName("reports a write that fails with EXT-GEN-3007 and exit 1")
+    @DisplayName("reports a write that fails with EXT-INIT-5003 and exit 1")
     void writeFails() throws IOException {
         Path blocker = Files.writeString(tmp.resolve("blocker"), "a file");
         assertThat(run("--zip=" + blocker.resolve("demo.zip"))).isEqualTo(1);
-        assertThat(err()).startsWith("[Exeris] EXT-GEN-3007: Writing ").contains("Exception");
+        assertThat(err()).startsWith("[Exeris] EXT-INIT-5003: Writing ").contains("Exception");
     }
 
     @Test
-    @DisplayName("refuses an invalid argument with EXT-GEN-3005, the usage, and exit 2")
+    @DisplayName("refuses an invalid argument with EXT-INIT-5001, the usage, and exit 2")
     void refusesArguments() {
         assertThat(run("--capabilities=audit-trail")).isEqualTo(2);
-        assertThat(err()).startsWith("[Exeris] EXT-GEN-3005: Unknown switch: --capabilities")
+        assertThat(err()).startsWith("[Exeris] EXT-INIT-5001: Unknown switch: --capabilities")
                 .contains("Usage: java -jar exeris-initializr-<version>.jar");
         assertThat(out()).isEmpty();
     }

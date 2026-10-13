@@ -66,13 +66,8 @@ public final class ProjectGenerator {
                 backend(request, BACKEND, context, files);
                 files.add(ScaffoldFile.text(FRONTEND + "package.json", template("frontend/package.json", context)));
             }
-            case FRONTEND_ONLY -> {
-                files.add(ScaffoldFile.text("README.md", template("readme/frontend-only.md", context)));
-                files.add(ScaffoldFile.text("package.json", template("frontend/package-frontend-only.json", context)));
-                files.add(ScaffoldFile.text("exeris-codegen.json", template("frontend/exeris-codegen.json", context)));
-            }
         }
-        if (request.topology().hasBackend() && request.database() == DatabaseType.POSTGRESQL) {
+        if (request.database() == DatabaseType.POSTGRESQL) {
             files.add(ScaffoldFile.text("docker-compose.yml", template("docker-compose.yml", context)));
         }
         return new ProjectTree(files);

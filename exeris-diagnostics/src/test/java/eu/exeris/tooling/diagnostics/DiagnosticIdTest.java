@@ -32,13 +32,13 @@ class DiagnosticIdTest {
     /** The regular expression ADR-095 and {@code docs/diagnostics.md} give consumers. */
     private static final Pattern CONSUMER = Pattern.compile("\\[Exeris\\] (EXT-[A-Z]+-\\d{4}): ");
 
-    private static final Map<String, Character> AREA_BLOCK = Map.of("PROC", '1', "PLUG", '2', "GEN", '3');
+    private static final Map<String, Character> AREA_BLOCK = Map.of("PROC", '1', "PLUG", '2', "GEN", '3', "INIT", '5');
 
     private static final Pattern TABLE_ROW = Pattern.compile("(?m)^\\|\\s*`(EXT-[A-Z]+-\\d{4})`\\s*\\|");
 
     private static final String RETIRED_HEADING = "## Retired identifiers";
 
-    private static final Pattern FORMAT = Pattern.compile("EXT-(PROC|PLUG|GEN)-\\d{4}");
+    private static final Pattern FORMAT = Pattern.compile("EXT-(PROC|PLUG|GEN|INIT)-\\d{4}");
 
     /**
      * Every identifier, pinned by constant. Adding a constant means adding it here; changing a
@@ -95,9 +95,9 @@ class DiagnosticIdTest {
         m.put(DiagnosticId.CLI_ARGUMENTS_INVALID, "EXT-GEN-3002");
         m.put(DiagnosticId.FIELD_TYPE_NOT_PERSISTABLE, "EXT-GEN-3003");
         m.put(DiagnosticId.CLI_CATALOGUE_UNREADABLE, "EXT-GEN-3004");
-        m.put(DiagnosticId.INITIALIZR_ARGUMENTS_INVALID, "EXT-GEN-3005");
-        m.put(DiagnosticId.INITIALIZR_TARGET_NOT_EMPTY, "EXT-GEN-3006");
-        m.put(DiagnosticId.INITIALIZR_WRITE_FAILED, "EXT-GEN-3007");
+        m.put(DiagnosticId.INITIALIZR_ARGUMENTS_INVALID, "EXT-INIT-5001");
+        m.put(DiagnosticId.INITIALIZR_TARGET_NOT_EMPTY, "EXT-INIT-5002");
+        m.put(DiagnosticId.INITIALIZR_WRITE_FAILED, "EXT-INIT-5003");
         m.put(DiagnosticId.NO_METADATA_FOUND, "EXT-GEN-3101");
         m.put(DiagnosticId.OPTIONAL_REQUIREMENT_UNSATISFIED, "EXT-GEN-3102");
         m.put(DiagnosticId.CAPABILITY_GRAPH_DEFERRED, "EXT-GEN-3103");
@@ -114,7 +114,7 @@ class DiagnosticIdTest {
 
     @ParameterizedTest(name = "{0}")
     @EnumSource(DiagnosticId.class)
-    @DisplayName("matches EXT-(PROC|PLUG|GEN)-dddd, with PROC in 1xxx, PLUG in 2xxx and GEN in 3xxx")
+    @DisplayName("matches EXT-(PROC|PLUG|GEN|INIT)-dddd, with PROC in 1xxx, PLUG in 2xxx, GEN in 3xxx and INIT in 5xxx")
     void formatAndArea(DiagnosticId id) {
         Matcher m = FORMAT.matcher(id.code());
         assertThat(m.matches()).as(id.code()).isTrue();
