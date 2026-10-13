@@ -626,3 +626,53 @@ describe('generateService — top-level convenience function', () => {
     expect(file!.path).toBe('services/order.service.ts');
   });
 });
+
+describe('ServiceGenerator — action parameters typed by an entity or an undescribed type', () => {
+  const gen = new ServiceGenerator();
+  const order = domain({
+    entityName: 'Order',
+    fields: [
+      field({ name: 'id', type: 'java.util.UUID' }),
+      field({ name: 'customer', type: 'com.shop.Customer' }),
+    ],
+    actions: [
+      { name: 'reassign', params: [{ name: 'to', type: 'com.shop.Customer' }, { name: 'part', type: 'com.shop.Component' }] },
+      { name: 'merge', params: [{ name: 'other', type: 'com.shop.Order' }, { name: 'fee', type: 'com.shop.Money' }] },
+      { name: 'follow', streaming: true, params: [{ name: 'by', type: 'com.shop.Watcher' }] },
+    ],
+  });
+  const status = { name: 'Priority', qualifiedName: 'com.shop.Priority', packageName: 'com.shop', values: [] };
+  const domains = [order, domain({ entityName: 'Customer' }), domain({ entityName: 'Component' }), domain({ entityName: 'Watcher' })];
+  const ctx: GeneratorContext = { ...createGeneratorContext({}, domains, [status]), enumsComplete: true };
+
+  it('types each parameter with the entity\'s read type and imports it, in name order', () => {
+    const content = gen.generate(order, ctx)!.content;
+    expect(content).toContain([
+      "import type { Order, OrderCreate, OrderUpdate } from '../types/order.types';",
+      "import type { ComponentModel } from '../types/component.types';",
+      "import type { Customer } from '../types/customer.types';",
+      '',
+    ].join('\n'));
+    expect(content).toContain('reassign(id: string, to: Customer, part: ComponentModel): Observable<Order> {');
+  });
+
+  it('imports neither the entity\'s own type twice nor a type only a streaming action or a field names', () => {
+    const content = gen.generate(order, ctx)!.content;
+    expect(content).toContain('merge(id: string, other: Order, fee: unknown): Observable<Order> {');
+    expect(content.match(/'\.\.\/types\/order\.types'/g)).toHaveLength(2);
+    expect(content).not.toContain('watcher.types');
+  });
+
+  it('with a complete enum list, imports a declared enum a parameter names, and no type named like one', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      actions: [{ name: 'triage', params: [{ name: 'p', type: 'com.shop.Priority' }, { name: 'mode', type: 'com.shop.ShippingMode' }] }],
+    }), ctx)!.content;
+    expect(content).toContain("import type { Priority } from '../types/enums';");
+    expect(content).toContain('triage(id: string, p: Priority, mode: unknown): Observable<Order> {');
+  });
+
+  it('through generateService with a scope, resolves as the generator does with a complete context', () => {
+    expect(generateService(order, ctx.config, { domains, enums: [status] })!.content).toBe(gen.generate(order, ctx)!.content);
+  });
+});

@@ -39,7 +39,7 @@ export type ContractCoverageEntry =
 
 export const CONTRACT_COVERAGE = {
   entityName: { state: 'READ' },
-  packageName: { state: 'JAVA_ONLY', reason: 'Java package of the emitted classes; TS paths derive from entityName.' },
+  packageName: { state: 'READ' },
   tableName: { state: 'JAVA_ONLY', reason: 'SQL table name for the DDL and repository statements.' },
   displayName: { state: 'READ' },
   pluralName: { state: 'READ' },

@@ -482,3 +482,22 @@ describe('DslMapper.mapType — the smaller integer types', () => {
     expect(DslMapper.mapType(type)).toMatchObject({ tsType, zodType });
   });
 });
+
+describe('DslMapper.mapType — the resolver of unmapped types', () => {
+  const resolve = (javaType: string) => (javaType === 'com.x.Money' ? { tsType: 'unknown', zodType: 'z.unknown()' } : undefined);
+
+  it('is asked for each unmapped type it reaches, inside collections, arrays, maps and optionals too', () => {
+    const asked: string[] = [];
+    const record = (javaType: string) => { asked.push(javaType); return undefined; };
+    for (const type of ['com.x.A', 'java.util.List<com.x.B>', 'com.x.C[]', 'java.util.Map<java.lang.String,com.x.D>',
+      'java.util.Optional<com.x.E>', 'com.x.Page<com.x.F>', 'java.lang.String', 'java.util.List<java.util.UUID>']) {
+      DslMapper.mapType(type, record);
+    }
+    expect(asked).toEqual(['com.x.A', 'com.x.B', 'com.x.C', 'com.x.D', 'com.x.E', 'com.x.Page<com.x.F>']);
+  });
+
+  it('decides the TS and Zod types of what it answers, and leaves the fallback for what it does not', () => {
+    expect(DslMapper.mapType('java.util.List<com.x.Money>', resolve)).toMatchObject({ tsType: 'unknown[]', zodType: 'z.array(z.unknown())' });
+    expect(DslMapper.mapType('com.x.Other', resolve)).toEqual(DslMapper.mapType('com.x.Other'));
+  });
+});

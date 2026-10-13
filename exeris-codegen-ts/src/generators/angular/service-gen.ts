@@ -13,34 +13,16 @@ import type { BackendType } from '../../core/backend-strategy.js';
 import { enumTypeOf } from './field-render.js';
 import { filterProperties, sortableProperties, type ListQueryProperty } from './list-query.js';
 import { fileHeaderLines } from '../file-header.js';
+import {
+  entityTypeImport,
+  fieldEnumImports,
+  mapScopedType,
+  typeImports,
+  typeScopeOf,
+  type AppTypes,
+  type TypeScope,
+} from '../../core/type-references.js';
 
-
-// Java types that map to a built-in TS type and therefore never need an enum
-// import. Hoisted to a module constant so enum detection (run per field AND per
-// action param — T20a) doesn't reallocate the set on every type check.
-const KNOWN_JAVA_TYPES = new Set([
-  'String', 'java.lang.String',
-  'Integer', 'java.lang.Integer', 'int',
-  'Long', 'java.lang.Long', 'long',
-  'Double', 'java.lang.Double', 'double',
-  'Float', 'java.lang.Float', 'float',
-  'Short', 'java.lang.Short', 'short',
-  'Byte', 'java.lang.Byte', 'byte',
-  'Boolean', 'java.lang.Boolean', 'boolean',
-  'BigDecimal', 'java.math.BigDecimal',
-  'BigInteger', 'java.math.BigInteger',
-  'UUID', 'java.util.UUID',
-  'Instant', 'java.time.Instant',
-  'LocalDate', 'java.time.LocalDate',
-  'LocalDateTime', 'java.time.LocalDateTime',
-  'LocalTime', 'java.time.LocalTime',
-  'ZonedDateTime', 'java.time.ZonedDateTime',
-  'OffsetDateTime', 'java.time.OffsetDateTime',
-  'Duration', 'java.time.Duration',
-  'Period', 'java.time.Period',
-  'Date', 'java.util.Date',
-  'byte[]', 'Object', 'java.lang.Object',
-]);
 
 
 export { GeneratedFile };
@@ -115,7 +97,8 @@ export class ServiceGenerator implements CodeGenerator {
     const apiPath = serviceApiPath(metadata);
 
     // Collect enum types for imports (fields + action params — T20a)
-    const enumTypes = this.collectEnumTypes(metadata);
+    const scope = typeScopeOf(context);
+    const enumTypes = this.collectEnumTypes(metadata, scope);
 
     // The list route's equality filters and sort keys (ADR-096): exactly what the server reads.
     const filterableFields = filterProperties(metadata, (field) => enumTypeOf(field, context.enums ?? []) !== undefined)
@@ -127,7 +110,13 @@ export class ServiceGenerator implements CodeGenerator {
     // aggregate — so the client method takes the entity id and returns the entity.
     // A streaming action has no respond-once route: the kernel serves that path as a
     // stream only, and its client is the action stream client.
-    const actions = (metadata.actions ?? []).filter((action) => !action.streaming).map((action) => ({
+    const servedActions = (metadata.actions ?? []).filter((action) => !action.streaming);
+    // The entities an action parameter is typed by, which the method signatures name; the entity's
+    // own type is imported already.
+    const entityImports = typeImports(servedActions.flatMap((action) => (action.params ?? []).map((p) => p.type)), scope)
+      .entities.filter((entity) => entity.entityName !== entityName)
+      .map((entity) => entityTypeImport(entity, '../types'));
+    const actions = servedActions.map((action) => ({
       name: action.name,
       description: action.description ?? `Execute ${action.name} action`,
       // methodName: valid camelCase JS identifier (kebab/snake action names would
@@ -137,7 +126,7 @@ export class ServiceGenerator implements CodeGenerator {
       hasParams: action.params && action.params.length > 0,
       params: (action.params ?? []).map((p) => ({
         name: p.name,
-        tsType: DslMapper.mapType(p.type).tsType,
+        tsType: mapScopedType(p.type, scope).tsType,
       })),
     }));
 
@@ -155,11 +144,12 @@ export class ServiceGenerator implements CodeGenerator {
       actions,
       systemFields,
       enumTypes,
+      entityImports,
     });
   }
 
   private renderService(data: Record<string, unknown>): string {
-    const { entityName, apiBasePath, apiPath, softDelete, filterableFields, sortFields, actions, enumTypes } = data as {
+    const { entityName, apiBasePath, apiPath, softDelete, filterableFields, sortFields, actions, enumTypes, entityImports } = data as {
       entityName: string;
       apiBasePath: string;
       apiPath: string;
@@ -170,6 +160,7 @@ export class ServiceGenerator implements CodeGenerator {
       actions: Array<{ name: string; description: string; methodName: string; kebabName: string; hasParams: boolean; params: Array<{ name: string; tsType: string }> }>;
       systemFields: string[];
       enumTypes: string[];
+      entityImports: string[];
     };
 
     const modelName = modelTypeName(entityName);
@@ -189,9 +180,9 @@ export class ServiceGenerator implements CodeGenerator {
 
     // Add enum imports if needed
     if (enumTypes && enumTypes.length > 0) {
-      const typeImports = enumTypes.join(', ');
-      lines.push(`import type { ${typeImports} } from '../types/enums';`);
+      lines.push(`import type { ${enumTypes.join(', ')} } from '../types/enums';`);
     }
+    lines.push(...entityImports);
     lines.push(``);
 
     // Re-export types for convenience
@@ -352,86 +343,35 @@ export class ServiceGenerator implements CodeGenerator {
   }
 
   /**
-   * Collects enum type names from fields.
+   * The enums the service imports: those of the fields (`fieldEnumImports`), then those of the
+   * served actions' parameters. A parameter carries no `enumType`, so its type alone decides.
    */
-  private collectEnumTypes(metadata: DomainMetadata): string[] {
-    const enumTypes = new Set<string>();
-
-    for (const field of metadata.fields) {
-      const detected = this.detectEnumType(field.type, field.enumType);
-      if (detected) {
-        enumTypes.add(detected);
-      }
-    }
-
-    // T20a: an @Action param can itself be a domain enum. The generated service
-    // method references the enum in its signature, so it must be imported too —
-    // otherwise the emitted *.service.ts fails to compile (TS2304). Params carry
-    // no `enumType` hint (ActionParamMetadata lacks it), so detection here relies
-    // on the same name heuristic used for hint-less fields.
+  private collectEnumTypes(metadata: DomainMetadata, scope: TypeScope): string[] {
+    const enumTypes = new Set(fieldEnumImports(metadata.fields, scope));
     for (const action of metadata.actions ?? []) {
       if (action.streaming) {
         continue;
       }
-      for (const param of action.params ?? []) {
-        const detected = this.detectEnumType(param.type);
-        if (detected) {
-          enumTypes.add(detected);
-        }
+      for (const name of typeImports((action.params ?? []).map((p) => p.type), scope).enums) {
+        enumTypes.add(name);
       }
     }
-
     return [...enumTypes];
-  }
-
-  /**
-   * Decides whether a single Java type denotes a domain enum needing an import,
-   * returning its simple name (or null). When `enumHint` is present
-   * (fields carry `enumType`) it is authoritative; otherwise a
-   * conservative name heuristic is applied — the only signal available for
-   * action params, which have no enum hint.
-   */
-  private detectEnumType(javaType: string, enumHint?: string): string | null {
-    if (enumHint) {
-      return enumHint.includes('.')
-        ? enumHint.substring(enumHint.lastIndexOf('.') + 1)
-        : enumHint;
-    }
-
-    if (KNOWN_JAVA_TYPES.has(javaType) || javaType.includes('<') || javaType.endsWith('[]')) {
-      return null;
-    }
-
-    const simpleName = javaType.includes('.')
-      ? javaType.substring(javaType.lastIndexOf('.') + 1)
-      : javaType;
-
-    // Defensive, and currently unreachable: every non-primitive entry in KNOWN_JAVA_TYPES carries
-    // both its simple name and its FQN, so an FQN whose simple name is known is caught by the exact
-    // match above. It stays because the invariant is a property of that set, not of this code — add
-    // one simple-name-only entry and this becomes the arm that keeps an emitted import from naming
-    // an enum that does not exist. That is also why it shows as an uncovered branch.
-    if (KNOWN_JAVA_TYPES.has(simpleName)) {
-      return null;
-    }
-
-    if (/^[A-Z][a-zA-Z0-9]*$/.test(simpleName)) {
-      if (simpleName.endsWith('Role') || simpleName.endsWith('Status') ||
-          simpleName.endsWith('Type') || simpleName.endsWith('Plan') ||
-          simpleName.endsWith('State') || simpleName.endsWith('Level') ||
-          simpleName.endsWith('Kind') || simpleName.endsWith('Mode') ||
-          simpleName.endsWith('Category') || javaType.includes('.domain.')) {
-        return simpleName;
-      }
-    }
-
-    return null;
   }
 }
 
-export function generateService(metadata: DomainMetadata, config: GeneratorConfig): GeneratedFile | null {
+/**
+ * The entity's service. `scope` is what its types resolve against, as for `generateTypes`.
+ */
+export function generateService(
+  metadata: DomainMetadata,
+  config: GeneratorConfig,
+  scope?: AppTypes,
+): GeneratedFile | null {
   const generator = new ServiceGenerator();
-  const context: GeneratorContext = { config, backend: config.backend ?? 'KERNEL', allDomains: [metadata], enums: [] };
+  const context: GeneratorContext = scope
+    ? { config, backend: config.backend ?? 'KERNEL', allDomains: scope.domains, enums: scope.enums, enumsComplete: true }
+    : { config, backend: config.backend ?? 'KERNEL', allDomains: [metadata], enums: [] };
   return generator.generate(metadata, context);
 }
 

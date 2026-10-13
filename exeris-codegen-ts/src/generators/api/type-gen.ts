@@ -14,6 +14,16 @@ import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/
 import type { BackendType } from '../../core/backend-strategy.js';
 import { filterProperties } from '../angular/list-query.js';
 import { fileHeaderLines } from '../file-header.js';
+import {
+  entityTypeImport,
+  fieldEnumImports,
+  isUndescribedValue,
+  mapScopedType,
+  typeImports,
+  typeScopeOf,
+  type AppTypes,
+  type TypeScope,
+} from '../../core/type-references.js';
 
 export { GeneratedFile };
 
@@ -69,9 +79,11 @@ export class TypeGenerator implements CodeGenerator {
 
   private generateInterface(metadata: DomainMetadata, context: GeneratorContext): string {
     const interfaceName = modelTypeName(metadata.entityName);
+    const scope = typeScopeOf(context);
 
     // Collect enum types used in fields
-    const enumTypes = collectEnumTypes(metadata.fields);
+    const enumTypes = collectEnumTypes(metadata.fields, scope);
+    const entityTypes = referencedEntities(metadata, scope);
 
     const lines: string[] = [
       ...fileHeaderLines({ title: `${metadata.displayName ?? metadata.entityName} Interface` }),
@@ -81,14 +93,19 @@ export class TypeGenerator implements CodeGenerator {
     // Add enum imports if needed
     if (enumTypes.length > 0) {
       lines.push(`import { ${enumTypes.join(', ')} } from './enums';`);
+    }
+    for (const entity of entityTypes) {
+      lines.push(entityTypeImport(entity, '.'));
+    }
+    if (enumTypes.length > 0 || entityTypes.length > 0) {
       lines.push(``);
     }
 
     // Main interface
     lines.push(`export interface ${interfaceName} {`);
     for (const field of metadata.fields) {
-      const mapping = DslMapper.mapType(field.type);
-      const optional = !field.required ? '?' : '';
+      const mapping = mapScopedType(field.type, scope);
+      const optional = !field.required || isUndescribedValue(field.type, scope) ? '?' : '';
       const comment = field.description ? ` // ${field.description}` : '';
       lines.push(`  ${field.name}${optional}: ${mapping.tsType};${comment}`);
     }
@@ -100,8 +117,8 @@ export class TypeGenerator implements CodeGenerator {
 
     lines.push(`export interface ${interfaceName}Create {`);
     for (const field of createFields) {
-      const mapping = DslMapper.mapType(field.type);
-      const optional = !field.required ? '?' : '';
+      const mapping = mapScopedType(field.type, scope);
+      const optional = !field.required || isUndescribedValue(field.type, scope) ? '?' : '';
       lines.push(`  ${field.name}${optional}: ${mapping.tsType};`);
     }
     lines.push(`}`);
@@ -141,13 +158,17 @@ export class TypeGenerator implements CodeGenerator {
     return lines.join('\n');
   }
 
-  private generateZodSchema(metadata: DomainMetadata, _context: GeneratorContext): GeneratedFile {
+  private generateZodSchema(metadata: DomainMetadata, context: GeneratorContext): GeneratedFile {
     const interfaceName = modelTypeName(metadata.entityName);
     const kebabName = DslMapper.toKebabCase(metadata.entityName);
+    const scope = typeScopeOf(context);
 
     // Collect enum types used in fields
-    const enumTypes = collectEnumTypes(metadata.fields);
+    const enumTypes = collectEnumTypes(metadata.fields, scope);
     const enumSchemaImports = enumTypes.map(e => `${e}Schema`);
+    // A referenced entity's schema is a lazy reference typed by the entity's read type, so the
+    // module imports that type, and the schema of every entity but itself.
+    const entityTypes = referencedEntities(metadata, scope, true);
 
     const lines: string[] = [
       ...fileHeaderLines({ title: `${metadata.displayName ?? metadata.entityName} Zod Schemas` }),
@@ -159,12 +180,18 @@ export class TypeGenerator implements CodeGenerator {
     if (enumSchemaImports.length > 0) {
       lines.push(`import { ${enumSchemaImports.join(', ')} } from '../types/enums';`);
     }
+    for (const entity of entityTypes) {
+      lines.push(entityTypeImport(entity, '../types'));
+    }
+    for (const entity of entityTypes.filter((e) => e.entityName !== metadata.entityName)) {
+      lines.push(`import { ${modelTypeName(entity.entityName)}Schema } from './${DslMapper.toKebabCase(entity.entityName)}.schema';`);
+    }
     lines.push(``);
 
     // Main schema
     lines.push(`export const ${interfaceName}Schema = z.object({`);
     for (const field of metadata.fields) {
-      const zodType = buildZodType(field);
+      const zodType = buildZodType(field, scope);
       lines.push(`  ${field.name}: ${zodType},`);
     }
     lines.push(...undeclaredReadSchemaMembers(metadata));
@@ -225,8 +252,8 @@ export class TypeGenerator implements CodeGenerator {
  * metadata declares. Shared with the peer emitter (T42) so a peer's schema and this app's
  * own are produced by one implementation — a second copy is a parity bug waiting to happen.
  */
-export function buildZodType(field: FieldMetadata): string {
-  const baseMapping = DslMapper.mapType(field.type);
+export function buildZodType(field: FieldMetadata, scope?: TypeScope): string {
+  const baseMapping = scope ? mapScopedType(field.type, scope) : DslMapper.mapType(field.type);
   // A boxed type maps to `….nullable()`. Zod's nullable wrapper has no `min` / `max`, so the
   // constraints go on the inner schema and the wrapper is put back after them.
   const NULLABLE = '.nullable()';
@@ -477,84 +504,21 @@ export function updateSchemaDeclaration(typeName: string, metadata: DomainMetada
 }
 
 /**
- * Collects enum type names from fields that reference enums.
- * Detects enum types by checking if the field type is not a known Java type.
+ * The simple names of the enums `fields` reference, the names a module imports from the enum
+ * module: a field's `enumType`, else every enum its type reaches (`fieldEnumImports`). Without a
+ * scope, or with one that holds no enum list, a type is taken for an enum by its name.
  */
-export function collectEnumTypes(fields: FieldMetadata[]): string[] {
-  const enumTypes = new Set<string>();
+export function collectEnumTypes(fields: FieldMetadata[], scope: TypeScope = { domains: [] }): string[] {
+  return fieldEnumImports(fields, scope);
+}
 
-  // Known Java types that should NOT be treated as enums
-  const knownJavaTypes = new Set([
-    'String', 'java.lang.String',
-    'Integer', 'java.lang.Integer', 'int',
-    'Long', 'java.lang.Long', 'long',
-    'Double', 'java.lang.Double', 'double',
-    'Float', 'java.lang.Float', 'float',
-    'Short', 'java.lang.Short', 'short',
-    'Byte', 'java.lang.Byte', 'byte',
-    'Boolean', 'java.lang.Boolean', 'boolean',
-    'BigDecimal', 'java.math.BigDecimal',
-    'BigInteger', 'java.math.BigInteger',
-    'UUID', 'java.util.UUID',
-    'Instant', 'java.time.Instant',
-    'LocalDate', 'java.time.LocalDate',
-    'LocalDateTime', 'java.time.LocalDateTime',
-    'LocalTime', 'java.time.LocalTime',
-    'ZonedDateTime', 'java.time.ZonedDateTime',
-    'OffsetDateTime', 'java.time.OffsetDateTime',
-    'Duration', 'java.time.Duration',
-    'Period', 'java.time.Period',
-    'Date', 'java.util.Date',
-    'byte[]', 'Object', 'java.lang.Object',
-  ]);
-
-  for (const field of fields) {
-    const javaType = field.type;
-
-    // Check if field has explicit enumType metadata
-    if (field.enumType) {
-      const simpleName = field.enumType.includes('.')
-        ? field.enumType.substring(field.enumType.lastIndexOf('.') + 1)
-        : field.enumType;
-      enumTypes.add(simpleName);
-      continue;
-    }
-
-    // Skip known Java types
-    if (knownJavaTypes.has(javaType)) {
-      continue;
-    }
-
-    // Skip generics (List, Map, Set, etc.)
-    if (javaType.includes('<') || javaType.endsWith('[]')) {
-      continue;
-    }
-
-    // Extract simple name from qualified name
-    const simpleName = javaType.includes('.')
-      ? javaType.substring(javaType.lastIndexOf('.') + 1)
-      : javaType;
-
-    // Skip if simple name is a known type
-    if (knownJavaTypes.has(simpleName)) {
-      continue;
-    }
-
-    // If it's a PascalCase name that's not a known type, it's likely an enum or entity
-    // For now, we assume types ending with common enum suffixes or in "domain" package are enums
-    if (/^[A-Z][a-zA-Z0-9]*$/.test(simpleName)) {
-      // Check if it looks like an enum (typically short names or ends with Role, Status, Type, Plan, etc.)
-      if (simpleName.endsWith('Role') || simpleName.endsWith('Status') ||
-          simpleName.endsWith('Type') || simpleName.endsWith('Plan') ||
-          simpleName.endsWith('State') || simpleName.endsWith('Level') ||
-          simpleName.endsWith('Kind') || simpleName.endsWith('Mode') ||
-          simpleName.endsWith('Category') || javaType.includes('.domain.')) {
-        enumTypes.add(simpleName);
-      }
-    }
-  }
-
-  return [...enumTypes];
+/**
+ * The entities other than `metadata` itself that its fields' types reference, in code-unit order of
+ * their names; with `includeSelf`, the entity itself too when a field references it.
+ */
+export function referencedEntities(metadata: DomainMetadata, scope: TypeScope, includeSelf = false): DomainMetadata[] {
+  return typeImports(metadata.fields.map((f) => f.type), scope).entities
+    .filter((entity) => includeSelf || entity.entityName !== metadata.entityName);
 }
 
 /**
@@ -589,9 +553,20 @@ export function createSchemaDeclaration(typeName: string, metadata: DomainMetada
   ].join('\n');
 }
 
-export function generateTypes(metadata: DomainMetadata, config: GeneratorConfig): GeneratedFile[] {
+/**
+ * The entity's type module. `scope` is what its field types resolve against: the app's entities and
+ * every enum its enum module declares. Without it no other entity is known and a type is taken for
+ * an enum by its name.
+ */
+export function generateTypes(
+  metadata: DomainMetadata,
+  config: GeneratorConfig,
+  scope?: AppTypes,
+): GeneratedFile[] {
   const generator = new TypeGenerator();
-  const context: GeneratorContext = { config, backend: config.backend ?? 'KERNEL', allDomains: [metadata], enums: [] };
+  const context: GeneratorContext = scope
+    ? { config, backend: config.backend ?? 'KERNEL', allDomains: scope.domains, enums: scope.enums, enumsComplete: true }
+    : { config, backend: config.backend ?? 'KERNEL', allDomains: [metadata], enums: [] };
   const file = generator.generate(metadata, context);
   return file ? [file] : [];
 }

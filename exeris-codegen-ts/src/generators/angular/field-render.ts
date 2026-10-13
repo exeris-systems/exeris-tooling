@@ -33,6 +33,7 @@ import { DslMapper } from '../../models/dsl-mapper.js';
 import { viewSystemFieldNames } from '../api/type-gen.js';
 import { foreignKeyLinks, foreignKeyPickers, type ForeignKeyPicker } from './relationship-links.js';
 import { filterProperties, sortableProperties, type ListQueryProperty } from './list-query.js';
+import { referencesNonScalar } from '../../core/type-references.js';
 
 /**
  * The per-field render facet from `@View`, the second input of the model.
@@ -510,14 +511,23 @@ function isCollectionType(type: string): boolean {
 }
 
 /**
+ * A field whose DTO value is another entity, a value the metadata does not describe (`unknown`), or
+ * an optional or collection of one. No control holds such a value, so the form offers none, as for
+ * a collection.
+ */
+function isObjectValued(field: FieldMetadata, enums: readonly KnownEnum[]): boolean {
+  return enumTypeOf(field, enums) === undefined && referencesNonScalar(field.type, { domains: [], enums });
+}
+
+/**
  * A field neither form offers (`inCreate` and `inUpdate` both `false`) has no control, and a field
  * only the edit form offers (`inCreate = false`) is a control. A computed field's read-only input
  * renders in both modes, so a computed field the create form leaves out has none.
  */
-function formPlacement(field: FieldMetadata, system: boolean): FormPlacement {
+function formPlacement(field: FieldMetadata, system: boolean, enums: readonly KnownEnum[]): FormPlacement {
   if (LIFECYCLE_FIELDS.has(field.name) || system) return 'none';
   if (field.inCreate === false && (field.inUpdate === false || field.computed)) return 'none';
-  if (isCollectionType(field.type)) return 'none';
+  if (isCollectionType(field.type) || isObjectValued(field, enums)) return 'none';
   if (field.computed) return 'computed';
   if (field.hidden === true || field.readOnly === true) return 'none';
   return 'control';
@@ -537,7 +547,7 @@ function formRender(
   const inputType = formInputType(field, value);
   const enumType = formEnumType(field, enums);
   return {
-    placement: formPlacement(field, system),
+    placement: formPlacement(field, system, enums),
     label: field.displayName ?? toTitleCase(field.name),
     control: enumType ? 'select' : picker ? 'picker' : inputType === 'checkbox' ? 'checkbox' : 'input',
     inputType,

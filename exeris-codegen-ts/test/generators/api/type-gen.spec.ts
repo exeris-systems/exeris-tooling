@@ -933,3 +933,112 @@ describe('buildZodType — numeric bounds on a boxed type', () => {
     expect(count.safeParse(4).success).toBe(false);
   });
 });
+
+describe('TypeGenerator — fields typed by another entity or by an undescribed type', () => {
+  const gen = new TypeGenerator();
+  const order = domain({
+    entityName: 'Order',
+    fields: [
+      field({ name: 'id', type: 'java.util.UUID' }),
+      field({ name: 'customer', type: 'com.shop.Customer', required: true }),
+      field({ name: 'lines', type: 'java.util.List<com.shop.Line>' }),
+      field({ name: 'part', type: 'com.shop.Component' }),
+      field({ name: 'previous', type: 'com.shop.Order' }),
+      field({ name: 'total', type: 'com.shop.Money' }),
+      field({ name: 'status', type: 'com.shop.OrderStatus' }),
+    ],
+  });
+  const customer = domain({ entityName: 'Customer', fields: [field({ name: 'lastOrder', type: 'com.shop.Order' })] });
+  const line = domain({ entityName: 'Line', fields: [field({ name: 'sku', type: 'String' })] });
+  const component = domain({ entityName: 'Component', fields: [field({ name: 'label', type: 'String' })] });
+  const status = { name: 'OrderStatus', qualifiedName: 'com.shop.OrderStatus', packageName: 'com.shop', values: [] };
+  const domains = [order, customer, line, component];
+  const ctx: GeneratorContext = { ...createGeneratorContext({ generateZod: true }, domains, [status]), enumsComplete: true };
+
+  it('types the field with the entity\'s read type and imports it, once per entity, in name order', () => {
+    const content = gen.generate(order, ctx)!.content;
+    expect(content).toContain([
+      "import { OrderStatus } from './enums';",
+      "import type { ComponentModel } from './component.types';",
+      "import type { Customer } from './customer.types';",
+      "import type { Line } from './line.types';",
+      '',
+      'export interface Order {',
+    ].join('\n'));
+    expect(content).toContain('  customer: Customer;');
+    expect(content).toContain('  lines?: Line[];');
+    expect(content).toContain('  part?: ComponentModel;');
+    expect(content).toContain('  previous?: Order;');
+    expect(content).not.toContain("from './order.types'");
+  });
+
+  it('types a value the metadata does not describe as unknown and declares nothing for it', () => {
+    const content = gen.generate(order, ctx)!.content;
+    expect(content).toContain('  total?: unknown;');
+    expect(content).not.toContain('Money');
+  });
+
+  it('declares a required undescribed value optional, as the schema infers it, and keeps a required JsonNode required', () => {
+    const rated = domain({ entityName: 'Rated', fields: [
+      field({ name: 'rating', type: 'com.shop.Rating', required: true }),
+      field({ name: 'raw', type: 'JsonNode', required: true }),
+    ] });
+    const content = gen.generate(rated, ctx)!.content;
+    expect(content).toContain('export interface Rated {\n  rating?: unknown;\n  raw: unknown;\n}');
+    expect(content).toContain('export interface RatedCreate {\n  rating?: unknown;\n  raw: unknown;\n}');
+  });
+
+  it('references the entity\'s schema lazily, typed by its read type, and imports both', () => {
+    const schema = gen.generateAggregate(domains, ctx).find((f) => f.path === 'schemas/order.schema.ts')!.content;
+    expect(schema).toContain([
+      "import { z } from 'zod';",
+      "import { OrderStatusSchema } from '../types/enums';",
+      "import type { ComponentModel } from '../types/component.types';",
+      "import type { Customer } from '../types/customer.types';",
+      "import type { Line } from '../types/line.types';",
+      "import type { Order } from '../types/order.types';",
+      "import { ComponentModelSchema } from './component.schema';",
+      "import { CustomerSchema } from './customer.schema';",
+      "import { LineSchema } from './line.schema';",
+      '',
+    ].join('\n'));
+    expect(schema).toContain('  customer: z.lazy((): z.ZodType<Customer> => CustomerSchema),');
+    expect(schema).toContain('  lines: z.array(z.lazy((): z.ZodType<Line> => LineSchema)).optional(),');
+    expect(schema).toContain('  previous: z.lazy((): z.ZodType<Order> => OrderSchema).optional(),');
+    expect(schema).toContain('  total: z.unknown().optional(),');
+    expect(schema).not.toContain("from './order.schema'");
+  });
+
+  it('gives two entities that reference each other each the other\'s import, and neither a declaration of the other', () => {
+    const files = gen.generateAggregate(domains, ctx);
+    const customerSchema = files.find((f) => f.path === 'schemas/customer.schema.ts')!.content;
+    expect(customerSchema).toContain("import { OrderSchema } from './order.schema';");
+    expect(customerSchema).toContain('  lastOrder: z.lazy((): z.ZodType<Order> => OrderSchema).optional(),');
+    expect(customerSchema).not.toMatch(/export (const|type) Order\b/);
+    expect(gen.generate(customer, ctx)!.content).toContain("import type { Order } from './order.types';");
+  });
+
+  it('with a complete enum list, types a type named like an enum it does not declare as unknown', () => {
+    const paid = domain({ entityName: 'Payment', fields: [field({ name: 'mode', type: 'com.shop.PaymentMode' })] });
+    const content = gen.generate(paid, ctx)!.content;
+    expect(content).toContain('  mode?: unknown;');
+    expect(content).not.toContain("from './enums'");
+  });
+
+  it('without the app\'s entities and enums, keeps the enum rule by name', () => {
+    const [file] = generateTypes(domain({ entityName: 'Payment', fields: [field({ name: 'mode', type: 'com.shop.PaymentMode' })] }), CTX.config);
+    expect(file.content).toContain("import { PaymentMode } from './enums';");
+    expect(file.content).toContain('  mode?: PaymentMode;');
+  });
+
+  it('through generateTypes with a scope, resolves as the generator does with a complete context', () => {
+    const [file] = generateTypes(order, ctx.config, { domains, enums: [status] });
+    expect(file.content).toBe(gen.generate(order, ctx)!.content);
+  });
+
+  it('builds the Zod expression without a scope by the mapper\'s own fallback', () => {
+    const f = field({ name: 'customer', type: 'com.shop.Customer' });
+    expect(buildZodType(f)).toBe('z.lazy(() => CustomerSchema).optional()');
+    expect(buildZodType(f, { domains })).toBe('z.lazy((): z.ZodType<Customer> => CustomerSchema).optional()');
+  });
+});
