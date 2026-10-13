@@ -90,6 +90,7 @@
         <module>exeris-codegen-java</module>
         <!-- ADR-097: the shaded, launchable jar of exeris-codegen-java. -->
         <module>exeris-codegen-cli</module>
+        <module>exeris-initializr</module>
         <module>exeris-codegen-maven-plugin</module>
         <module>exeris-e2e-tests</module>
 

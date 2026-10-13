@@ -196,6 +196,11 @@
                 <artifactId>exeris-codegen-cli</artifactId>
                 <version>${project.version}</version>
             </dependency>
+            <dependency>
+                <groupId>eu.exeris</groupId>
+                <artifactId>exeris-initializr</artifactId>
+                <version>${project.version}</version>
+            </dependency>
 
             <!-- Google Auto Service (annotation processor self-registration) -->
             <dependency>
