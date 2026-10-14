@@ -118,5 +118,8 @@ public record ProjectScaffoldRequest(String groupId, String artifactId, String p
         if (!MAVEN_ID.matcher(value).matches()) {
             throw new IllegalArgumentException(what + " may hold only letters, digits, '_', '.' and '-': " + value);
         }
+        if (value.chars().allMatch(c -> c == '.')) {
+            throw new IllegalArgumentException(what + " must hold more than dots, which name a directory: " + value);
+        }
     }
 }

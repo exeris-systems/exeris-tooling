@@ -91,10 +91,10 @@ public record ScaffoldFile(String path, byte[] content, boolean executable) {
      */
     @Override
     public boolean equals(Object other) {
-        return other instanceof ScaffoldFile that
-                && path.equals(that.path)
-                && executable == that.executable
-                && Arrays.equals(content, that.content);
+        return other instanceof ScaffoldFile(String thatPath, byte[] thatContent, boolean thatExecutable)
+                && path.equals(thatPath)
+                && executable == thatExecutable
+                && Arrays.equals(content, thatContent);
     }
 
     /**

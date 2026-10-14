@@ -32,8 +32,20 @@ final class Names {
     /** A database name from an artifactId: lower-case letters, digits and {@code _}, starting with a letter. */
     static String databaseName(String artifactId) {
         String name = NOT_DATABASE_CHAR.matcher(artifactId.toLowerCase(Locale.ROOT)).replaceAll("_");
-        name = name.replaceAll("^_+|_+$", "");
+        name = stripUnderscores(name);
         return name.isEmpty() || !Character.isLetter(name.charAt(0)) ? "app_" + name : name;
+    }
+
+    private static String stripUnderscores(String text) {
+        int start = 0;
+        int end = text.length();
+        while (start < end && text.charAt(start) == '_') {
+            start++;
+        }
+        while (end > start && text.charAt(end - 1) == '_') {
+            end--;
+        }
+        return text.substring(start, end);
     }
 
     /** An npm package name from an artifactId, which holds only {@code [A-Za-z0-9_.-]}. */

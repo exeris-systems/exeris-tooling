@@ -80,22 +80,28 @@ public final class TemplateRenderer {
             cursor = close + CLOSE.length();
             char kind = tag.isEmpty() ? ' ' : tag.charAt(0);
             if (kind == '#' || kind == '^') {
-                String key = tag.substring(1).trim();
-                String end = OPEN + "/" + key + CLOSE;
-                int endAt = template.indexOf(end, cursor);
-                if (endAt < 0) {
-                    throw new IllegalArgumentException("section '" + key + "' has no " + end);
-                }
-                if (section(context, key) == (kind == '#')) {
-                    out.append(render(template.substring(cursor, endAt), context));
-                }
-                cursor = endAt + end.length();
+                cursor = renderSection(template, cursor, tag, kind == '#', context, out);
             } else if (kind == '/') {
                 throw new IllegalArgumentException("closing tag {{" + tag + "}} without its section");
             } else {
                 out.append(variable(context, tag));
             }
         }
+    }
+
+    /** Renders the section opened by {@code tag}; returns the offset after its closing tag. */
+    private static int renderSection(String template, int bodyStart, String tag, boolean keepWhenTrue,
+                                     Map<String, ?> context, StringBuilder out) {
+        String key = tag.substring(1).trim();
+        String end = OPEN + "/" + key + CLOSE;
+        int endAt = template.indexOf(end, bodyStart);
+        if (endAt < 0) {
+            throw new IllegalArgumentException("section '" + key + "' has no " + end);
+        }
+        if (section(context, key) == keepWhenTrue) {
+            out.append(render(template.substring(bodyStart, endAt), context));
+        }
+        return endAt + end.length();
     }
 
     private static boolean section(Map<String, ?> context, String key) {

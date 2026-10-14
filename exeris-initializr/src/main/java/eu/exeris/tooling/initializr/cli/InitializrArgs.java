@@ -52,14 +52,14 @@ public record InitializrArgs(Action action, ProjectScaffoldRequest request, Path
     private static final String DATABASE = "--database";
     private static final String ENTITY = "--entity";
     private static final String OUTPUT_DIR = "--output-dir";
-    private static final String ZIP = "--zip";
-    private static final String FORCE = "--force";
+    private static final String ZIP_FLAG = "--zip";
+    private static final String FORCE_FLAG = "--force";
     private static final String VERSION = "--version";
     private static final String HELP = "--help";
 
     private static final Set<String> VALUE_SWITCHES =
-            Set.of(TOPOLOGY, GROUP_ID, ARTIFACT_ID, PACKAGE, NAME, DATABASE, ENTITY, OUTPUT_DIR, ZIP);
-    private static final Set<String> FLAGS = Set.of(FORCE, VERSION, HELP);
+            Set.of(TOPOLOGY, GROUP_ID, ARTIFACT_ID, PACKAGE, NAME, DATABASE, ENTITY, OUTPUT_DIR, ZIP_FLAG);
+    private static final Set<String> FLAGS = Set.of(FORCE_FLAG, VERSION, HELP);
 
     /**
      * What a run of the command line does.
@@ -89,47 +89,16 @@ public record InitializrArgs(Action action, ProjectScaffoldRequest request, Path
     public static InitializrArgs parse(String[] args) {
         Map<String, String> values = new HashMap<>();
         for (String arg : args) {
-            int eq = arg.indexOf('=');
-            String name = eq < 0 ? arg : arg.substring(0, eq);
-            String value = eq < 0 ? null : arg.substring(eq + 1);
-            if (VALUE_SWITCHES.contains(name)) {
-                if (value == null || value.isEmpty()) {
-                    throw new IllegalArgumentException(name + " takes a value: " + name + "=<value>");
-                }
-            } else if (FLAGS.contains(name)) {
-                if (value != null) {
-                    throw new IllegalArgumentException(name + " takes no value");
-                }
-            } else {
-                throw new IllegalArgumentException(arg.startsWith("--")
-                        ? "Unknown switch: " + name
-                        : "Unexpected argument: " + arg + " (every argument is a --switch)");
-            }
-            if (values.putIfAbsent(name, value == null ? "" : value) != null) {
-                throw new IllegalArgumentException(name + " is given more than once");
-            }
+            record(values, arg);
         }
-
         if (values.containsKey(HELP)) {
             return new InitializrArgs(Action.HELP, null, null, null, false);
         }
         if (values.containsKey(VERSION)) {
             return new InitializrArgs(Action.VERSION, null, null, null, false);
         }
-
-        ProjectTopology topology = ProjectTopology.BACKEND_ONLY;
-        if (values.containsKey(TOPOLOGY)) {
-            topology = ProjectTopology.fromCliValue(values.get(TOPOLOGY)).orElseThrow(() ->
-                    new IllegalArgumentException(TOPOLOGY + " is one of backend-only, e2e: "
-                            + values.get(TOPOLOGY)));
-        }
-        DatabaseType database = DatabaseType.POSTGRESQL;
-        if (values.containsKey(DATABASE)) {
-            database = DatabaseType.fromCliValue(values.get(DATABASE)).orElseThrow(() ->
-                    new IllegalArgumentException(DATABASE + " is one of postgresql, h2: " + values.get(DATABASE)));
-        }
-        if (values.containsKey(OUTPUT_DIR) && values.containsKey(ZIP)) {
-            throw new IllegalArgumentException(OUTPUT_DIR + " and " + ZIP + " are alternatives; pass one");
+        if (values.containsKey(OUTPUT_DIR) && values.containsKey(ZIP_FLAG)) {
+            throw new IllegalArgumentException(OUTPUT_DIR + " and " + ZIP_FLAG + " are alternatives; pass one");
         }
 
         ProjectScaffoldRequest request = new ProjectScaffoldRequest(
@@ -137,11 +106,55 @@ public record InitializrArgs(Action action, ProjectScaffoldRequest request, Path
                 values.getOrDefault(ARTIFACT_ID, "demo"),
                 values.get(PACKAGE),
                 values.get(NAME),
-                topology,
-                database,
+                topology(values),
+                database(values),
                 values.get(ENTITY));
-        Path zip = values.containsKey(ZIP) ? Path.of(values.get(ZIP)) : null;
+        Path zip = values.containsKey(ZIP_FLAG) ? Path.of(values.get(ZIP_FLAG)) : null;
         Path outputDir = zip != null ? null : Path.of(values.getOrDefault(OUTPUT_DIR, request.artifactId()));
-        return new InitializrArgs(Action.GENERATE, request, outputDir, zip, values.containsKey(FORCE));
+        return new InitializrArgs(Action.GENERATE, request, outputDir, zip, values.containsKey(FORCE_FLAG));
+    }
+
+    private static void record(Map<String, String> values, String arg) {
+        int eq = arg.indexOf('=');
+        String name = eq < 0 ? arg : arg.substring(0, eq);
+        String value = eq < 0 ? null : arg.substring(eq + 1);
+        requireKnownShape(arg, name, value);
+        if (values.putIfAbsent(name, value == null ? "" : value) != null) {
+            throw new IllegalArgumentException(name + " is given more than once");
+        }
+    }
+
+    private static void requireKnownShape(String arg, String name, String value) {
+        if (VALUE_SWITCHES.contains(name)) {
+            if (value == null || value.isEmpty()) {
+                throw new IllegalArgumentException(name + " takes a value: " + name + "=<value>");
+            }
+        } else if (FLAGS.contains(name)) {
+            if (value != null) {
+                throw new IllegalArgumentException(name + " takes no value");
+            }
+        } else {
+            throw new IllegalArgumentException(arg.startsWith("--")
+                    ? "Unknown switch: " + name
+                    : "Unexpected argument: " + arg + " (every argument is a --switch)");
+        }
+    }
+
+    private static ProjectTopology topology(Map<String, String> values) {
+        String given = values.get(TOPOLOGY);
+        if (given == null) {
+            return ProjectTopology.BACKEND_ONLY;
+        }
+        return ProjectTopology.fromCliValue(given).orElseThrow(() ->
+                new IllegalArgumentException(TOPOLOGY + " is one of backend-only, e2e: " + given));
+    }
+
+    private static DatabaseType database(Map<String, String> values) {
+        String given = values.get(DATABASE);
+        if (given == null) {
+            return DatabaseType.POSTGRESQL;
+        }
+        return DatabaseType.fromCliValue(given).orElseThrow(() ->
+                new IllegalArgumentException(DATABASE + " is one of postgresql, h2: " + given));
     }
 }
