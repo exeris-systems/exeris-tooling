@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>eu.exeris</groupId>
+        <artifactId>exeris-tooling-parent</artifactId>
+        <version>0.10.0-SNAPSHOT</version>
+        <relativePath>../exeris-tooling-parent</relativePath>
+    </parent>
+
+    <artifactId>exeris-initializr</artifactId>
+    <packaging>jar</packaging>
+
+    <name>Exeris Tooling :: Initializr</name>
+    <description>
+        Writes a new Exeris project, as a directory or a ZIP archive, from one self-contained jar
+        (ADR-091 Amendment 5): a backend on exeris-app-parent and exeris-app-starter, alone or with a
+        frontend that runs @exeris/codegen-ts on its metadata. A tool, not an application dependency.
+    </description>
+    <url>https://github.com/exeris-systems/exeris-tooling</url>
+
+    <properties>
+        <!-- Lint enforced: a Checkstyle or PMD finding in this module's main sources fails the build;
+             the parent's default is warn-only. -->
+        <checkstyle.failOnViolation>true</checkstyle.failOnViolation>
+        <checkstyle.failsOnError>true</checkstyle.failsOnError>
+        <pmd.failOnViolation>true</pmd.failOnViolation>
+
+        <!-- The JDBC driver and test-library versions a generated project declares, written into
+             META-INF/exeris/initializr/versions.properties with the tooling version. H2, JUnit and
+             AssertJ are the versions exeris-tooling-bom builds and tests with;
+             ScaffoldVersionsTest fails when they differ. -->
+        <initializr.h2.version>2.3.232</initializr.h2.version>
+        <initializr.postgresql.version>42.7.13</initializr.postgresql.version>
+        <initializr.junit.version>5.11.4</initializr.junit.version>
+        <initializr.assertj.version>3.27.7</initializr.assertj.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-diagnostics</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <!-- Only the versions file is filtered; the templates are copied byte for byte. -->
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>META-INF/exeris/initializr/versions.properties</exclude>
+                </excludes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>META-INF/exeris/initializr/versions.properties</include>
+                </includes>
+            </resource>
+        </resources>
+
+        <plugins>
+            <!-- Shade replaces the module jar in place. Without forceCreation an incremental build
+                 keeps that shaded jar as "up to date" and shades it a second time. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <forceCreation>true</forceCreation>
+                </configuration>
+            </plugin>
+
+            <!-- The launchable jar, with the shade configuration exeris-codegen-cli uses (ADR-097
+                 obligation 10). The one bundled dependency, exeris-diagnostics, carries no licence
+                 or notice file of its own and no module descriptor. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.2</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals><goal>shade</goal></goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>eu.exeris.tooling.initializr.cli.InitializrCliMain</mainClass>
+                                    <manifestEntries>
+                                        <Implementation-Version>${project.version}</Implementation-Version>
+                                    </manifestEntries>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>module-info.class</exclude>
+                                        <exclude>META-INF/versions/*/module-info.class</exclude>
+                                    </excludes>
+                                </filter>
+                                <!-- The jar's manifest is this module's own. -->
+                                <filter>
+                                    <artifact>eu.exeris:exeris-diagnostics</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/MANIFEST.MF</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- The suite that runs the jar this module ships, as a separate process. The jar is
+                 named, not globbed out of target/, so a leftover from another version cannot be
+                 tested. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <includes>
+                        <include>**/*IT.java</include>
+                    </includes>
+                    <systemPropertyVariables>
+                        <exeris.initializr.jar>${project.build.directory}/${project.build.finalName}.jar</exeris.initializr.jar>
+                        <exeris.initializr.version>${project.version}</exeris.initializr.version>
+                    </systemPropertyVariables>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -4047,6 +4047,10 @@ enters only if its upstream half is final first.
       compared with CRLF folded to LF, and a replaced file that is CRLF on disk (a line ending, every LF
       preceded by CR) is written as CRLF; a mixed file is written as LF.
 - [x] The removals below.
+- [ ] **`exeris-initializr`** (ADR-091 Amendment 5; does not hold the cut): a launchable jar that writes
+      a new project on `exeris-app-parent` and `exeris-app-starter`, backend-only or e2e, PostgreSQL by
+      default, with the two-pass first build scripted, and two invoker fixtures that build what it
+      writes. Frontend-only waits on #391.
 
 **Not placed in a milestone**, because the next step belongs to another repository: C2
 (`@Encrypted` / `@RowLevelSecurity`, two asks on the kernel and the SDK) and `@SagaStep.parallel`

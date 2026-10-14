@@ -1,0 +1,18 @@
+## Build the backend
+
+The first build takes two passes, and `first-build.sh` runs them:
+
+```bash
+{{#e2e}}cd backend
+{{/e2e}}sh first-build.sh
+```
+
+It runs `mvn -Dexeris.codegen.skip=true compile`, then `mvn verify`. The annotation processor writes
+the entity metadata to `target/classes/exeris-metadata` during `compile`, and `compile` runs after
+`exeris:generate`. So the first pass writes the metadata with generation skipped, and the second
+generates the code and its tests from that metadata, compiles them and runs the tests. Do not run
+`mvn clean` between the passes: it deletes the metadata the first pass wrote.
+
+Once `src/main/generated/java` exists, a build is one pass, `mvn verify`. Commit the generated tree
+once your own code depends on a generated type: a build from an empty tree compiles your code before
+anything is generated.

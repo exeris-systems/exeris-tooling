@@ -9,7 +9,7 @@ slug: adr/ADR-095
 
 # ADR-095 — Every diagnostic exeris-tooling prints carries a stable EXT- identifier
 
-- **Status:** ACCEPTED (2026-10-02) · amended 2026-10-06 (Amendment 1 — Maven coordinates move to the eu.exeris group)
+- **Status:** ACCEPTED (2026-10-02) · amended 2026-10-06 (Amendment 1 — Maven coordinates move to the eu.exeris group) · amended 2026-10-13 (Amendment 2 — the INIT area for exeris-initializr)
 - **Deciders:** the founder (scope, a dedicated artefact); `exeris-tooling` (registry layout)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / build — cross-repo: `exeris-ai-bridge` consumes the identifiers
@@ -230,3 +230,27 @@ the kernel and SDK artefacts, so the registry's artefact is `eu.exeris:exeris-di
 up to and including 0.9.0 publish it as `eu.exeris.tooling:exeris-diagnostics`, and no relocation POM
 is published under the old group. The move changes Maven coordinates, not Java packages: the
 registry class `DiagnosticId` keeps its package.
+
+## Amendment 2 — the INIT area for exeris-initializr (2026-10-13)
+
+- **Status:** ACCEPTED (2026-10-13).
+- **Amends:** obligation 2 (the area tokens) and obligation 3 (the thousands digit of each area). An
+  area and its digit are added; every other obligation, and every identifier already allocated, is
+  unchanged.
+- **Deciders:** the founder.
+
+`exeris-initializr` (ADR-091 Amendment 5) is a command line that writes a new project. It is
+neither the annotation processor, a Maven plugin goal, nor the code-generation pipeline, so its
+diagnostics get an area of their own:
+
+1. **`INIT` is the `exeris-initializr` command line**, printed to its standard error.
+2. **Its thousands digit is `5`.** `4` stays reserved for `TS`.
+3. **Its groups are by kind**, as in `PROC` and `GEN`: `50xx` errors and refusals, `51xx` warnings.
+   The last two digits count up from `01` within a group.
+4. **The first identifiers** are `EXT-INIT-5001` (the arguments were invalid; exit status 2),
+   `EXT-INIT-5002` (a non-empty directory or an existing archive was not written over; exit
+   status 1) and `EXT-INIT-5003` (the write failed; exit status 1). They live in `DiagnosticId`
+   beside every other identifier, and `docs/diagnostics.md` lists them under the area.
+
+A consumer that routes by prefix reads `EXT-INIT-` as tooling's, as it reads every `EXT-` code; the
+consumer regex of obligation 6 already matches it.

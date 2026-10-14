@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-08
+last-verified: 2026-10-14
 ---
 
 # Contributing to Exeris Tooling
@@ -29,8 +29,8 @@ cd exeris-codegen-ts && npm install && npm test
 ```
 
 Checkstyle runs at `validate` and PMD at `verify`, over main sources, and fail the build in the
-five Java modules (`exeris-diagnostics`, `exeris-codegen-core`, `exeris-codegen-maven-plugin`,
-`exeris-codegen-java`, `exeris-processor`).
+six Java modules (`exeris-diagnostics`, `exeris-codegen-core`, `exeris-codegen-maven-plugin`,
+`exeris-codegen-java`, `exeris-processor`, `exeris-initializr`).
 
 **JDK 25 LTS is the baseline** across the reactor (`maven.compiler.release=25`, per kernel ADR-066 / SDK ADR-069).
 Run Maven on a GA JDK 25 or 26; an early-access JDK such as sdkman's 26-ea cannot compile at `--release 25`.
@@ -39,8 +39,8 @@ Maven 3.9+ for Java modules; Node 18+ for `exeris-codegen-ts`.
 ### Javadoc gate
 
 A pull request that changes a Java file under `src/main/java` of `exeris-diagnostics`,
-`exeris-processor`, `exeris-codegen-core`, `exeris-codegen-java` or `exeris-codegen-maven-plugin`
-is held to the organisation Javadoc gate ([ADR-085](docs/adr/ADR-085.link.md),
+`exeris-processor`, `exeris-codegen-core`, `exeris-codegen-java`, `exeris-codegen-maven-plugin` or
+`exeris-initializr` is held to the organisation Javadoc gate ([ADR-085](docs/adr/ADR-085.link.md),
 [`javadoc-conventions.md`](https://github.com/exeris-systems/exeris-docs/blob/main/standards/javadoc-conventions.md)
 rule 11). The workflow is `.github/workflows/javadoc.yml`. The unit is the file: a changed file
 must be clean as a whole, not only on the lines the pull request touched. Javadoc that a generator

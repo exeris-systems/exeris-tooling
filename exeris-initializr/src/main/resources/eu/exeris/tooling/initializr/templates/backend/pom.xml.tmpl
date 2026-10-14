@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- exeris-app-parent runs the annotation processor, binds exeris:generate,
+         exeris:verify-capabilities and exeris:verify-runtime, and puts the generated migrations and
+         OpenAPI document on the classpath. It manages the starter's version. -->
+    <parent>
+        <groupId>eu.exeris</groupId>
+        <artifactId>exeris-app-parent</artifactId>
+        <version>{{toolingVersion}}</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>{{groupId}}</groupId>
+    <artifactId>{{artifactId}}</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <description>{{nameXml}}</description>
+
+    <!-- The parent carries Exeris's own publication metadata, and an element left out here is
+         inherited. State yours in place of these empty ones. -->
+    <url/>
+    <licenses>
+        <license/>
+    </licenses>
+    <developers>
+        <developer/>
+    </developers>
+    <scm>
+        <connection/>
+        <developerConnection/>
+        <tag/>
+        <url/>
+    </scm>
+
+    <properties>
+        <!-- Emit tests for the generated code under src/test/generated/java; they run in this
+             build's test phase. -->
+        <exeris.tests>true</exeris.tests>
+    </properties>
+
+    <dependencies>
+        <!-- Everything the generated code compiles and runs against: the SDK annotations, kernel
+             SPI and Core, the community driver, the composition runtime and Jackson 3. -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-app-starter</artifactId>
+            <type>pom</type>
+        </dependency>
+
+        <!-- The application's database. The starter declares no JDBC driver. -->
+        <dependency>
+            <groupId>{{driverGroupId}}</groupId>
+            <artifactId>{{driverArtifactId}}</artifactId>
+            <version>{{driverVersion}}</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- The generated tests import JUnit 5 and AssertJ and nothing else. -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>{{junitVersion}}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>{{assertjVersion}}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

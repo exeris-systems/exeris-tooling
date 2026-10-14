@@ -1,0 +1,12 @@
+# {{name}}
+
+An Exeris application with one entity, `{{packageName}}.domain.{{entityName}}`. Its build generates
+the rest from it: the HTTP handler, service and repository, the database migration, the OpenAPI
+document, the application's entry point, and tests for all of them.
+
+The build is `eu.exeris:exeris-app-parent` and `eu.exeris:exeris-app-starter` {{toolingVersion}}.
+`pom.xml` adds only what the starter leaves to the application: the {{databaseLabel}} JDBC driver,
+and JUnit 5 and AssertJ for the generated tests.
+
+{{buildSection}}
+{{runSection}}

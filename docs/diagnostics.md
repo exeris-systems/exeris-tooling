@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-08
+last-verified: 2026-10-13
 ---
 
 # Diagnostic identifiers
@@ -18,9 +18,9 @@ Every diagnostic exeris-tooling prints carries a stable identifier, written as
 ```
 
 That covers the annotation processor's `javac` notes, warnings and errors, the warnings the
-code-generation pipeline logs, and every failure and warning the `exeris-codegen-maven-plugin` goals
-raise. `[Exeris]` is not always first on the line: `javac`, Maven and the JDK logger each put their
-own header ahead of it. Match on the identifier, not on the text after it: the text is written for a
+code-generation pipeline logs, every failure and warning the `exeris-codegen-maven-plugin` goals
+raise, and the failures of the `exeris-initializr` command line. `[Exeris]` is not always first on
+the line: `javac`, Maven and the JDK logger each put their own header ahead of it. Match on the identifier, not on the text after it: the text is written for a
 person and may be reworded in any release, the identifier may not. A regular expression that finds
 every one of them, anywhere in a line, is `\[Exeris\] (EXT-[A-Z]+-\d{4}): `.
 
@@ -33,8 +33,8 @@ every one of them, anywhere in a line, is `\[Exeris\] (EXT-[A-Z]+-\d{4}): `.
 | Part | Meaning |
 |---|---|
 | `EXT` | exeris-tooling. Distinct from the kernel's `EX-<DOMAIN>-<NNNN>` codes (`KernelErrorCodes`), so a tool can route a code to its owner by prefix alone. |
-| `PROC` / `PLUG` / `GEN` | The annotation processor (inside `javac`), the Maven plugin, or the code-generation pipeline. `TS` is reserved for the TypeScript emitter and has no identifiers yet. |
-| `NNNN` | `PROC` uses 1xxx, `PLUG` 2xxx, `GEN` 3xxx; 4xxx is reserved for `TS`. The hundreds digit groups codes by what they were allocated for (below). |
+| `PROC` / `PLUG` / `GEN` / `INIT` | The annotation processor (inside `javac`), the Maven plugin, the code-generation pipeline, or the `exeris-initializr` command line. `TS` is reserved for the TypeScript emitter and has no identifiers yet. |
+| `NNNN` | `PROC` uses 1xxx, `PLUG` 2xxx, `GEN` 3xxx, `INIT` 5xxx; 4xxx is reserved for `TS`. The hundreds digit groups codes by what they were allocated for (below). |
 
 **Stability.** An identifier names one meaning for as long as it exists. It is never renumbered and
 never reused; one that stops being emitted is retired and its number stays unallocated. A diagnostic
@@ -171,6 +171,21 @@ fail-fast.
 | `EXT-GEN-3102` | An optional `@Requires` has no matching provider, so the requirement is skipped. | Nothing, if the capability is meant to be optional. Otherwise add the `@Provides` the message names, or widen its version range. |
 | `EXT-GEN-3103` | The capability graph did not resolve on possibly stale metadata; the post-compile gate decides. | Nothing yet: `exeris:verify-capabilities` checks the freshly compiled metadata later in the same build and fails it with `EXT-PLUG-2201` if the graph is still unresolved. |
 | `EXT-GEN-3104` | No base package was given and the entities span more than one package. `Application`, `RuntimeComponents`, `RuntimeLifecycle` and the generated `testsupport` package go to the package of the entity whose fully-qualified name sorts first, with `.domain` removed (`com.shop.billing.domain.Invoice` and `com.shop.order.domain.Order` give `com.shop.billing`). | Nothing, if that package suits you. Otherwise set `exeris.basePackage` (`--base-package` on the command line) to the package you want; the warning is not printed when it is set. |
+
+## Initializr — `EXT-INIT`
+
+Printed by `exeris-initializr`, the command line that writes a new project
+([ADR-091](adr/ADR-091-opt-in-application-starter.md), Amendment 5). It exits with `0` on success, `1`
+when the write was refused or failed, and `2` when its arguments were invalid, and prints a line
+carrying an identifier on every non-zero exit.
+
+### 50xx — errors
+
+| ID | Meaning | What to do |
+|---|---|---|
+| `EXT-INIT-5001` | The initializr command line (`exeris-initializr`) was given a switch it does not know, a switch without its value, a positional argument, or a value it cannot use (an unknown topology or database, a groupId, artifactId, package or entity name that is not valid). Exit status 2. | Pass only the switches the usage text printed under it lists, each as `--switch=value`. |
+| `EXT-INIT-5002` | The initializr refused to write a project into a directory that is not empty, or over an archive file that exists. Nothing is written. Exit status 1. | Choose another `--output-dir` or `--zip`, or pass `--force` to write over it; files of the same path are replaced and every other file is left in place. |
+| `EXT-INIT-5003` | The initializr failed writing the project. Exit status 1. | Read the cause printed with it; check the path, permissions and disk space of the output directory or archive. |
 
 ## Retired identifiers
 
