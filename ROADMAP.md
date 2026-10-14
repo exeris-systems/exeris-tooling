@@ -3537,6 +3537,15 @@ and, for the TypeScript emitter, in the `since 0.10` entries of
 `exeris-codegen-ts/api/accepted-api-changes.json` (ADR-092). A consumer regenerates and reads that
 section before upgrading.
 
+**Found before the cut (#371, closed).** The end-to-end matrix booted the emitted application on
+H2 and PostgreSQL and found four generator defects, each fixed in 0.10.0: a declared `Integer`
+version (#399), the route policy's path without the query string and `HEAD` as `GET` (#395), an
+absent `inCreate` / `inUpdate` read as `false` (#402), and a foreign-key violation answering `422`
+or `409` (#403). Follow-ups it left open: #401 (the absent-flag rule, once a pinned SDK writes both
+keys), #405 (the migration assembler accepts a link between fragments), #406 (accepted ADRs name
+fragment paths the assembly deleted), #407 (generated-test coverage) and #408 (opt-in generated
+integration tests).
+
 **Not in it, and why:** the route policy's data half (J3-3, J3-4, S3's guards) waits on
 exeris-sdk#161 in a final SDK 0.13, and moves to 0.11.0; the tenant guard on the entity-level live
 view and the tenant-partitioned spectate route wait on an isolation key on `EventDescriptor`
@@ -4099,12 +4108,16 @@ enters only if its upstream half is final first.
       compared with CRLF folded to LF, and a replaced file that is CRLF on disk (a line ending, every LF
       preceded by CR) is written as CRLF; a mixed file is written as LF.
 - [x] The removals below.
-- [ ] **Pre-cut end-to-end matrix** (#371): the generated sample app's `ng build` and `ng test` now
+- [x] **Pre-cut end-to-end matrix** (#371, closed): the generated sample app's `ng build` and `ng test` now
       also cover a UNIVERSE entity (`Listing`, with its `@SharedScope` field `scopeId` and a foreign
       key into `Product`), a `readOnly` field (`Product.sku`) and a `required` + `readOnly` field
-      (`Product.catalogCode`). Open: the booted Java matrix in `exeris-e2e-tests` and the Java-side
-      parity fixtures.
-- [ ] **`exeris-initializr`** (ADR-091 Amendment 5; does not hold the cut): a launchable jar that writes
+      (`Product.catalogCode`) (#394); the booted Java matrix and the Java-side parity fixtures
+      landed in #395, #396 and #400, the PostgreSQL boot as the `e2e-postgres` CI job. The matrix
+      found four generator defects, fixed before the cut: a declared `Integer` version (#399), the
+      route policy deciding on the path without its query string and on `HEAD` as `GET` (#395), an
+      absent `inCreate` / `inUpdate` read as `false` in both loaders (#402), and a foreign-key
+      violation answering `422` or `409` instead of `500` (#403).
+- [x] **`exeris-initializr`** (ADR-091 Amendment 5, #393; does not hold the cut): a launchable jar that writes
       a new project on `exeris-app-parent` and `exeris-app-starter`, backend-only or e2e, PostgreSQL by
       default, with the two-pass first build scripted, and two invoker fixtures that build what it
       writes. Frontend-only waits on #391.
