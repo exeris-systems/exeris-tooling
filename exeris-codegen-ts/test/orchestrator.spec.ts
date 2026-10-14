@@ -361,10 +361,13 @@ describe('buildGeneratedFiles — detail components', () => {
     const form = at(buildGeneratedFiles([battle], [BATTLE_STATUS], DEFAULT_CONFIG), 'src/app/components/battle-form.component.ts');
     expect(form).toContain("import { BattleStatus, BattleStatusDisplayNames } from '../types/enums';");
     expect(form).toContain('<select id="status"');
-    // Without the loaded enum the type names nothing the enum module exports: a text input.
-    const plain = at(buildGeneratedFiles([battle], [], DEFAULT_CONFIG), 'src/app/components/battle-form.component.ts');
+    // Without the loaded enum the type names nothing the enum module exports: the DTO carries the
+    // value as `unknown`, which no control holds, so the form offers none.
+    const plainFiles = buildGeneratedFiles([battle], [], DEFAULT_CONFIG);
+    const plain = at(plainFiles, 'src/app/components/battle-form.component.ts');
     expect(plain).not.toContain('<select');
-    expect(plain).toContain('type="text" [formField]="form.status"');
+    expect(plain).not.toContain('form.status');
+    expect(at(plainFiles, 'src/app/types/battle.types.ts')).toContain('  status?: unknown;');
   });
 
   it('links a ONE_TO_MANY to a route the table declares', () => {
@@ -691,5 +694,38 @@ describe('buildGeneratedFiles — saga state machines', () => {
     expect(saga).toContain('applyStatus(status: SagaStatusSnapshot): void {');
     expect(saga).not.toContain('/api/v1/sagas');
     expect(saga).not.toContain('HttpClient');
+  });
+});
+
+describe('buildGeneratedFiles — types resolved against the app\'s entities and enum module', () => {
+  const at = (files: { path: string; content: string }[], p: string) =>
+    files.find((f) => f.path === p)?.content ?? '';
+
+  // The processor writes no enumType, so the enum module is what tells an enum field: the list
+  // already filters and sorts on it, and the service and the entity's filter type must too.
+  it('filters and sorts on an enum the module declares in the service and the types, as the list does', () => {
+    const battle = domain({ entityName: 'Battle', fields: [
+      { name: 'id', type: 'java.util.UUID' },
+      { name: 'status', type: 'com.shop.BattleStatus', filterable: true, sortable: true },
+    ] });
+    const files = buildGeneratedFiles([battle], [BATTLE_STATUS], DEFAULT_CONFIG);
+    const service = at(files, 'src/app/services/battle.service.ts');
+    expect(service).toContain("export type BattleSortField = 'status';");
+    expect(service).toContain('  status?: BattleStatus;');
+    expect(at(files, 'src/app/types/battle.types.ts')).toContain('export interface BattleFilter {\n  status?: BattleStatus;\n}');
+    expect(at(files, 'src/app/components/battle-list.component.ts')).toContain("onSort('status')");
+  });
+
+  it('types a field of another entity with that entity\'s type in every module that names it', () => {
+    const order = domain({ entityName: 'Order', fields: [
+      { name: 'id', type: 'java.util.UUID' },
+      { name: 'customer', type: 'com.shop.Customer' },
+    ], actions: [{ name: 'reassign', params: [{ name: 'to', type: 'com.shop.Customer' }] }] });
+    const customer = domain({ entityName: 'Customer', fields: [{ name: 'id', type: 'java.util.UUID' }] });
+    const files = buildGeneratedFiles([order, customer], [], DEFAULT_CONFIG);
+    expect(at(files, 'src/app/types/order.types.ts')).toContain("import type { Customer } from './customer.types';");
+    expect(at(files, 'src/app/schemas/order.schema.ts')).toContain("import { CustomerSchema } from './customer.schema';");
+    expect(at(files, 'src/app/services/order.service.ts')).toContain('reassign(id: string, to: Customer): Observable<Order> {');
+    expect(at(files, 'src/app/components/order-form.component.ts')).not.toContain('form.customer');
   });
 });

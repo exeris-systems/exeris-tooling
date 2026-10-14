@@ -521,5 +521,105 @@ check(
   true,
 );
 
+// (11) Fields typed by another entity, as the processor writes them: the entity itself, a list, an
+// array, a map value and an optional of one; two entities that reference each other, an entity
+// that references itself, and an entity whose type is renamed (`Component` → `ComponentModel`).
+// The server sends each as the nested object (or array, or map of them), so the entity type and
+// the parsed schema carry the referenced entity's type and agree in both directions. A value type
+// the metadata does not describe (`Money`), or one named like an enum (`PaymentMode`), is
+// `unknown`, and `Object` is `Object`; an enum the enum module declares is the enum's type, inside
+// a collection as well. The spectate stream's payload types name the same types, imported the same
+// way.
+check(
+  'cross-entity-fields',
+  [
+    DomainMetadataSchema.parse({
+      packageName: 'com.x',
+      entityName: 'Order',
+      fields: [
+        { name: 'id', type: 'java.util.UUID' },
+        { name: 'customer', type: 'com.x.Customer', required: true },
+        { name: 'lines', type: 'java.util.List<com.x.Line>' },
+        { name: 'extraLines', type: 'com.x.Line[]' },
+        { name: 'linesByCode', type: 'java.util.Map<java.lang.String,com.x.Line>' },
+        { name: 'previous', type: 'java.util.Optional<com.x.Order>' },
+        { name: 'part', type: 'com.x.Component' },
+        { name: 'total', type: 'com.x.Money' },
+        { name: 'payment', type: 'com.x.PaymentMode' },
+        { name: 'priorities', type: 'java.util.List<com.x.Priority>' },
+        { name: 'raw', type: 'java.lang.Object', required: true },
+      ],
+      path: '/orders',
+      realTimeApi: true,
+      events: [{ name: 'OrderPlaced', payloadFields: ['id', 'customer', 'total', 'priorities'] }],
+    }),
+    DomainMetadataSchema.parse({
+      packageName: 'com.x',
+      entityName: 'Customer',
+      fields: [
+        { name: 'id', type: 'java.util.UUID' },
+        { name: 'name', type: 'String', required: true },
+        { name: 'rating', type: 'com.x.Rating', required: true },
+        { name: 'lastOrder', type: 'com.x.Order' },
+        { name: 'orders', type: 'java.util.List<com.x.Order>' },
+      ],
+    }),
+    DomainMetadataSchema.parse({
+      packageName: 'com.x',
+      entityName: 'Line',
+      fields: [
+        { name: 'id', type: 'java.util.UUID' },
+        { name: 'sku', type: 'String' },
+        { name: 'parent', type: 'com.x.Line' },
+      ],
+    }),
+    DomainMetadataSchema.parse({
+      packageName: 'com.x',
+      entityName: 'Component',
+      fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'label', type: 'String' }],
+    }),
+  ],
+  [{ name: 'Priority', qualifiedName: 'com.x.Priority', packageName: 'com.x',
+     values: [{ name: 'LOW', displayName: 'Low', ordinal: 0 }, { name: 'HIGH', displayName: 'High', ordinal: 1 }] }],
+  [],
+  [
+    "import type { z } from 'zod';",
+    "import type { ComponentModel, Customer, Line, Order, OrderCreate, OrderUpdate, Priority } from './types';",
+    "import { CustomerSchema, LineSchema, OrderCreateSchema, OrderSchema, OrderUpdateSchema } from './schemas';",
+    "import type { OrderOrderPlacedSpectatePayload } from './services/order.stream';",
+    '',
+    'type Parsed = z.infer<typeof OrderSchema>;',
+    'export const fromSchema = (p: Parsed): Order => p;',
+    'export const toSchema = (o: Order): Parsed => o;',
+    'export const createFromSchema = (p: z.infer<typeof OrderCreateSchema>): OrderCreate => p;',
+    'export const updateFromSchema = (p: z.infer<typeof OrderUpdateSchema>): OrderUpdate => p;',
+    'export const customerFromSchema = (p: z.infer<typeof CustomerSchema>): Customer => p;',
+    'export const lineFromSchema = (p: z.infer<typeof LineSchema>): Line => p;',
+    '',
+    'export const customerName = (o: Order): string => o.customer.name;',
+    'export const roundTrip = (o: Order): Order | undefined => o.customer.lastOrder;',
+    'export const skus = (o: Order): (string | undefined)[] => [...(o.lines ?? []), ...(o.extraLines ?? [])].map((l) => l.sku);',
+    "export const byCode = (o: Order): Line | undefined => o.linesByCode?.['A'];",
+    'export const previous = (o: Order): Order | null | undefined => o.previous;',
+    'export const grandparent = (l: Line): Line | undefined => l.parent?.parent;',
+    'export const part = (o: Order): ComponentModel | undefined => o.part;',
+    'export const priorities = (o: Order): Priority[] | undefined => o.priorities;',
+    'export const raw = (o: Order): Object => o.raw;',
+    'export const parsedCustomer = (p: Parsed): Customer => p.customer;',
+    '',
+    "// @ts-expect-error — a value type the metadata does not describe is not a string",
+    'export const totalText = (o: Order): string => o.total;',
+    "// @ts-expect-error — a type named like an enum that the enum module does not declare is not one",
+    'export const paymentText = (o: Order): string => o.payment;',
+    "// @ts-expect-error — the customer is the nested record, not its key",
+    "export const customerKey: Order = { customer: 'c-1' };",
+    '',
+    '// The spectate payload names the same types as the entity.',
+    'export const placed = (p: OrderOrderPlacedSpectatePayload): [Customer, unknown, Priority[]] => [p.customer, p.total, p.priorities];',
+    '',
+  ].join('\n'),
+  true,
+);
+
 rmSync(join(pkgRoot, '.verify-tmp'), { recursive: true, force: true });
-console.log('✓ Generated frontend data layer type-checks (with-enums + zero-enums + two-peers-same-entity + versioned-update + full-replacement-update + inherited-key + server-owned-update + undeclared-version + spectate-stream + tenant-action-stream).');
+console.log('✓ Generated frontend data layer type-checks (with-enums + zero-enums + two-peers-same-entity + versioned-update + full-replacement-update + inherited-key + server-owned-update + undeclared-version + spectate-stream + tenant-action-stream + cross-entity-fields).');
