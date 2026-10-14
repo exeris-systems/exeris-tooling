@@ -248,6 +248,11 @@ delete of a row other rows still reference. The client caused each of them.
    - the still-referenced refusal for an entity some entity of the build references — itself
      included — and whose delete removes the row; a soft delete keeps the row, so no constraint sees
      it.
+     The reference counts whatever the constraint's `ON DELETE` policy: a referencing relationship
+     with cascade `ALL` or `REMOVE` gets `ON DELETE CASCADE` and cannot refuse the delete itself,
+     but a row it cascades to can still be held by a `RESTRICT` constraint further down, and that
+     violation is reported on the delete that started the cascade. The `409` is therefore declared
+     for a cascading reference as well.
 7. **The spec declares them** on the same condition: `422` on the create, the update and every
    action of a referencing entity, and `409` on the delete of a referenced one.
 8. **The generated tests** (ADR-058) cover both: the repository test stages the SPI exception in

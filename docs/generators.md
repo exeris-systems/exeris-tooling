@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-13
+last-verified: 2026-10-14
 ---
 
 # Generator catalogue
@@ -46,7 +46,7 @@ does not consult `supports()`, so a generator's own guard decides whether a file
 named `*Generator` that write no file have no row: `OpenApiGenerator` renders the YAML that
 `KernelOpenApiGenerator` writes, and `KernelGeneratorStrategy` is the registry.
 
-Five generators read the whole build as well as their own entity, through
+Five main generators and two test generators read the whole build as well as their own entity, through
 `generateMultiple(metadata, build)`, because what they write for an entity depends on how the other
 entities reference it (ADR-076 Amendment 1): `KernelRepositoryGenerator`, `KernelErrorGenerator`,
 `KernelHandlerGenerator`, `KernelActionStreamHandlerGenerator` and `KernelOpenApiGenerator`, and in
