@@ -61,11 +61,6 @@ jobs:
         # repository a consumer of the published POMs has.
         run: mvn -B -ntp verify
 
-      # The TypeScript emitter's coverage, for the analysis below. exeris-codegen-ts is not a Maven
-      # module, so its lcov report is produced here rather than picked up from the reactor. The
-      # report's source paths are made absolute: the module that carries the TypeScript sources
-      # (exeris-coverage-aggregate) has a different base directory than the package, and a relative
-      # `src/...` path would resolve to nothing there.
       # SONAR_TOKEN is in the environment of this step and of the analysis step only, never of a
       # step that runs the pull request's build or npm scripts. A step-level `if` can read neither
       # `secrets` nor another step's `env`, so this step tests the token and the steps below read
@@ -92,6 +87,11 @@ jobs:
           cache: npm
           cache-dependency-path: exeris-tooling/exeris-codegen-ts/package-lock.json
 
+      # The TypeScript emitter's coverage, for the analysis below. exeris-codegen-ts is not a Maven
+      # module, so its lcov report is produced here rather than picked up from the reactor. The
+      # report's source paths are made absolute: the module that carries the TypeScript sources
+      # (exeris-coverage-aggregate) has a different base directory than the package, and a relative
+      # `src/...` path would resolve to nothing there.
       - name: vitest lcov report (exeris-codegen-ts)
         if: ${{ steps.sonar-guard.outputs.enabled == 'true' }}
         continue-on-error: true
