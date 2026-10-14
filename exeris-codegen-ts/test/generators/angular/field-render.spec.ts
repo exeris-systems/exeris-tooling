@@ -355,6 +355,25 @@ describe('resolveFieldRender — placement', () => {
   it('a lifecycle field has no control on an entity without a system-field block', () => {
     expect(render({ name: 'active', type: 'Boolean' }).form.placement).toBe('none');
   });
+
+  it('a field holding another entity, an undescribed value, or an optional of one has no control, and is still displayed', () => {
+    const customer = domain({ entityName: 'Customer', fields: [{ name: 'id', type: 'java.util.UUID' }] });
+    for (const type of ['com.shop.Customer', 'com.shop.Money', 'java.util.Optional<com.shop.Customer>', 'com.shop.Page<com.shop.Customer>']) {
+      expect(render({ type, required: true }, {}, [customer])).toMatchObject({ displayed: true, form: { placement: 'none' } });
+    }
+  });
+
+  it('an enum the enum module declares keeps its select, an explicit enumType its control, whatever the type', () => {
+    const enums = [{ name: 'Priority', qualifiedName: 'com.shop.Priority', packageName: 'com.shop', values: [] }];
+    const d = domain({ fields: [
+      { name: 'id', type: 'java.util.UUID' },
+      { name: 'priority', type: 'com.shop.Priority' },
+      { name: 'kind', type: 'com.shop.Kind', enumType: 'com.shop.Kind' },
+    ] });
+    const byName = new Map(resolveFieldRenders(d, fieldRenderContext(d, [d], true, enums)).map((r) => [r.name, r]));
+    expect(byName.get('priority')!.form).toMatchObject({ placement: 'control', control: 'select' });
+    expect(byName.get('kind')!.form.placement).toBe('control');
+  });
 });
 
 describe('resolveFieldRender — labels and initial values', () => {

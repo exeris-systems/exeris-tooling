@@ -30,6 +30,7 @@ import { hasActionStreamClients } from './action-stream-client-gen.js';
 import { BACKEND_SCAFFOLD_NEEDS, type ScaffoldNeeds } from '../../core/scaffold-needs.js';
 import { entityViews, hasFormPage } from './entity-views.js';
 import { serviceApiPath } from './service-gen.js';
+import { AUTH_INTERCEPTOR_NAME, AUTH_INTERCEPTOR_PATH } from './auth-interceptor-gen.js';
 import { fileHeader, lineHeaderLines } from '../file-header.js';
 
 export interface GeneratedFile {
@@ -167,7 +168,11 @@ export function generateAppStructure(
   const sortedViews = sortViews(views);
 
   // App shell under src/app
-  files.push({ path: `${appRoot}/app.config.ts`, content: generateAppConfig(needs.backend, ssg), overwritable: false });
+  files.push({
+    path: `${appRoot}/app.config.ts`,
+    content: generateAppConfig(needs.backend, ssg, needs.backend && needs.authInterceptor === true),
+    overwritable: false,
+  });
   if (ssg) {
     files.push({ path: `${appRoot}/app.config.server.ts`, content: generateAppConfigServer(), overwritable: false });
     files.push({ path: `${appRoot}/app.routes.server.ts`, content: generateServerRoutes(domains, sortedViews), overwritable: false });
@@ -200,12 +205,21 @@ bootstrapApplication(AppComponent, appConfig)
 `;
 }
 
-function generateAppConfig(backend: boolean, ssg: boolean): string {
+function generateAppConfig(backend: boolean, ssg: boolean, authInterceptor: boolean): string {
   // provideHttpClient() is wired only when the app has an API (core/scaffold-needs); an app
-  // without one has no HttpClient consumer to provide for.
-  const httpImport = backend ? `\nimport { provideHttpClient } from '@angular/common/http';` : '';
+  // without one has no HttpClient consumer to provide for. The bearer interceptor is registered
+  // only when the tree carries it, which is when some route demands identity.
+  const httpImport = !backend
+    ? ''
+    : authInterceptor
+      ? `\nimport { provideHttpClient, withInterceptors } from '@angular/common/http';`
+      : `\nimport { provideHttpClient } from '@angular/common/http';`;
+  const interceptorImport = authInterceptor
+    ? `\nimport { ${AUTH_INTERCEPTOR_NAME} } from './${AUTH_INTERCEPTOR_PATH.replace(/\.ts$/, '')}';`
+    : '';
+  const httpArgs = authInterceptor ? `withInterceptors([${AUTH_INTERCEPTOR_NAME}])` : '';
   const httpProvider = backend
-    ? `\n    // v22: fetch is the default HttpClient transport (the old explicit opt-in is now redundant).\n    provideHttpClient(),`
+    ? `\n    // v22: fetch is the default HttpClient transport (the old explicit opt-in is now redundant).\n    provideHttpClient(${httpArgs}),`
     : '';
   // A prerendered page is hydrated: the browser takes over the DOM the build wrote instead of
   // rendering it again, and replays the clicks made on it before hydration finished. A route the
@@ -224,7 +238,7 @@ function generateAppConfig(backend: boolean, ssg: boolean): string {
 import { ApplicationConfig, provideZonelessChangeDetection } from '@angular/core';
 import { provideRouter, withComponentInputBinding } from '@angular/router';${httpImport}${hydrationImport}
 
-import { routes } from './app.routes';
+import { routes } from './app.routes';${interceptorImport}
 
 export const appConfig: ApplicationConfig = {
   providers: [

@@ -26,6 +26,13 @@ export interface TypeMapping {
   defaultValue: string;
 }
 
+/**
+ * The TS and Zod types of a type the mapping table does not name, or `undefined` to keep the
+ * mapper's own fallback for it. `mapType` asks for every such type it reaches, the element of a
+ * collection, the value of a map and the content of an optional included, and only for those.
+ */
+export type UnmappedTypeResolver = (javaType: string) => Pick<TypeMapping, 'tsType' | 'zodType'> | undefined;
+
 /** The type arguments of a generic, split at its top-level commas: `K, List<V>` → `['K', 'List<V>']`. */
 function splitTypeArguments(args: string): string[] {
   const parts: string[] = [];
@@ -447,8 +454,11 @@ export class DslMapper {
 
   /**
    * Map a Java type to TypeScript type info.
+   *
+   * A type the table does not name is put to `resolveUnmapped` first; without it, or when it
+   * answers `undefined`, the type maps to its simple name and a lazy reference to `<name>Schema`.
    */
-  static mapType(javaType: string): TypeMapping {
+  static mapType(javaType: string, resolveUnmapped?: UnmappedTypeResolver): TypeMapping {
     // Check direct mapping
     const direct = JAVA_TO_TS_MAP[javaType];
     if (direct) {
@@ -462,9 +472,10 @@ export class DslMapper {
     if (genericMatch) {
       const container = genericMatch[1].split('.').pop() ?? genericMatch[1];
       const inner = genericMatch[2];
-      const innerMapping = this.mapType(inner);
-
+      // Mapped in the branches that use it only, so the resolver is asked for no type the result
+      // does not reference.
       if (container === 'List' || container === 'Set' || container === 'Collection') {
+        const innerMapping = this.mapType(inner, resolveUnmapped);
         return {
           tsType: DslMapper.arrayOf(innerMapping.tsType),
           formControl: 'textarea',
@@ -477,7 +488,7 @@ export class DslMapper {
       if (container === 'Map') {
         // For Map<K,V> we simplify to Record<string, V>
         const parts = splitTypeArguments(inner);
-        const valueType = parts[1] ? this.mapType(parts[1]) : { tsType: 'unknown', zodType: 'z.unknown()' };
+        const valueType = parts[1] ? this.mapType(parts[1], resolveUnmapped) : { tsType: 'unknown', zodType: 'z.unknown()' };
         return {
           tsType: `Record<string, ${valueType.tsType}>`,
           formControl: 'textarea',
@@ -488,6 +499,7 @@ export class DslMapper {
       }
 
       if (container === 'Optional') {
+        const innerMapping = this.mapType(inner, resolveUnmapped);
         return {
           tsType: `${innerMapping.tsType} | null`,
           formControl: innerMapping.formControl,
@@ -501,7 +513,7 @@ export class DslMapper {
     // Handle arrays like String[]
     if (javaType.endsWith('[]')) {
       const elementType = javaType.slice(0, -2);
-      const elementMapping = this.mapType(elementType);
+      const elementMapping = this.mapType(elementType, resolveUnmapped);
       return {
         tsType: DslMapper.arrayOf(elementMapping.tsType),
         formControl: 'textarea',
@@ -516,6 +528,17 @@ export class DslMapper {
     const simpleMapping = JAVA_TO_TS_MAP[simpleName];
     if (simpleMapping) {
       return simpleMapping;
+    }
+
+    const resolved = resolveUnmapped?.(javaType);
+    if (resolved) {
+      return {
+        tsType: resolved.tsType,
+        formControl: 'input',
+        inputType: 'text',
+        zodType: resolved.zodType,
+        defaultValue: 'null as unknown as ' + resolved.tsType,
+      };
     }
 
     // Fallback for unknown types (assume it's a custom entity/DTO)

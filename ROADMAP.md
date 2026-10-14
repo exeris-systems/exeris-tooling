@@ -3380,6 +3380,12 @@ Proposals, highest return-on-effort first:
       **Decided 2026-10-08:** RFC-2026-10-08 accepted as
       [ADR-105](docs/adr/ADR-105-generated-route-policy-emission.md);
       implementation J3-1 to J3-4.
+      *Landed (S3, obligation 23):* `getDefaultHeaders` is deleted. An emitted `HttpInterceptorFn`
+      (`core/auth.interceptor.ts`) sends `AuthService.token()` and `app.config.ts` registers it,
+      both only when a route-requirement row demands identity (`demandsIdentity`,
+      `core/route-requirements.ts`). The TS side derives no row until J3-3 extracts declared access,
+      so no output changes; `route-policy-parity.spec.ts` holds the derived rows to
+      `contract/route-policy.json`.
 
 - [x] **D11 — three Handlebars templates and the `templatesDir` config option are wired to nothing.**
       Shipped 0.8.0, deleted rather than wired. The measurement made the choice easy: nothing calls

@@ -46,6 +46,12 @@ export interface ScaffoldNeeds {
    * installs the plugin and loads it in `styles.css`; when false it does neither.
    */
   readonly typography: boolean;
+  /**
+   * The tree carries the bearer interceptor (`core/auth.interceptor.ts`), emitted when some route
+   * demands identity. When true `app.config.ts` registers it through
+   * `provideHttpClient(withInterceptors([authInterceptor]))`; absent or false, it registers none.
+   */
+  readonly authInterceptor?: boolean;
 }
 
 /**

@@ -48,6 +48,7 @@ import type { GeneratorConfig } from '../../config.js';
 import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
 import { fileHeaderLines } from '../file-header.js';
+import { mapScopedType, typeOnlyImports, typeScopeOf, type TypeScope } from '../../core/type-references.js';
 
 export { GeneratedFile };
 
@@ -151,9 +152,10 @@ export class StreamClientGenerator implements CodeGenerator {
    * The types of the spectate stream: one payload interface per event name, the frame union
    * over them, and the error a `stream-error` frame raises. A payload names the fields the
    * `@DomainEvent` lists, typed from the entity's own fields; a name no field carries is
-   * `unknown`, and a sensitive field is marked as redacted before publish.
+   * `unknown`, and a sensitive field is marked as redacted before publish. The type of every field
+   * a payload names is added to `payloadTypes`.
    */
-  private renderSpectateTypes(domain: DomainMetadata): string[] {
+  private renderSpectateTypes(domain: DomainMetadata, scope: TypeScope, payloadTypes: string[]): string[] {
     const entityName = domain.entityName;
     const fieldByName = new Map(domain.fields.map(f => [f.name, f] as const));
     const lines: string[] = [];
@@ -184,7 +186,8 @@ export class StreamClientGenerator implements CodeGenerator {
       }
       for (const fieldName of payloadFields) {
         const field = fieldByName.get(fieldName);
-        const tsType = field ? DslMapper.mapType(field.type).tsType : 'unknown';
+        if (field) payloadTypes.push(field.type);
+        const tsType = field ? mapScopedType(field.type, scope).tsType : 'unknown';
         const suffix = sensitive.has(fieldName) ? ' // sensitive: redacted before publish' : '';
         lines.push(`  ${fieldName}: ${tsType};${suffix}`);
       }
@@ -251,10 +254,15 @@ export class StreamClientGenerator implements CodeGenerator {
       }),
     );
     lines.push(``);
+    const scope = typeScopeOf(context);
+    const payloadTypes: string[] = [];
+    const spectateTypes = this.renderSpectateTypes(domain, scope, payloadTypes);
     lines.push(`import { Injectable } from '@angular/core';`);
     lines.push(`import { Observable } from 'rxjs';`);
+    // The enums and entities the spectate payloads name.
+    lines.push(...typeOnlyImports(payloadTypes, scope, '../types'));
     lines.push(``);
-    lines.push(...this.renderSpectateTypes(domain));
+    lines.push(...spectateTypes);
     lines.push(`@Injectable({ providedIn: 'root' })`);
     lines.push(`export class ${entityName}StreamClient {`);
     lines.push(`  /**`);

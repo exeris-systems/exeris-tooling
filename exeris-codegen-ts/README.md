@@ -503,6 +503,23 @@ binds the storage context, so its client is generated in its final shape and is 
 then; a `GLOBAL` entity's client is not affected. All of these are emitted with services
 (`generateServices`, the default).
 
+## Bearer token
+
+The kernel application reads a caller's identity from an `Authorization: Bearer` header only. When
+some route of the application demands identity (its access requirement is `authenticated` or
+`anyScope`, as in `contract/route-policy.json`, ADR-105), the generator emits
+`core/auth.interceptor.ts`, a functional `HttpInterceptorFn` that sets
+`Authorization: Bearer <AuthService.token()>` on every `HttpClient` request under `apiBasePath`
+while a token is held, together with the `core/auth.service.ts` seed it reads the token from, and
+`app.config.ts` registers it with `provideHttpClient(withInterceptors([authInterceptor]))`. The
+token is whatever your sign-in passes to `AuthService.setUser`; the interceptor reads no storage of
+its own. With `scaffold: false`, add `withInterceptors([authInterceptor])` to your own
+`provideHttpClient(...)`.
+
+Route requirements come from declared route access (`@RouteAccess`, `permissions`), which this
+version does not read: every route is public, so neither file is emitted and `app.config.ts`
+registers no interceptor. The stream clients do not go through `HttpClient` and send no token.
+
 ## Type Mapping
 
 | Java Type | TypeScript Type | Form Control |
@@ -517,6 +534,13 @@ then; a `GLOBAL` entity's client is not affected. All of these are emitted with 
 | `UUID` | `string` | `<input type="text">` |
 | `UUID` holding a `MANY_TO_ONE` foreign key, the target generated with its service | `string` | `<select>` of the target's records (`findAll()`), valued by the target's primary key (`id`, or the field `primaryKeyField` names) and labelled by `@Relationship.displayField` (the key when that is empty) |
 | an `enum` the processor emitted | the enum's string union | `<select>` |
+| another `@ExerisDomain` entity, or a `List` / `Set` / array / `Map` value / `Optional` of one | the entity's type (`Customer`, `Customer[]`, `Record<string, Customer>`, `Customer \| null`), the nested record the server sends | none |
+| any other type of the application's own (`Money`) | `unknown` | none |
+
+A type is an enum only when the processor emitted it: a type named like one (`PaymentMode`) that
+the enum module does not declare is `unknown`. The Zod schema of a field of another entity is a
+lazy reference to that entity's schema, so two entities may reference each other. A field the form
+has no control for is left out of the create body, and the edit sends it back as loaded.
 
 A field with `@Field(inUpdate = false)` is disabled while the form edits, and is sent back as loaded.
 

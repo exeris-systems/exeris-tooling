@@ -6,7 +6,7 @@
  * Spring/Quarkus/Micronaut/Vanilla strategies were removed under the
  * kernel-target-only discipline (hard-constraint #1); BackendType is now a
  * one-member union ('KERNEL'). Tests assert observable contract: the values
- * flowing through getClientConfig / getDefaultHeaders / transformPath /
+ * flowing through getClientConfig / transformPath /
  * mapError / getRetryConfig must match what downstream
  * code-emitters depend on.
  */
@@ -20,16 +20,7 @@ import {
   getAllStrategies,
   hasStrategy,
   registerAllStrategies,
-  type TenantContext,
 } from '../../src/core/backend-strategy.js';
-
-const FULL_CONTEXT: TenantContext = {
-  tenantId: 't-123',
-  userId: 'u-456',
-  correlationId: 'corr-789',
-  traceId: 'trace-abc',
-  accessToken: 'jwt-xyz',
-};
 
 describe('KernelStrategy — BackendStrategy contract', () => {
   const instance = new KernelStrategy();
@@ -44,22 +35,6 @@ describe('KernelStrategy — BackendStrategy contract', () => {
     expect(config.useFetch).toBe(true);
     expect(config.timeout).toBeGreaterThan(0);
     expect(['include', 'same-origin', 'omit']).toContain(config.credentials);
-  });
-
-  it('includes Content-Type and Accept JSON headers by default', () => {
-    const headers = instance.getDefaultHeaders({});
-    expect(headers['Content-Type']).toBe('application/json');
-    expect(headers['Accept']).toBe('application/json');
-  });
-
-  it('emits an Authorization Bearer header when accessToken is supplied', () => {
-    const headers = instance.getDefaultHeaders({ accessToken: 'jwt-xyz' });
-    expect(headers['Authorization']).toBe('Bearer jwt-xyz');
-  });
-
-  it('omits Authorization when no accessToken is in the context', () => {
-    const headers = instance.getDefaultHeaders({});
-    expect(headers['Authorization']).toBeUndefined();
   });
 
   it('returns a RetryConfig with maxRetries > 0 and standard retryable HTTP statuses', () => {
@@ -89,7 +64,7 @@ describe('KernelStrategy — BackendStrategy contract', () => {
   });
 });
 
-describe('KernelStrategy specifics — RLS headers + HTTP/3 + correlation', () => {
+describe('KernelStrategy specifics — HTTP/3, paths and errors', () => {
   const kernel = new KernelStrategy();
 
   it('uses HTTP/3 and carries no apiVersion: no route has a version segment', () => {
@@ -97,15 +72,6 @@ describe('KernelStrategy specifics — RLS headers + HTTP/3 + correlation', () =
     const config = kernel.getClientConfig();
     expect(config.useHttp3).toBe(true);
     expect(config).not.toHaveProperty('apiVersion');
-  });
-
-  it('propagates every RLS / observability header when the full TenantContext is supplied', () => {
-    const headers = kernel.getDefaultHeaders(FULL_CONTEXT);
-    expect(headers['X-Tenant-Id']).toBe('t-123');
-    expect(headers['X-User-Id']).toBe('u-456');
-    expect(headers['X-Correlation-Id']).toBe('corr-789');
-    expect(headers['X-Trace-Id']).toBe('trace-abc');
-    expect(headers['Authorization']).toBe('Bearer jwt-xyz');
   });
 
   it('transformPath emits no version segment — the router serves none', () => {
