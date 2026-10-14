@@ -42,17 +42,24 @@
 # (docs/migration/README.md). This gate fails while docs/migration/<version>/ still holds a fragment
 # or MIGRATION still carries the train's marker block, as `assemble-migration.py --pending` reports.
 #
+# The bundle central-publishing-maven-plugin builds (target/central-publishing/central-bundle.zip)
+# must hold every published coordinate's pom and nothing outside the coordinates' version
+# directories: Central refuses the whole deployment for one directory without a pom. The full gate
+# requires the bundle, which the release profile builds at `deploy` (`-DskipUpload=true` builds it
+# without uploading it); --unsigned checks it when it is present.
+#
 # Usage:
 #   tools/release-readiness/release-readiness.sh             # release.yml: full gate
 #   tools/release-readiness/release-readiness.sh --unsigned  # local: after -Dgpg.skip, no signatures
 #
-# --unsigned checks the jar, sources and javadoc files only. It cannot stand in for the full gate:
-# the signed pom files are produced by the signer, so it does not check them at all.
+# --unsigned checks the jar, sources and javadoc files, and the bundle only when present. It cannot
+# stand in for the full gate: the signed pom files are produced by the signer, so it does not check
+# them at all.
 set -euo pipefail
 
 UNSIGNED=0
 case "${1:-}" in
-  -h|--help) sed -n '2,50p' "$0"; exit 0 ;;
+  -h|--help) sed -n '2,57p' "$0"; exit 0 ;;
   --unsigned) UNSIGNED=1 ;;
   "") ;;
   *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -96,6 +103,11 @@ def coordinates(pom):
     props = root.find(NS + 'properties')
     deploy_skip = text(props, 'maven.deploy.skip') == 'true'
     return text(root, 'artifactId'), version, text(root, 'packaging', 'jar'), deploy_skip
+
+
+def group_id(pom):
+    root = ET.parse(pom).getroot()
+    return text(root, 'groupId') or text(root.find(NS + 'parent'), 'groupId')
 
 
 CENTRAL = ('org.sonatype.central', 'central-publishing-maven-plugin')
@@ -175,6 +187,7 @@ failures = []
 checked = signatures = 0
 deploy_skipped = set()
 published = []
+coordinate_dirs = {}  # 'eu/exeris/<artifact>/<version>' -> '<artifact>-<version>'
 modules = list(reactor())
 reactor_version = text(ET.parse('pom.xml').getroot(), 'version')
 
@@ -234,6 +247,7 @@ for directory, pom in modules:
     published.append(artifact)
     target = directory / 'target'
     stem = f'{artifact}-{version}'
+    coordinate_dirs[f'{group_id(pom).replace(".", "/")}/{artifact}/{version}'] = stem
 
     required = [] if UNSIGNED else [target / f'{stem}.pom']
     if packaging != 'pom':
@@ -274,6 +288,30 @@ for directory, pom in modules:
         with zipfile.ZipFile(main_jar) as z:
             if 'META-INF/maven/plugin.xml' not in z.namelist():
                 failures.append(f'{artifact}: {main_jar.name} carries no META-INF/maven/plugin.xml')
+
+# Central validates the bundle as a whole and refuses it when any directory in it lacks a pom, so a
+# file outside a coordinate's version directory fails every coordinate. Staging installs into a
+# local repository, whose bookkeeping (maven-metadata-*.xml, _remote.repositories, .locks) the
+# plugin removes only under the names it knows; a name it does not know reaches the bundle.
+BUNDLE = pathlib.Path('target/central-publishing/central-bundle.zip')
+if BUNDLE.is_file():
+    with zipfile.ZipFile(BUNDLE) as z:
+        entries = [n for n in z.namelist() if not n.endswith('/')]
+    stray = []
+    for name in entries:
+        directory, _, filename = name.rpartition('/')
+        stem = coordinate_dirs.get(directory)
+        if stem is None or not (filename.startswith(stem + '.') or filename.startswith(stem + '-')):
+            stray.append(name)
+    for name in sorted(stray):
+        failures.append(f'central bundle: {name} is not a file of a published coordinate')
+    for directory, stem in sorted(coordinate_dirs.items()):
+        if f'{directory}/{stem}.pom' not in entries:
+            failures.append(f'central bundle: no {directory}/{stem}.pom')
+    print(f'central bundle: {len(entries)} file(s), {len(stray)} outside a coordinate')
+elif not UNSIGNED:
+    failures.append(f'{BUNDLE} is missing; the release profile builds it at `deploy` '
+                    '(release.yml sets -DskipUpload=true on a dry run)')
 
 # @exeris/codegen-ts is released by the same tag as the reactor, so it carries the same version.
 npm_dir = pathlib.Path('exeris-codegen-ts')

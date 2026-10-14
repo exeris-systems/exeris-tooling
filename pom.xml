@@ -345,11 +345,25 @@
                         declarations must not differ in anything but <excludeArtifacts>, and each
                         list covers only the modules whose parent chain reaches its POM;
                         tools/release-readiness checks both.
+
+                        Staging installs each module into a local repository under
+                        target/central-staging, and before bundling the plugin deletes the
+                        bookkeeping that install leaves: maven-metadata files at the artifact and
+                        group level, which have no pom beside them, and Central refuses a bundle
+                        holding one. Their names depend on the resolver of the Maven running the
+                        build: maven-metadata-central-staging.xml on Maven 3.9, and
+                        maven-metadata-local.xml and _remote.repositories on Maven 3.10, which
+                        0.11.0 does not delete. Keep this at 0.12.0 or later: the runner image picks
+                        the Maven version. tools/release-readiness fails a bundle holding anything
+                        outside a published coordinate's version directory.
+
+                        skipUpload builds the bundle without uploading it; release.yml's dry run
+                        sets it.
                     -->
                     <plugin>
                         <groupId>org.sonatype.central</groupId>
                         <artifactId>central-publishing-maven-plugin</artifactId>
-                        <version>0.11.0</version>
+                        <version>0.12.0</version>
                         <extensions>true</extensions>
                         <configuration>
                             <publishingServerId>central</publishingServerId>
