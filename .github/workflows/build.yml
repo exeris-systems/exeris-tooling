@@ -27,12 +27,6 @@ jobs:
         # forward-compatibility is information, not a gate on the release-bearing line.
         java: ['25', '26']
 
-    env:
-      # Job-level so the analysis steps can read it: `secrets` is not available in a step-level
-      # `if`. Empty on forked pull requests and on Dependabot runs, which is exactly when the
-      # analysis must be skipped rather than fail.
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
     steps:
       - name: Checkout exeris-tooling
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -67,13 +61,25 @@ jobs:
         # repository a consumer of the published POMs has.
         run: mvn -B -ntp verify
 
-      # The TypeScript emitter's coverage, for the analysis below. exeris-codegen-ts is not a Maven
-      # module, so its lcov report is produced here rather than picked up from the reactor. The
-      # report's source paths are made absolute: the module that carries the TypeScript sources
-      # (exeris-coverage-aggregate) has a different base directory than the package, and a relative
-      # `src/...` path would resolve to nothing there.
+      # SONAR_TOKEN is in the environment of this step and of the analysis step only, never of a
+      # step that runs the pull request's build or npm scripts. A step-level `if` can read neither
+      # `secrets` nor another step's `env`, so this step tests the token and the steps below read
+      # its output. The token is empty on forked pull requests and on Dependabot runs, which is
+      # exactly when the analysis must be skipped rather than fail.
+      - name: Decide whether the Sonar analysis runs
+        id: sonar-guard
+        if: ${{ matrix.java == '25' }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [ -n "$SONAR_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Node.js (Sonar coverage input)
-        if: ${{ matrix.java == '25' && env.SONAR_TOKEN != '' }}
+        if: ${{ steps.sonar-guard.outputs.enabled == 'true' }}
         continue-on-error: true
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -81,8 +87,13 @@ jobs:
           cache: npm
           cache-dependency-path: exeris-tooling/exeris-codegen-ts/package-lock.json
 
+      # The TypeScript emitter's coverage, for the analysis below. exeris-codegen-ts is not a Maven
+      # module, so its lcov report is produced here rather than picked up from the reactor. The
+      # report's source paths are made absolute: the module that carries the TypeScript sources
+      # (exeris-coverage-aggregate) has a different base directory than the package, and a relative
+      # `src/...` path would resolve to nothing there.
       - name: vitest lcov report (exeris-codegen-ts)
-        if: ${{ matrix.java == '25' && env.SONAR_TOKEN != '' }}
+        if: ${{ steps.sonar-guard.outputs.enabled == 'true' }}
         continue-on-error: true
         working-directory: exeris-tooling/exeris-codegen-ts
         run: |
@@ -114,9 +125,11 @@ jobs:
         #
         # The plugin version is pinned in the root POM's pluginManagement and the goal is named by
         # full coordinates, so the pin is what resolves.
-        if: ${{ matrix.java == '25' && env.SONAR_TOKEN != '' }}
+        if: ${{ steps.sonar-guard.outputs.enabled == 'true' }}
         continue-on-error: true
         working-directory: exeris-tooling
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
           mvn -B -ntp -e -DskipTests -Dinvoker.skip=true \
             verify \

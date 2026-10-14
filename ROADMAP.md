@@ -3492,6 +3492,68 @@ both: each list-route rule landed with the contract file both builds read, or it
 `search`, range filters and multi-property sort are outside ADR-096; a stream isolation key needs a
 kernel change first; CI does not yet run the PostgreSQL matrix.
 
+## 0.10.0 — shipped
+
+Release PR 2026-10-14; the tag and the Central and npm publication follow it (Versioning policy).
+The train's own entries carry the evidence; this is the close-out.
+
+**What it was about.** Compiling route authorization, making a streaming action run and stream its
+events, removing what 0.9.0 deprecated, and making the `@View` pages exeris-web needs compile and
+ship. It cuts on the `0.12.0` pins: neither kernel `0.13.0` nor SDK `0.13.0` is final on Central,
+so every Exeris dependency is still kernel `0.12.0` and SDK `0.12.0`. From 0.10.0 every tooling
+module is published as `eu.exeris:<artifactId>` (ADR-091 Amendment 4, ADR-095 Amendment 1).
+
+**Shipped:**
+- *Authorization, the seam (J3a):* the generated `Application` binds `HTTP_ROUTE_POLICY` through
+  `routePolicy()`, `applicationPolicy()` and `unmatchedRoutes()`, and `GeneratedRoutePolicy`
+  abstains everywhere (ADR-105); the bearer interceptor is emitted only when a route demands
+  identity, and the guard generator emits no invented permission and no role bypass.
+- *Streaming (ADR-044 Amendment 2):* a streaming action runs and streams the events it triggers
+  (`EXT-PROC-1107` retired); a `realTimeApi` entity serves `GET {base}/{id}/stream`, and `message`,
+  `open` and `error` are reserved frame names; the live view writes keep-alive frames; the TS
+  spectate client of a `GLOBAL` entity, the per-action clients of tenant-partitioned entities and
+  the consumer-supplied event-bus endpoint.
+- *Keys and bodies:* `@ExerisDomain(primaryKeyField)` names a `UUID` key across both emitters
+  (ADR-104); the create and update bodies follow the published schemas and leave every
+  server-owned column as stored (ADR-090 Amendments 1 to 4).
+- *Removals:* T6's default-table-change warning (`EXT-PROC-1104` retired); in `exeris-codegen-ts`,
+  `restore()` (T58), the DTO `tenantId` of a tenant-partitioned entity with no `systemFields`
+  block (T36) and the environments' `apiVersion` (T38).
+- *`@View` pages (TS wave S6):* CUSTOM blocks with their props, LIST items as `<li>`, an optional
+  `<h1>`, pages-only output into an existing app with manifest-owned rewrites, a views-only
+  `init`, and opt-in SSG.
+- *Debts and contracts:* `EXT-PROC-1015` (no key field), `EXT-PLUG-2004` (T30), `EXT-GEN-3104`
+  (metadata load order), a golden OpenAPI document, the strict-audit registry keys resolved
+  against the SDK, `@DomainEvent` in the strict audit (T11), and CRLF-preserving rewrites in
+  `exeris-codegen-ts`.
+- *Build and bridge:* Checkstyle, PMD, ArchUnit and the javadoc gate enforce on the tooling's own
+  Java, and emitted Java compiles under `-Xlint:all` (J0); the generator catalogue and
+  `eu.exeris:exeris-codegen-cli` (ADR-097); `eu.exeris:exeris-initializr` (ADR-091 Amendment 5);
+  SonarCloud analysis from CI.
+
+**Regenerating changes the output.** 0.10.0 carries breaking changes to both emitters, recorded in
+MIGRATION's "0.10.0 train — regeneration deltas", which this release assembles from its fragments,
+and, for the TypeScript emitter, in the `since 0.10` entries of
+`exeris-codegen-ts/api/accepted-api-changes.json` (ADR-092). A consumer regenerates and reads that
+section before upgrading.
+
+**Found before the cut (#371, closed).** The end-to-end matrix booted the emitted application on
+H2 and PostgreSQL and found four generator defects, each fixed in 0.10.0: a declared `Integer`
+version (#399), the route policy's path without the query string and `HEAD` as `GET` (#395), an
+absent `inCreate` / `inUpdate` read as `false` (#402), and a foreign-key violation answering `422`
+or `409` (#403). Follow-ups it left open: #401 (the absent-flag rule, once a pinned SDK writes both
+keys), #405 (the migration assembler accepts a link between fragments), #406 (accepted ADRs name
+fragment paths the assembly deleted), #407 (generated-test coverage) and #408 (opt-in generated
+integration tests).
+
+**Not in it, and why:** the route policy's data half (J3-3, J3-4, S3's guards) waits on
+exeris-sdk#161 in a final SDK 0.13, and moves to 0.11.0; the tenant guard on the entity-level live
+view and the tenant-partitioned spectate route wait on an isolation key on `EventDescriptor`
+(exeris-kernel#600), so `EXT-PROC-1014` stands; a per-action stream's result frame waits on
+exeris-sdk#191; the `@PrimaryKey` marker (J5b), Track C, `@SagaTransition` and T48 slice C2 wait
+on upstream releases; the mesh (T12 + T17) was the stretch wave; HERO's look waits on
+`@exeris/ui-kit` 0.5.
+
 ## 0.9.0 sequencing
 
 ### Scope — set 2026-09-30
@@ -3904,7 +3966,7 @@ enters only if its upstream half is final first.
       lint gate over emitted Java (#353); SonarCloud analysis runs from CI after `mvn verify` with the
       JaCoCo and vitest lcov coverage, and the root POM excludes `src/it` from copy-paste detection
       (#377, which replaces automatic analysis and drops `.sonarcloud.properties`).
-- [ ] **T53, the seam (J3a)** (RFC accepted as ADR-105; founder ruling 2026-10-13: 0.10.0 cuts with
+- [x] **T53, the seam (J3a)** (RFC accepted as ADR-105; founder ruling 2026-10-13: 0.10.0 cuts with
       the seam only): J3-1 (ADR-105, #359) and J3-2 (#369). The extraction, the table, the OpenAPI
       security block and the data half of S3 move to 0.11.0 (see **0.11.0**). D10 resolves with S3's
       data-independent half.
@@ -3913,10 +3975,10 @@ enters only if its upstream half is final first.
       *Moved to 0.11.0:* J3-3 (processor extraction, the obligation-12 table, `route-policy.json`
       and its conformance test), J3-4 (the ADR-079 OpenAPI security block) and the data half of S3,
       gated on exeris-sdk#161 in a final SDK 0.13; the latest final SDK is 0.12.0, which 0.10.0 pins.
-      *Open in 0.10.0:* S3's data-independent half (ADR-105 obligations 22 and 23): the invented
-      `<ENTITY>_PERMISSIONS` constants and the role bypass are deleted, the bearer interceptor is
-      emitted only when a route demands identity (none does yet), and
-      `KernelStrategy.getDefaultHeaders` is deleted.
+      *Landed (S3, the data-independent half, ADR-105 obligations 22 and 23):* the invented
+      `<ENTITY>_PERMISSIONS` constants and the role bypass are deleted (#388); the bearer
+      interceptor is emitted only when a route demands identity, none does yet, and
+      `KernelStrategy.getDefaultHeaders` is deleted (#389).
 - [x] **TS wave S6 — `@View` pages for exeris-web:** CUSTOM blocks compile with their props, LIST
       items are `<li>`, the generated `<h1>` can be omitted, pages-only output into an existing app with
       manifest-owned rewrites, a views-only `init`, and opt-in SSG. HERO's look waits on `.exeris-hero`
@@ -3971,8 +4033,7 @@ enters only if its upstream half is final first.
       artifactIds and the Java packages (`eu.exeris.tooling.*`) are unchanged. 0.9.0 and earlier stay
       under `eu.exeris.tooling`, with no relocation POM. Recorded in ADR-091 Amendment 4 and ADR-095
       Amendment 1; consumer steps in `docs/MIGRATION-0.x-to-1.0.md`, 0.10.0 train.
-- [ ] **The 0.10.0 release PR switches the README quick start to `eu.exeris` and `0.10.0`.** Until
-      then the snippets show the published `eu.exeris.tooling:0.9.0`, which a consumer can resolve.
+- [x] **The 0.10.0 release PR switches the README quick start to `eu.exeris` and `0.10.0`.**
 - [x] **Carried from 0.9.0 "Alongside, no gate"** (TS wave S2): the `npm start` proxy prefix
       (`proxy.conf.js` with a header-based `bypass`, verified against a real `ng serve`), codegen-ts
       lint in CI, and deleting `KernelStrategy.generateClientCode` / `getRealTimeConfig`, which have
@@ -4047,12 +4108,16 @@ enters only if its upstream half is final first.
       compared with CRLF folded to LF, and a replaced file that is CRLF on disk (a line ending, every LF
       preceded by CR) is written as CRLF; a mixed file is written as LF.
 - [x] The removals below.
-- [ ] **Pre-cut end-to-end matrix** (#371): the generated sample app's `ng build` and `ng test` now
+- [x] **Pre-cut end-to-end matrix** (#371, closed): the generated sample app's `ng build` and `ng test` now
       also cover a UNIVERSE entity (`Listing`, with its `@SharedScope` field `scopeId` and a foreign
       key into `Product`), a `readOnly` field (`Product.sku`) and a `required` + `readOnly` field
-      (`Product.catalogCode`). Open: the booted Java matrix in `exeris-e2e-tests` and the Java-side
-      parity fixtures.
-- [ ] **`exeris-initializr`** (ADR-091 Amendment 5; does not hold the cut): a launchable jar that writes
+      (`Product.catalogCode`) (#394); the booted Java matrix and the Java-side parity fixtures
+      landed in #395, #396 and #400, the PostgreSQL boot as the `e2e-postgres` CI job. The matrix
+      found four generator defects, fixed before the cut: a declared `Integer` version (#399), the
+      route policy deciding on the path without its query string and on `HEAD` as `GET` (#395), an
+      absent `inCreate` / `inUpdate` read as `false` in both loaders (#402), and a foreign-key
+      violation answering `422` or `409` instead of `500` (#403).
+- [x] **`exeris-initializr`** (ADR-091 Amendment 5, #393; does not hold the cut): a launchable jar that writes
       a new project on `exeris-app-parent` and `exeris-app-starter`, backend-only or e2e, PostgreSQL by
       default, with the two-pass first build scripted, and two invoker fixtures that build what it
       writes. Frontend-only waits on #391.

@@ -46,8 +46,9 @@ does not consult `supports()`, so a generator's own guard decides whether a file
 named `*Generator` that write no file have no row: `OpenApiGenerator` renders the YAML that
 `KernelOpenApiGenerator` writes, and `KernelGeneratorStrategy` is the registry.
 
-Five main generators and two test generators read the whole build as well as their own entity, through
-`generateMultiple(metadata, build)`, because what they write for an entity depends on how the other
+Five main generators and two test generators read the whole build as well as their own entity, the
+main ones through `generateMultiple(metadata, build)` and the test ones through
+`generate(metadata, basePackage, build)`, because what they write for an entity depends on how the other
 entities reference it (ADR-076 Amendment 1): `KernelRepositoryGenerator`, `KernelErrorGenerator`,
 `KernelHandlerGenerator`, `KernelActionStreamHandlerGenerator` and `KernelOpenApiGenerator`, and in
 the `test` tree `KernelHandlerTestGenerator` and `KernelRepositoryTestGenerator`. For them a row's

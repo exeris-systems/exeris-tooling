@@ -6,7 +6,7 @@
     <parent>
         <groupId>eu.exeris</groupId>
         <artifactId>exeris-tooling-parent</artifactId>
-        <version>0.10.0-SNAPSHOT</version>
+        <version>0.10.0</version>
         <relativePath>../exeris-tooling-parent</relativePath>
     </parent>
 
@@ -46,8 +46,11 @@
              sources. This module has no sources of its own, which makes it the one place the
              TypeScript emitter can be handed to the analysis without every other module
              inheriting the paths. Its coverage is the lcov report vitest writes
-             (npm run test:coverage); the JVM modules report through their own JaCoCo XML, and
-             this module has none. -->
+             (npm run test:coverage). Each JVM module reports through its own
+             target/site/jacoco/jacoco.xml, the path the root POM sets. This module writes no report
+             there; it points the path at the XML its report-aggregate execution writes, which
+             describes the Java classes of the modules listed below, not the TypeScript sources
+             this module hands to the analysis. -->
         <sonar.sources>${project.basedir}/../exeris-codegen-ts/src</sonar.sources>
         <sonar.tests>${project.basedir}/../exeris-codegen-ts/test</sonar.tests>
         <sonar.test.inclusions>**/*.spec.ts</sonar.test.inclusions>

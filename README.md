@@ -124,7 +124,7 @@ all versioned with tooling, from 0.9.0:
   composition runtime and Jackson 3.
 
 **From 0.10.0, every tooling artefact is published under the `eu.exeris` group**, the group of the
-kernel and SDK artefacts. 0.9.0 and earlier, including the snippets below, are under
+kernel and SDK artefacts, as in the snippets below. 0.9.0 and earlier are under
 `eu.exeris.tooling`; the artifactIds are the same in both groups ([MIGRATION](docs/MIGRATION-0.x-to-1.0.md#0100-train--regeneration-deltas)).
 
 **The JDBC driver and the logging backend are the application's choice.** The starter declares
@@ -137,9 +137,9 @@ checks for registered providers, not for a particular artefact.
 
 ```xml
 <parent>
-    <groupId>eu.exeris.tooling</groupId>
+    <groupId>eu.exeris</groupId>
     <artifactId>exeris-app-parent</artifactId>
-    <version>0.9.0</version>
+    <version>0.10.0</version>
     <relativePath/>
 </parent>
 
@@ -166,7 +166,7 @@ checks for registered providers, not for a particular artefact.
 
 <dependencies>
     <dependency>
-        <groupId>eu.exeris.tooling</groupId>
+        <groupId>eu.exeris</groupId>
         <artifactId>exeris-app-starter</artifactId>
         <type>pom</type>
     </dependency>
@@ -193,14 +193,14 @@ and why the tooling version is a property of your own.
 
 ```xml
 <properties>
-    <exeris.tooling.version>0.9.0</exeris.tooling.version>
+    <exeris.tooling.version>0.10.0</exeris.tooling.version>
     <maven.compiler.release>25</maven.compiler.release>
 </properties>
 
 <dependencyManagement>
     <dependencies>
         <dependency>
-            <groupId>eu.exeris.tooling</groupId>
+            <groupId>eu.exeris</groupId>
             <artifactId>exeris-app-bom</artifactId>
             <version>${exeris.tooling.version}</version>
             <type>pom</type>
@@ -211,7 +211,7 @@ and why the tooling version is a property of your own.
 
 <dependencies>
     <dependency>
-        <groupId>eu.exeris.tooling</groupId>
+        <groupId>eu.exeris</groupId>
         <artifactId>exeris-app-starter</artifactId>
         <type>pom</type>
     </dependency>
@@ -239,7 +239,7 @@ and why the tooling version is a property of your own.
             <configuration>
                 <annotationProcessorPaths>
                     <path>
-                        <groupId>eu.exeris.tooling</groupId>
+                        <groupId>eu.exeris</groupId>
                         <artifactId>exeris-processor</artifactId>
                         <version>${exeris.tooling.version}</version>
                     </path>
@@ -247,7 +247,7 @@ and why the tooling version is a property of your own.
             </configuration>
         </plugin>
         <plugin>
-            <groupId>eu.exeris.tooling</groupId>
+            <groupId>eu.exeris</groupId>
             <artifactId>exeris-codegen-maven-plugin</artifactId>
             <version>${exeris.tooling.version}</version>
             <executions>
