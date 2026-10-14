@@ -4152,7 +4152,8 @@ keeps compiling where it still uses one. 0.10.0 removes them.
 
 Pairs with SDK 0.13, which 0.10.0 does not wait for. Order, gates and the Java/TS pairing are in
 [`docs/0.11.0-release-plan.md`](docs/0.11.0-release-plan.md). Every row but S6 needs an SDK 0.13 half: the
-`-io` reader half under ADR-042 (exeris-sdk#187) or a carrier (exeris-sdk#186).
+`-io` reader half under ADR-042 (exeris-sdk#187) or a carrier (exeris-sdk#186). In S6 only the SEO
+fields (#412) need the SDK.
 
 - [ ] **Wave 0, decisions** (may start during 0.10.0): RFC/ADR for the `@Blob` routes and the
       `@Channel` message shape; the graph-property payload encoding (kernel ask); the `@GraphQuery`
