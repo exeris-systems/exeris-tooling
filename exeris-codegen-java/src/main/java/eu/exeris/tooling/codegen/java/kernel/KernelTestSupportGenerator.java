@@ -370,6 +370,10 @@ public final class KernelTestSupportGenerator {
                         .initializer("1L")
                         .addJavadoc("What the next write reports; 0 drives the not-found paths.\n")
                         .build())
+                .addField(FieldSpec.builder(RuntimeException.class, "writeFailure", Modifier.PUBLIC)
+                        .addJavadoc("What the next write throws instead of reporting, the way a driver\n")
+                        .addJavadoc("reports a refused statement; null — the default — writes.\n")
+                        .build())
                 .addField(FieldSpec.builder(TypeName.BOOLEAN, "rowServed", Modifier.PRIVATE).build());
 
         type.addMethod(MethodSpec.methodBuilder("recordedRow")
@@ -456,6 +460,9 @@ public final class KernelTestSupportGenerator {
                 .build());
         type.addMethod(override("executeUpdate")
                 .returns(TypeName.LONG)
+                .beginControlFlow("if (writeFailure != null)")
+                .addStatement("throw writeFailure")
+                .endControlFlow()
                 .addStatement("writeBinds.clear()")
                 .addStatement("writeBinds.putAll(binds)")
                 .addStatement("return rowsAffected")

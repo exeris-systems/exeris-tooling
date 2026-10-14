@@ -231,8 +231,12 @@ class GeneratedTestsE2ETest {
             // foreign-tenant 400s) + 24 SpeciesHandlerTest cases (the 23 an Invoice gets, plus the
             // foreign-shared-scope 400) + 76 for the renamed-key pair (ADR-104): Voucher —
             // 8 repository, 9 service (seven CRUD delegations, findPage included, and two finders), 23 handler —
-            // and Payment, which references it — 8 repository, 8 service (one finder), 20 handler.
-            assertThat(summary.getTestsSucceededCount()).isEqualTo(214);
+            // and Payment, which references it — 8 repository, 8 service (one finder), 20 handler —
+            // + 12 foreign-key cases (ADR-076 Amendment 1): Voucher references itself, so its
+            // repository gets the two missing-reference refusals, the unrelated violation and the
+            // refused delete, and its handler the two 422s and the 409; Payment references Voucher,
+            // so it gets the three repository cases and the two 422s, and no delete case.
+            assertThat(summary.getTestsSucceededCount()).isEqualTo(226);
         }
     }
 

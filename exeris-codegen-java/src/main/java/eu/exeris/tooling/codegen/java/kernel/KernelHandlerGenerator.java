@@ -59,6 +59,13 @@ import java.util.List;
  */
 public class KernelHandlerGenerator implements KernelArtifactGenerator {
 
+    /** The status of a write naming a missing row through a relationship. */
+    static final int UNPROCESSABLE_CONTENT_CODE = 422;
+    /** The reason phrase RFC 9110 gives {@link #UNPROCESSABLE_CONTENT_CODE}. */
+    static final String UNPROCESSABLE_CONTENT_REASON = "Unprocessable Content";
+    /** The problem-object member that names the relationship of a missing reference. */
+    static final String PROBLEM_FIELD = "field";
+
     /** The generated publisher's field and constructor-parameter name (T48). */
     private static final String PUBLISHER = "publisher";
 
@@ -94,6 +101,10 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
             ClassName.get("java.lang", "RuntimeException");
     /** JavaPoet parameter name for the {@code HttpExchange} every handler method takes. */
     private static final String EXCHANGE_PARAM = "exchange";
+    /** The emitted method that answers a write naming a missing row (ADR-076 Amendment 1). */
+    private static final String RESPOND_REFERENCE_NOT_FOUND = "respondReferenceNotFound";
+    /** The emitted constant holding the 422 status. */
+    private static final String UNPROCESSABLE_CONTENT = "UNPROCESSABLE_CONTENT";
     /** The 500 tail every deployment-fault refusal ends on (T41, T52, and the service-call catch). */
     private static final String RESPOND_SERVER_ERROR = "exchange.respond($T.INTERNAL_SERVER_ERROR)";
 
@@ -105,8 +116,27 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         // no state to initialise
     }
 
+    /** The entity as a build of its own: only a reference to itself is a foreign key. */
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
+        return generate(metadata, List.of(metadata));
+    }
+
+    @Override
+    public List<GeneratedFile> generateMultiple(DomainMetadata metadata, List<DomainMetadata> build) {
+        return List.of(generate(metadata, build));
+    }
+
+    /**
+     * Emits the handler of one entity of a build. The build decides which foreign keys the
+     * entity's writes and delete can violate, and so which of them answer {@code 422} and
+     * {@code 409} (ADR-076 Amendment 1).
+     *
+     * @param metadata the entity
+     * @param build    every entity of the build, {@code metadata} included
+     * @return the handler
+     */
+    GeneratedFile generate(DomainMetadata metadata, List<DomainMetadata> build) {
         String basePackage = metadata.packageName().replace(".domain", "");
         String packageName = basePackage + ".handler";
         String entity = metadata.entityName();
@@ -122,6 +152,8 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         // A tenant-scoped entity cannot be served without a tenant; a global one can. The guard is
         // emitted only where its absence would produce a silently-empty response (finding T41).
         boolean tenantPartitioned = isTenantPartitioned(metadata);
+        Refusals refusals = new Refusals(KernelErrorGenerator.referenceNotFoundType(metadata, build),
+                KernelErrorGenerator.stillReferencedType(metadata, build));
 
         TypeSpec.Builder handlerBuilder = KernelScaffold.publicClass(className)
                 .addJavadoc("Generated HTTP Handler for $L.\n", entity)
@@ -169,9 +201,10 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         handlerBuilder.addMethod(constructor.build())
                 .addMethod(buildHandleGetAll(entityLower, metadata, tenantPartitioned))
                 .addMethod(buildHandleGetById(entityLower, optionalOfEntity, tenantPartitioned))
-                .addMethod(buildHandleCreate(entityLower, entityType, metadata, tenantPartitioned))
-                .addMethod(buildHandleUpdate(entityLower, entityType, metadata, tenantPartitioned))
-                .addMethod(buildHandleDelete(entityLower, optionalOfEntity, metadata, tenantPartitioned));
+                .addMethod(buildHandleCreate(entityLower, entityType, metadata, tenantPartitioned, refusals))
+                .addMethod(buildHandleUpdate(entityLower, entityType, metadata, tenantPartitioned, refusals))
+                .addMethod(buildHandleDelete(entityLower, optionalOfEntity, metadata, tenantPartitioned,
+                        refusals));
 
         // T1: serve @Action methods. Each action gets a handler that loads the
         // aggregate, decodes its @ActionParam body (when any), invokes the actual
@@ -192,7 +225,8 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                     handlerBuilder.addType(buildActionRequestRecord(action));
                 }
                 handlerBuilder.addMethod(buildActionHandler(
-                        action, entityType, optionalOfEntity, selfType, entityLower, metadata, tenantPartitioned));
+                        action, entityType, optionalOfEntity, selfType, entityLower, metadata, tenantPartitioned,
+                        refusals));
             }
         }
 
@@ -201,6 +235,15 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         // exchange.pathParams() — no raw-path string surgery, and no separate action-aware extractor.
         if (tenantPartitioned) {
             handlerBuilder.addMethod(buildRespondTenantUnbound(entityLower));
+        }
+        if (refusals.referenceNotFound() != null) {
+            handlerBuilder.addField(FieldSpec.builder(HTTP_STATUS, UNPROCESSABLE_CONTENT,
+                                    Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                            .addJavadoc("The kernel names no 422 constant; RFC 9110 §15.5.21 names the status.\n")
+                            .initializer("new $T($L, $S)", HTTP_STATUS, UNPROCESSABLE_CONTENT_CODE,
+                                    UNPROCESSABLE_CONTENT_REASON)
+                            .build())
+                    .addMethod(buildRespondReferenceNotFound());
         }
         handlerBuilder.addMethod(buildRawQuery());
         handlerBuilder.addMethod(buildExtractPathId());
@@ -271,7 +314,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
     }
 
     private MethodSpec buildHandleCreate(String entityLower, ClassName entityType, DomainMetadata metadata,
-                                     boolean tenantPartitioned) {
+                                     boolean tenantPartitioned, Refusals refusals) {
         MethodSpec.Builder method = crudHandler("handleCreate");
         appendTenantGuard(method, tenantPartitioned);
         appendBodyParseGuard(method, entityType);
@@ -287,11 +330,12 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 "saved." + PrimaryKeys.getter(metadata) + "()", "saved");
         method.addStatement("exchange.respond($T.CREATED, saved)", HTTP_STATUS);
         appendCallerFaultCatch(method, metadata);
+        appendReferenceNotFoundCatch(method, refusals);
         return appendServerErrorCatch(method, "Failed to create " + entityLower).build();
     }
 
     private MethodSpec buildHandleUpdate(String entityLower, ClassName entityType, DomainMetadata metadata,
-                                     boolean tenantPartitioned) {
+                                     boolean tenantPartitioned, Refusals refusals) {
         MethodSpec.Builder method = crudHandler("handleUpdate");
         appendTenantGuard(method, tenantPartitioned);
         appendPathIdGuard(method);
@@ -307,11 +351,13 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         method.addStatement("exchange.respond($T.OK, updated)", HTTP_STATUS);
         appendWriteRejectionCatch(method, metadata, true);
         appendCallerFaultCatch(method, metadata);
+        appendReferenceNotFoundCatch(method, refusals);
         return appendServerErrorCatch(method, "Failed to update " + entityLower).build();
     }
 
     private MethodSpec buildHandleDelete(String entityLower, TypeName optionalOfEntity,
-                                         DomainMetadata metadata, boolean tenantPartitioned) {
+                                         DomainMetadata metadata, boolean tenantPartitioned,
+                                         Refusals refusals) {
         MethodSpec.Builder method = crudHandler("handleDelete");
         appendTenantGuard(method, tenantPartitioned);
         appendPathIdGuard(method);
@@ -351,6 +397,12 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         // Always the not-found type, never the conflict one: deleteById matches on id alone,
         // so a versioned entity has no stale-version failure mode on this route.
         appendWriteRejectionCatch(method, metadata, false);
+        if (refusals.stillReferenced() != null) {
+            // The row exists and other rows reference it: the delete can succeed once they are gone
+            // (ADR-076 Amendment 1). No log, like the 404 beside it.
+            method.nextControlFlow("catch ($T e)", refusals.stillReferenced())
+                    .addStatement("exchange.respond($T.CONFLICT)", HTTP_STATUS);
+        }
         return appendServerErrorCatch(method, "Failed to delete " + entityLower).build();
     }
 
@@ -407,6 +459,56 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
             method.nextControlFlow("catch ($T | $T e)", tenantMismatch, sharedScopeMismatch);
         }
         method.addStatement("exchange.respond($T.BAD_REQUEST)", HTTP_STATUS);
+    }
+
+    /**
+     * The {@code catch} that answers a write naming a missing row through a relationship with
+     * {@code 422} and a problem body naming the relationship (ADR-076 Amendment 1), on the routes
+     * that hand the repository an entity to write. Emitted only for an entity whose repository can
+     * raise it. No log: the request is well formed, and the row it points at is the caller's to
+     * correct.
+     */
+    private static void appendReferenceNotFoundCatch(MethodSpec.Builder method, Refusals refusals) {
+        if (refusals.referenceNotFound() == null) {
+            return;
+        }
+        method.nextControlFlow("catch ($T e)", refusals.referenceNotFound())
+                .addStatement("$L(exchange, e.relation())", RESPOND_REFERENCE_NOT_FOUND);
+    }
+
+    /**
+     * Emits the {@code 422} answer: an RFC 9457 problem object whose {@code field} member names the
+     * relationship the write's missing row was named through.
+     */
+    private static MethodSpec buildRespondReferenceNotFound() {
+        ClassName map = ClassName.get("java.util", "Map");
+        ClassName linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
+        TypeName problemType = ParameterizedTypeName.get(map, ClassName.get(String.class),
+                ClassName.get(Object.class));
+        return MethodSpec.methodBuilder(RESPOND_REFERENCE_NOT_FOUND)
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .addJavadoc("Refuses a write that names, through {@code relation}, a row that does not\n")
+                .addJavadoc("exist: {@code 422} with an RFC 9457 problem object whose {@code $L} member\n",
+                        PROBLEM_FIELD)
+                .addJavadoc("names the relationship.\n")
+                .addParameter(HTTP_EXCHANGE, EXCHANGE_PARAM)
+                .addParameter(String.class, "relation")
+                .addStatement("$T problem = new $T<>()", problemType, linkedHashMap)
+                .addStatement("problem.put($S, $S)", "type", "about:blank")
+                .addStatement("problem.put($S, $S)", "title", UNPROCESSABLE_CONTENT_REASON)
+                .addStatement("problem.put($S, $L)", "status", UNPROCESSABLE_CONTENT_CODE)
+                .addStatement("problem.put($S, relation + $S)", "detail", " names a row that does not exist")
+                .addStatement("problem.put($S, relation)", PROBLEM_FIELD)
+                .addStatement("exchange.respond($L, problem)", UNPROCESSABLE_CONTENT)
+                .build();
+    }
+
+    /**
+     * The foreign-key refusals one entity's repository can raise in a build, each {@code null} when
+     * it cannot: {@code <Entity>ReferenceNotFoundException} on a write, and
+     * {@code <Entity>StillReferencedException} on a delete.
+     */
+    private record Refusals(ClassName referenceNotFound, ClassName stillReferenced) {
     }
 
     /**
@@ -524,7 +626,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
     private MethodSpec buildActionHandler(ActionMetadata action, ClassName entityType,
                                           TypeName optionalOfEntity, ClassName selfType,
                                           String entityLower, DomainMetadata metadata,
-                                          boolean tenantPartitioned) {
+                                          boolean tenantPartitioned, Refusals refusals) {
         MethodSpec.Builder method = crudHandler("handle" + NameCasing.pascal(action.name()));
         method.addJavadoc("Serves the {@code $L} action. NOTE (v1): a domain exception from "
                 + "the entity method surfaces as 500, not 4xx.\n", action.name());
@@ -573,6 +675,8 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         // An action writes through the same service.update, so a partition-mate acting on a shared
         // row it can read but not own is refused there, as the caller fault it is (kernel ADR-083).
         appendCallerFaultCatch(method, metadata);
+        // The entity method may point a relationship at a row that does not exist.
+        appendReferenceNotFoundCatch(method, refusals);
         return appendServerErrorCatch(method,
                 "Failed to execute action " + action.name() + " on " + entityLower).build();
     }

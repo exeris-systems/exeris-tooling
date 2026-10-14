@@ -11,6 +11,7 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
+import eu.exeris.tooling.codegen.java.support.ForeignKeys;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
 import eu.exeris.tooling.codegen.java.support.ListQuerySupport;
@@ -61,6 +62,10 @@ import java.util.Optional;
  * repository refuses as naming a foreign tenant (or, on a UNIVERSE entity, a foreign shared scope)
  * answers {@code 400}.
  *
+ * <p>Foreign keys (ADR-076 Amendment 1): an entity that references an entity of the build gets a
+ * write naming a missing row answered {@code 422} with a problem body naming the relationship, and
+ * an entity another references gets a delete of a still-referenced row answered {@code 409}.
+ *
  * <h2>The service double</h2>
  * <p>A nested {@code Stub<Entity>Service} subclasses the generated service and overrides the three
  * methods under test. Subclassing rather than mocking is what keeps the dependency contract at
@@ -97,6 +102,7 @@ public final class KernelHandlerTestGenerator {
     private static final ClassName UUID = ClassName.get("java.util", "UUID");
     private static final ClassName LIST = ClassName.get("java.util", "List");
     private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
+    private static final ClassName MAP = ClassName.get("java.util", "Map");
     private static final ClassName SCOPED_VALUE = ClassName.get("java.lang", "ScopedValue");
     private static final ClassName HTTP_KERNEL_PROVIDERS =
             ClassName.get("eu.exeris.kernel.spi.http", "HttpKernelProviders");
@@ -132,6 +138,20 @@ public final class KernelHandlerTestGenerator {
      * @return the emitted test; never {@code null}
      */
     public GeneratedFile generate(DomainMetadata metadata, String basePackage) {
+        return generate(metadata, basePackage, List.of(metadata));
+    }
+
+    /**
+     * Emits the JUnit 5 test for the generated HTTP handler of one entity of a build. The build
+     * decides which foreign-key refusals the handler answers, and so which cases cover them
+     * (ADR-076 Amendment 1).
+     *
+     * @param metadata    the entity whose handler is under test
+     * @param basePackage the project base package
+     * @param build       every entity of the build, {@code metadata} included
+     * @return the emitted test; never {@code null}
+     */
+    public GeneratedFile generate(DomainMetadata metadata, String basePackage, List<DomainMetadata> build) {
         String entity = metadata.entityName();
         String domainPackage = metadata.packageName();
         if (!domainPackage.endsWith(".domain")) {
@@ -197,6 +217,11 @@ public final class KernelHandlerTestGenerator {
                 tenantScoped));
         type.addMethod(deleteAbsentTest(handlerType, exchangeType, stubType, basePath,
                 tenantScoped));
+        ClassName stillReferenced = KernelErrorGenerator.stillReferencedType(metadata, build);
+        if (stillReferenced != null) {
+            type.addMethod(deleteStillReferencedTest(handlerType, exchangeType, stubType, basePath,
+                    tenantScoped));
+        }
         type.addMethod(createMissingBodyTest(handlerType, exchangeType, stubType, basePath,
                 tenantScoped));
         type.addMethod(updateMalformedIdTest(handlerType, exchangeType, stubType, basePath,
@@ -209,6 +234,10 @@ public final class KernelHandlerTestGenerator {
                 stubType, basePath, tenantScoped);
         addCallerFaultTests(type, metadata, entityType, handlerType, exchangeType, bodyType,
                 stubType, basePath);
+        ClassName referenceNotFound = KernelErrorGenerator.referenceNotFoundType(metadata, build);
+        addMissingReferenceTests(type, metadata, build, referenceNotFound,
+                new Scaffold(entityType, handlerType, exchangeType, bodyType, stubType, basePath,
+                        KernelValidationRules.onEitherBody(metadata), Map.of(), tenantScoped));
         if (tenantScoped) {
             type.addMethod(MethodSpec.methodBuilder(AS_TENANT)
                     .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
@@ -234,7 +263,7 @@ public final class KernelHandlerTestGenerator {
                 .addStatement("return newHandler(service, new $T())", bodyType)
                 .build());
         type.addType(stubService(entityType, serviceType, repositoryType, stubType,
-                metadata));
+                metadata, new StubRefusals(referenceNotFound, stillReferenced)));
 
         return new GeneratedFile(packageName, className,
                 KernelScaffold.render(packageName, type.build()), ArtifactType.TEST);
@@ -499,6 +528,26 @@ public final class KernelHandlerTestGenerator {
                         exchangeType, exchangeType, basePath + "/" + FIXED_ID, "id", FIXED_ID)
                 .addStatement(invoke("handleDelete", tenantScoped))
                 .addStatement("$T.assertThat(exchange.status()).isEqualTo($T.NOT_FOUND)",
+                        ASSERTIONS, HTTP_STATUS)
+                .addStatement("$T.assertThat(service.deleted).isNull()", ASSERTIONS)
+                .build();
+    }
+
+    /**
+     * ADR-076 Amendment 1: a delete the database refuses because other rows still reference the row
+     * answers {@code 409}, which says the row is there and the delete can succeed later.
+     */
+    private MethodSpec deleteStillReferencedTest(ClassName handlerType, ClassName exchangeType,
+                                                 ClassName stubType, String basePath,
+                                                 boolean tenantScoped) {
+        return test("handleDeleteRespondsConflictWhenOtherRowsStillReferenceTheRow")
+                .addStatement("$T service = new $T()", stubType, stubType)
+                .addStatement("service.referenced = true")
+                .addStatement("$T handler = newHandler(service)", handlerType)
+                .addStatement("$T exchange = $T.delete($S).withPathParam($S, $S)",
+                        exchangeType, exchangeType, basePath + "/" + FIXED_ID, "id", FIXED_ID)
+                .addStatement(invoke("handleDelete", tenantScoped))
+                .addStatement("$T.assertThat(exchange.status()).isEqualTo($T.CONFLICT)",
                         ASSERTIONS, HTTP_STATUS)
                 .addStatement("$T.assertThat(service.deleted).isNull()", ASSERTIONS)
                 .build();
@@ -947,6 +996,32 @@ public final class KernelHandlerTestGenerator {
         }
     }
 
+    /**
+     * ADR-076 Amendment 1: a write the repository refuses for naming, through a relationship, a row
+     * that does not exist answers {@code 422} with a problem body whose {@code field} member names
+     * the relationship, on both body-carrying routes. As with the caller faults, the decoded entity
+     * reaching the write is what shows the 422 is the refusal's and not a guard's. Skipped when a
+     * rule-carrying field has no synthesizable valid value.
+     */
+    private void addMissingReferenceTests(TypeSpec.Builder type, DomainMetadata metadata,
+                                          List<DomainMetadata> build, ClassName referenceNotFound,
+                                          Scaffold unstaged) {
+        if (referenceNotFound == null) {
+            return;
+        }
+        Optional<Map<String, CodeBlock>> baseline = baselineFor(unstaged.rules);
+        if (baseline.isEmpty()) {
+            return;
+        }
+        Scaffold scaffold = unstaged.withBaseline(baseline.get());
+        String relation = ForeignKeys.outgoing(metadata, build).get(0).relation();
+        CodeBlock refusal = CodeBlock.of("new $T($S, null)", referenceNotFound, relation);
+        type.addMethod(scaffold.unprocessable("handleCreateRespondsUnprocessableForAMissingReference",
+                "handleCreate", refusal, relation));
+        type.addMethod(scaffold.unprocessable("handleUpdateRespondsUnprocessableForAMissingReference",
+                "handleUpdate", refusal, relation));
+    }
+
     /** Emits the shared body of a validation case; only the staged value and the assertions differ. */
     private final class Scaffold {
 
@@ -975,12 +1050,44 @@ public final class KernelHandlerTestGenerator {
             this.tenantScoped = tenantScoped;
         }
 
+        /** This scaffold over {@code values}, the valid value of each rule-carrying field. */
+        Scaffold withBaseline(Map<String, CodeBlock> values) {
+            return new Scaffold(entityType, handlerType, exchangeType, bodyType, stubType, basePath,
+                    rules, values, tenantScoped);
+        }
+
         /** A valid body the write refuses with {@code refusal}; see {@link #addCallerFaultTests}. */
         MethodSpec refused(String name, String handlerMethod, CodeBlock refusal) {
             MethodSpec.Builder m = test(name)
                     .addJavadoc("A valid body naming an owner the caller does not act as is refused by\n")
                     .addJavadoc("the repository with a typed caller fault, answered 400 (kernel ADR-083) rather\n")
                     .addJavadoc("than the 500 a bare exception gets.\n");
+            dispatchRefused(m, handlerMethod, refusal);
+            return m.addStatement("$T.assertThat(exchange.status()).isEqualTo($T.BAD_REQUEST)",
+                            ASSERTIONS, HTTP_STATUS)
+                    .addStatement("$T.assertThat(service.attempted).isSameAs(decoded)", ASSERTIONS)
+                    .build();
+        }
+
+        /** A valid body whose relationship names a missing row; see {@link #addMissingReferenceTests}. */
+        MethodSpec unprocessable(String name, String handlerMethod, CodeBlock refusal, String relation) {
+            MethodSpec.Builder m = test(name)
+                    .addJavadoc("A valid body naming, through {@code $L}, a row that does not exist is\n", relation)
+                    .addJavadoc("refused by the repository's foreign key, answered 422 with a problem body\n")
+                    .addJavadoc("naming the relationship rather than the 500 a bare exception gets.\n");
+            dispatchRefused(m, handlerMethod, refusal);
+            return m.addStatement("$T.assertThat(exchange.status().code()).isEqualTo($L)", ASSERTIONS,
+                            KernelHandlerGenerator.UNPROCESSABLE_CONTENT_CODE)
+                    .addStatement("$T<?, ?> problem = ($T<?, ?>) exchange.body()", MAP, MAP)
+                    .addStatement("$T.assertThat(problem.get($S)).isEqualTo($S)", ASSERTIONS,
+                            KernelHandlerGenerator.PROBLEM_FIELD, relation)
+                    .addStatement("$T.assertThat(problem.get($S)).isEqualTo($L)", ASSERTIONS, "status",
+                            KernelHandlerGenerator.UNPROCESSABLE_CONTENT_CODE)
+                    .addStatement("$T.assertThat(service.attempted).isSameAs(decoded)", ASSERTIONS)
+                    .build();
+        }
+
+        private void dispatchRefused(MethodSpec.Builder m, String handlerMethod, CodeBlock refusal) {
             stage(m, null, null);
             m.addStatement("service.refusal = $L", refusal);
             if ("handleCreate".equals(handlerMethod)) {
@@ -990,10 +1097,6 @@ public final class KernelHandlerTestGenerator {
                         exchangeType, exchangeType, basePath + "/" + FIXED_ID, "id", FIXED_ID);
             }
             run(m, handlerMethod);
-            return m.addStatement("$T.assertThat(exchange.status()).isEqualTo($T.BAD_REQUEST)",
-                            ASSERTIONS, HTTP_STATUS)
-                    .addStatement("$T.assertThat(service.attempted).isSameAs(decoded)", ASSERTIONS)
-                    .build();
         }
 
         MethodSpec.Builder create(String name, KernelValidationRules.FieldRules perturbed,
@@ -1092,7 +1195,7 @@ public final class KernelHandlerTestGenerator {
      */
     private TypeSpec stubService(ClassName entityType, ClassName serviceType,
                                  ClassName repositoryType, ClassName stubType,
-                                 DomainMetadata metadata) {
+                                 DomainMetadata metadata, StubRefusals foreignKeys) {
         TypeName optionalOfEntity = ParameterizedTypeName.get(OPTIONAL, entityType);
 
         // ADR-076: the rejection the real repository raises when a write matches no row, so the
@@ -1102,7 +1205,9 @@ public final class KernelHandlerTestGenerator {
         ClassName notFound = KernelErrorGenerator.notFoundType(metadata);
         ClassName conflict = KernelErrorGenerator.versionConflictType(metadata);
         // A tenant-partitioned repository also refuses a write naming a foreign tenant.
-        boolean refuses = KernelErrorGenerator.tenantMismatchType(metadata) != null;
+        // So does one whose relationship names a missing row (ADR-076 Amendment 1).
+        boolean refuses = KernelErrorGenerator.tenantMismatchType(metadata) != null
+                || foreignKeys.referenceNotFound() != null;
 
         TypeSpec.Builder stub = TypeSpec.classBuilder(stubType.simpleName())
                 .addModifiers(Modifier.STATIC, Modifier.FINAL)
@@ -1134,13 +1239,33 @@ public final class KernelHandlerTestGenerator {
         if (refuses) {
             stub.addField(FieldSpec.builder(RuntimeException.class, "refusal")
                             .addJavadoc("A caller-fault refusal {@code save} and {@code update} raise instead\n")
-                            .addJavadoc("of writing, the way the repository refuses a foreign tenant.\n")
+                            .addJavadoc("of writing, the way the repository refuses a foreign tenant or a\n")
+                            .addJavadoc("missing reference.\n")
                             .addJavadoc("{@code null} — the default — writes.\n")
                             .build())
                     .addField(FieldSpec.builder(entityType, "attempted")
                             .addJavadoc("The entity a refused write was handed.\n")
                             .build());
         }
+        if (foreignKeys.stillReferenced() != null) {
+            stub.addField(FieldSpec.builder(TypeName.BOOLEAN, "referenced")
+                    .addJavadoc("Whether other rows still reference the row a delete addresses, so the\n")
+                    .addJavadoc("database refuses it. Defaults false.\n")
+                    .build());
+        }
+        MethodSpec.Builder delete = MethodSpec.methodBuilder("delete")
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(UUID, "id")
+                .beginControlFlow("if (!rowExists)")
+                .addStatement("throw new $T(id)", notFound)
+                .endControlFlow();
+        if (foreignKeys.stillReferenced() != null) {
+            delete.beginControlFlow("if (referenced)")
+                    .addStatement("throw new $T(id, null)", foreignKeys.stillReferenced())
+                    .endControlFlow();
+        }
+        delete.addStatement("this.deleted = id");
         stub
                 .addMethod(MethodSpec.constructorBuilder()
                         .addStatement("super(($T) null)", repositoryType)
@@ -1161,15 +1286,7 @@ public final class KernelHandlerTestGenerator {
                         .addStatement("this.lookedUp = id")
                         .addStatement("return byId")
                         .build())
-                .addMethod(MethodSpec.methodBuilder("delete")
-                        .addAnnotation(Override.class)
-                        .addModifiers(Modifier.PUBLIC)
-                        .addParameter(UUID, "id")
-                        .beginControlFlow("if (!rowExists)")
-                        .addStatement("throw new $T(id)", notFound)
-                        .endControlFlow()
-                        .addStatement("this.deleted = id")
-                        .build())
+                .addMethod(delete.build())
                 // save/update are overridden so a guard that stopped short-circuiting is reported
                 // as a failed assertion on a recorder, not as an NPE from the null repository.
                 //
@@ -1198,6 +1315,13 @@ public final class KernelHandlerTestGenerator {
                     conflict != null ? conflict : notFound));
         }
         return stub.build();
+    }
+
+    /**
+     * The foreign-key refusals the double raises, each {@code null} when the repository it stands in
+     * for cannot raise it (ADR-076 Amendment 1).
+     */
+    private record StubRefusals(ClassName referenceNotFound, ClassName stillReferenced) {
     }
 
     /** One of the double's update overrides: refuse, reject a missing row, or record the id. */

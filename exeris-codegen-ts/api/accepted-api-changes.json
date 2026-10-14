@@ -244,5 +244,11 @@
     "since": "0.10",
     "adr": "ADR-090",
     "justification": "ADR-090 Amendment 5: the processor writes field metadata without a false flag, so a field marked @Field(inCreate = false) or @Field(inUpdate = false) reaches the generators without the key. The schema reads an absent key as false, as the Java pipeline does, so the create type, schema and form leave out an inCreate = false field and the update type, schema and edit request an inUpdate = false one, matching the Java bodies. A hand-written metadata file names \"inCreate\": true, \"inUpdate\": true for each field the bodies offer. docs/MIGRATION-0.x-to-1.0.md 0.10.0 carries the step."
+  },
+  {
+    "signature": "generated server: POST / PUT / respond-once action naming a missing row through a MANY_TO_ONE relationship 500 -> 422 + problem body ({ type, title, status, detail, field }); DELETE of a row other rows reference 500 -> 409; core/http-error.ts httpErrorMessage: 409 on a delete -> still-referenced text, + 422 text",
+    "since": "0.10",
+    "adr": "ADR-076",
+    "justification": "A foreign-key violation is the caller's to correct, so the generated handler answers it with 422 (naming the relationship in the problem body's field member) or, on a delete, 409, where it answered 500 (ADR-076 Amendment 1). Each is emitted only where a foreign key of the build can produce it, and the OpenAPI document declares it there. The TypeScript error helper words both statuses and still reads no body. docs/migration/0.10.0/java-15 and ts-14 carry the steps."
   }
 ]

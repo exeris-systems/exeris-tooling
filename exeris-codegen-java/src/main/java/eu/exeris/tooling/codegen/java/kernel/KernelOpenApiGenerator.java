@@ -7,6 +7,7 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -35,13 +36,23 @@ public class KernelOpenApiGenerator implements KernelArtifactGenerator {
         this.openApiGenerator = new OpenApiGenerator();
     }
 
+    /** The entity as a build of its own: only a reference to itself is a foreign key. */
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
+        return generate(metadata, List.of(metadata));
+    }
+
+    @Override
+    public List<GeneratedFile> generateMultiple(DomainMetadata metadata, List<DomainMetadata> build) {
+        return List.of(generate(metadata, build));
+    }
+
+    private GeneratedFile generate(DomainMetadata metadata, List<DomainMetadata> build) {
         String packageName = "openapi";
         String fileName = toKebabCase(metadata.entityName()) + "-api";
 
         try {
-            String yamlContent = openApiGenerator.generateYaml(metadata);
+            String yamlContent = openApiGenerator.generateYaml(metadata, build);
 
             return new GeneratedFile(
                 packageName,

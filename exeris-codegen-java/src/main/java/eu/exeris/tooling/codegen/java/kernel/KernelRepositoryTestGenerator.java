@@ -131,6 +131,21 @@ public final class KernelRepositoryTestGenerator {
      * @throws IllegalArgumentException if the entity's package does not end in {@code .domain}
      */
     public GeneratedFile generate(DomainMetadata metadata, String basePackage) {
+        return generate(metadata, basePackage, List.of(metadata));
+    }
+
+    /**
+     * Emits the JUnit 5 test for the generated repository of one entity of a build. The build
+     * decides which foreign-key refusals the repository raises, and so which cases cover them
+     * (ADR-076 Amendment 1).
+     *
+     * @param metadata    the entity whose repository is under test
+     * @param basePackage the project base package
+     * @param build       every entity of the build, {@code metadata} included
+     * @return the emitted test; never {@code null}
+     * @throws IllegalArgumentException if the entity's package does not end in {@code .domain}
+     */
+    public GeneratedFile generate(DomainMetadata metadata, String basePackage, List<DomainMetadata> build) {
         serverSet = ServerOwnedFields.setByServerOnCreate(metadata);
         String entity = metadata.entityName();
         String domainPackage = metadata.packageName();
@@ -237,6 +252,8 @@ public final class KernelRepositoryTestGenerator {
         type.addMethod(updateRejectsTest(entityType, repositoryType, persistenceType, tenantScoped,
                 conflictType != null ? conflictType : notFoundType));
         type.addMethod(deleteRejectsTest(repositoryType, persistenceType, notFoundType));
+        type.addMethods(KernelForeignKeyRefusalTests.cases(metadata, build, repositoryType, persistenceType,
+                newEntity(entityType), statement -> write(statement, tenantScoped)));
         type.addMethod(countTest(repositoryType, persistenceType));
         type.addMethod(findPageTest(metadata, repositoryType, persistenceType));
         if (tenantScoped) {

@@ -145,7 +145,7 @@ class PrimaryKeyRelationBootE2ETest {
 
     @Test
     @DisplayName("a row of another entity references the renamed key; an unknown or still-referenced "
-            + "key is refused by the foreign key and answers the handler's 500")
+            + "key is refused by the foreign key: 422 naming the relationship, 409 on the delete")
     void foreignKeyTargetsTheRenamedKey() {
         String invoice = RawHttp.request(booted.port(), "POST", "/invoices", "{\"customer\":\"payer\"}");
         String key = unquote(member(invoice, "invoiceNo"));
@@ -159,12 +159,17 @@ class PrimaryKeyRelationBootE2ETest {
                 .startsWith("HTTP/1.1 200")
                 .contains("\"invoiceId\":\"" + key + "\"");
 
-        // The handler maps no constraint violation: it falls into the RuntimeException tail.
+        // ADR-076 Amendment 1: a missing referenced row is the caller's to correct (422, naming the
+        // relationship), and a row other rows reference cannot be deleted until they go (409).
         assertThat(RawHttp.request(booted.port(), "POST", "/payments",
-                "{\"amount\":1,\"invoiceId\":\"" + MISSING + "\"}")).startsWith("HTTP/1.1 500");
+                "{\"amount\":1,\"invoiceId\":\"" + MISSING + "\"}"))
+                .startsWith("HTTP/1.1 422")
+                .contains("\"field\":\"invoiceId\"");
         assertThat(RawHttp.request(booted.port(), "POST", "/invoices",
-                "{\"customer\":\"dangling\",\"correctsId\":\"" + MISSING + "\"}")).startsWith("HTTP/1.1 500");
-        assertThat(RawHttp.request(booted.port(), "DELETE", "/invoices/" + key)).startsWith("HTTP/1.1 500");
+                "{\"customer\":\"dangling\",\"correctsId\":\"" + MISSING + "\"}"))
+                .startsWith("HTTP/1.1 422")
+                .contains("\"field\":\"correctsId\"");
+        assertThat(RawHttp.request(booted.port(), "DELETE", "/invoices/" + key)).startsWith("HTTP/1.1 409");
         assertThat(RawHttp.request(booted.port(), "GET", "/invoices/" + key)).startsWith("HTTP/1.1 200");
 
         assertThat(RawHttp.request(booted.port(), "DELETE", "/payments/" + paymentId)).startsWith("HTTP/1.1 204");

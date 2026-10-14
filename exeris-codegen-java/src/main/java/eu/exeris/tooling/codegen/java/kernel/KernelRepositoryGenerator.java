@@ -323,8 +323,26 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 : "?";
     }
 
+    /** The entity as a build of its own: only a reference to itself is a foreign key. */
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
+        return generate(metadata, List.of(metadata));
+    }
+
+    @Override
+    public List<GeneratedFile> generateMultiple(DomainMetadata metadata, List<DomainMetadata> build) {
+        return List.of(generate(metadata, build));
+    }
+
+    /**
+     * Emits the repository of one entity of a build. The build decides which foreign keys the
+     * repository's writes and delete can violate (ADR-076 Amendment 1).
+     *
+     * @param metadata the entity
+     * @param build    every entity of the build, {@code metadata} included
+     * @return the repository
+     */
+    GeneratedFile generate(DomainMetadata metadata, List<DomainMetadata> build) {
         requirePersistableFields(List.of(metadata));
         String basePackage = metadata.packageName().replace(".domain", "");
         String packageName = basePackage + ".repository";
@@ -347,7 +365,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         // in the same order, so column indices line up by construction.
         List<Column> columns = buildColumnLayout(fields, metadata, sys);
 
-        Context ctx = new Context(entity, entityType, fields, columns, metadata, table, sys);
+        Context ctx = new Context(entity, entityType, fields, columns, metadata, table, sys, build);
 
         TypeSpec.Builder repo = KernelScaffold.publicClass(className)
                 .addJavadoc("Generated Repository for $L.\n", entity)
@@ -452,6 +470,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             repo.addMethod(buildParseList())
                 .addMethod(buildToJson());
         }
+        KernelForeignKeyRefusals.addMembers(repo, metadata, build);
 
         return new GeneratedFile(packageName, className,
                 KernelScaffold.render(packageName, repo.build()), ArtifactType.REPOSITORY);
@@ -512,7 +531,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     /** Carrier for repeated build-time state — keeps signatures readable. */
     record Context(String entity, ClassName entityType, List<FieldMetadata> fields,
                            List<Column> columns, DomainMetadata metadata, String table,
-                           SystemFieldNames sys) {}
+                           SystemFieldNames sys, List<DomainMetadata> build) {}
 
     /**
      * Effective java field names for the system fields the repository emits
@@ -1322,7 +1341,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         body.endControlFlow();
         body.endControlFlow(")");
 
-        save.addCode(body.build());
+        save.addCode(KernelForeignKeyRefusals.guardWrite(body.build(), ctx.metadata(), ctx.build()));
         save.addStatement("LOG.log($T.INFO, $S, entity.$L())", KernelScaffold.LOGGER_LEVEL,
                 "Created " + ctx.entity() + ": {0}", PrimaryKeys.getter(ctx.metadata()));
         save.addStatement(RETURN_ENTITY_STMT);
@@ -1539,7 +1558,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         }
         body.endControlFlow(")");
 
-        update.addCode(body.build());
+        update.addCode(KernelForeignKeyRefusals.guardWrite(body.build(), ctx.metadata(), ctx.build()));
         update.beginControlFlow("if (rowsAffected[0] == 0L)")
                 .addStatement("throw new $T(id)", rejection)
                 .endControlFlow();
@@ -1607,20 +1626,24 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                         + " AND " + deletedCol + " = false"
                 : "DELETE FROM " + ctx.table() + whereIdClause(ctx.metadata());
 
-        CodeBlock.Builder body = CodeBlock.builder()
-                .addStatement(SQL_VAR_STMT, sql)
+        CodeBlock delete = CodeBlock.builder()
                 .beginControlFlow(EXECUTE_MANAGED_LAMBDA)
                 .beginControlFlow(TRY_PREPARE_STMT, PERSISTENCE_STATEMENT)
                 .addStatement("rowsAffected[0] = stmt.bindUuid(0, id).executeUpdate()")
                 .endControlFlow()
-                .endControlFlow(")");
+                .endControlFlow(")")
+                .build();
+        CodeBlock body = CodeBlock.builder()
+                .addStatement(SQL_VAR_STMT, sql)
+                .add(KernelForeignKeyRefusals.guardDelete(delete, ctx.metadata(), ctx.build()))
+                .build();
 
         return MethodSpec.methodBuilder("deleteById")
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.VOID)
                 .addParameter(UUID_TYPE, "id")
                 .addStatement("long[] rowsAffected = {0L}")
-                .addCode(body.build())
+                .addCode(body)
                 .beginControlFlow("if (rowsAffected[0] == 0L)")
                 .addStatement("throw new $T(id)", KernelErrorGenerator.notFoundType(ctx.metadata()))
                 .endControlFlow()

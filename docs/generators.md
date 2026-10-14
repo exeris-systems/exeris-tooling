@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-13
+last-verified: 2026-10-14
 ---
 
 # Generator catalogue
@@ -45,6 +45,15 @@ implementation of that decision.
 does not consult `supports()`, so a generator's own guard decides whether a file is written. Classes
 named `*Generator` that write no file have no row: `OpenApiGenerator` renders the YAML that
 `KernelOpenApiGenerator` writes, and `KernelGeneratorStrategy` is the registry.
+
+Five main generators and two test generators read the whole build as well as their own entity, through
+`generateMultiple(metadata, build)`, because what they write for an entity depends on how the other
+entities reference it (ADR-076 Amendment 1): `KernelRepositoryGenerator`, `KernelErrorGenerator`,
+`KernelHandlerGenerator`, `KernelActionStreamHandlerGenerator` and `KernelOpenApiGenerator`, and in
+the `test` tree `KernelHandlerTestGenerator` and `KernelRepositoryTestGenerator`. For them a row's
+`condition` can name another entity — "referenced by a `MANY_TO_ONE` relationship of an entity of
+the build" — and the same entity run on its own, as a build of one, writes fewer files than it does
+in the build it belongs to.
 
 A detached tree (`exeris:detach`) belongs to the application. The rows still explain its paths, but
 none of them promises that a file still matches what its generator wrote.
@@ -95,10 +104,12 @@ existing key is removed or changes meaning or type.
 | `handler` | `KernelHandlerGenerator` | The HTTP handler serving the entity's routes. | `{base}/handler/{E}Handler.java` | one | every entity | — |
 | `service` | `KernelServiceGenerator` | The domain service the handler calls. | `{base}/service/{E}Service.java` | one | every entity | — |
 | `repository` | `KernelRepositoryGenerator` | The repository over the kernel persistence SPI. | `{base}/repository/{E}Repository.java` | one | every entity | — |
+| `reference-not-found-exception` | `KernelErrorGenerator` | The exception a write raises when a relationship names a row that does not exist; answered with 422. | `{base}/repository/{E}ReferenceNotFoundException.java` | zero-or-one | a `MANY_TO_ONE` relationship to an entity of the build | ADR-076 |
 | `not-found-exception` | `KernelErrorGenerator` | The exception a write raises when no row matches; answered with 404. | `{base}/repository/{E}NotFoundException.java` | one | every entity | ADR-076 |
 | `version-conflict-exception` | `KernelErrorGenerator` | The exception an optimistic-lock update raises when it applies to no row; answered with 409. | `{base}/repository/{E}VersionConflictException.java` | zero-or-one | `@ExerisDomain(versioned = true)` | ADR-076 |
 | `tenant-mismatch-exception` | `KernelErrorGenerator` | The exception a write raises when the row names another tenant; answered with 400. | `{base}/repository/{E}TenantMismatchException.java` | zero-or-one | `dataScope` `TENANT` or `UNIVERSE` | ADR-090 |
 | `shared-scope-mismatch-exception` | `KernelErrorGenerator` | The exception a write raises when the row is tagged with another shared scope; answered with 400. | `{base}/repository/{E}SharedScopeMismatchException.java` | zero-or-one | `UNIVERSE` with a `@SharedScope` field | ADR-090 |
+| `still-referenced-exception` | `KernelErrorGenerator` | The exception a delete raises when other rows still reference the row; answered with 409. | `{base}/repository/{E}StillReferencedException.java` | zero-or-one | referenced by a `MANY_TO_ONE` relationship of an entity of the build, and not `softDelete` | ADR-076 |
 | `list-query` | `KernelListQueryGenerator` | The list route's query record: page, sort and filters. | `{base}/repository/{E}ListQuery.java` | one | every entity | ADR-096 |
 | `page` | `KernelListQueryGenerator` | The list route's page envelope record. | `{base}/repository/{E}Page.java` | one | every entity | ADR-096 |
 | `event-publisher` | `KernelEventGenerator` | The publisher of the entity's domain events, called by the handler. | `{base}/event/{E}EventPublisher.java` | zero-or-one | at least one `@DomainEvent` | ADR-075 |
@@ -148,12 +159,18 @@ comes first, then the two stream rows, then `handler`, so the first match of a s
 `spectate-stream-handler`, that of any other stream handler is `stream-handler`, and a tool that
 holds the entity and action names tells them apart.
 
+Two rows of the `repository/` package overlap the same way. `OrderReferenceNotFoundException.java`
+is the reference refusal of `Order`, or the not-found exception of an entity named `OrderReference`.
+`reference-not-found-exception` is the narrower row and comes first.
+
 | Row | Ambiguous with |
 |---|---|
 | `spectate-stream-handler` | `stream-handler`, `action-stream-handler`, `handler` |
 | `stream-handler` | `spectate-stream-handler`, `action-stream-handler`, `handler` |
 | `action-stream-handler` | `spectate-stream-handler`, `stream-handler`, `handler` |
 | `handler` | `spectate-stream-handler`, `stream-handler`, `action-stream-handler` |
+| `reference-not-found-exception` | `not-found-exception` |
+| `not-found-exception` | `reference-not-found-exception` |
 
 ## Retired rows
 

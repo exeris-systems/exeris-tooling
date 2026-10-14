@@ -102,6 +102,22 @@
       "since": "0.10.0"
     },
     {
+      "id": "reference-not-found-exception",
+      "generator": "KernelErrorGenerator",
+      "artefact": "The exception a write raises when a relationship names a row that does not exist; answered with 422.",
+      "outputRoot": "main",
+      "pathPattern": "^(?:[^/]+/)*repository/[^/]+ReferenceNotFoundException\\.java$",
+      "pathTemplate": "{base}/repository/{E}ReferenceNotFoundException.java",
+      "scope": "entity",
+      "cardinality": "zero-or-one",
+      "condition": "a `MANY_TO_ONE` relationship to an entity of the build",
+      "ambiguousWith": [
+        "not-found-exception"
+      ],
+      "adr": "ADR-076",
+      "since": "0.10.0"
+    },
+    {
       "id": "not-found-exception",
       "generator": "KernelErrorGenerator",
       "artefact": "The exception a write raises when no row matches; answered with 404.",
@@ -111,7 +127,9 @@
       "scope": "entity",
       "cardinality": "one",
       "condition": "every entity",
-      "ambiguousWith": [],
+      "ambiguousWith": [
+        "reference-not-found-exception"
+      ],
       "adr": "ADR-076",
       "since": "0.10.0"
     },
@@ -155,6 +173,20 @@
       "condition": "`UNIVERSE` with a `@SharedScope` field",
       "ambiguousWith": [],
       "adr": "ADR-090",
+      "since": "0.10.0"
+    },
+    {
+      "id": "still-referenced-exception",
+      "generator": "KernelErrorGenerator",
+      "artefact": "The exception a delete raises when other rows still reference the row; answered with 409.",
+      "outputRoot": "main",
+      "pathPattern": "^(?:[^/]+/)*repository/[^/]+StillReferencedException\\.java$",
+      "pathTemplate": "{base}/repository/{E}StillReferencedException.java",
+      "scope": "entity",
+      "cardinality": "zero-or-one",
+      "condition": "referenced by a `MANY_TO_ONE` relationship of an entity of the build, and not `softDelete`",
+      "ambiguousWith": [],
+      "adr": "ADR-076",
       "since": "0.10.0"
     },
     {
