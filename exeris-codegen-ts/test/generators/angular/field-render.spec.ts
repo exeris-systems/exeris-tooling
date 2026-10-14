@@ -20,10 +20,11 @@ import {
   type FieldRenderModel,
 } from '../../../src/generators/angular/field-render.js';
 import { DslMapper } from '../../../src/models/dsl-mapper.js';
-import { DomainMetadataSchema, type DomainMetadata } from '../../../src/models/domain-model.js';
+import { type DomainMetadata } from '../../../src/models/domain-model.js';
+import { parseOffered } from '../../support/offered.js';
 
 function domain(overrides: Record<string, unknown>): DomainMetadata {
-  return DomainMetadataSchema.parse({ packageName: 'com.shop', entityName: 'Order', ...overrides });
+  return parseOffered({ packageName: 'com.shop', entityName: 'Order', ...overrides });
 }
 
 /** Resolves the one field `name` of an entity carrying `field` beside an id. */

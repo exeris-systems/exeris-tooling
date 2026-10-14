@@ -6,8 +6,9 @@
  * its `<Entity>UpdateDto`. The emitted TS `<Entity>`, `<Entity>Create` and `<Entity>Update` types and
  * their Zod schemas carry exactly those properties, for a local entity and for a peer's.
  *
- * To regenerate a Java file, run `OpenApiComponentsBuilder.buildComponents` over each metadata file
- * (loaded with `MetadataLoader`) and write the sorted property names of the schema.
+ * The files live in `exeris-e2e-tests/src/test/resources/contract/update-parity/`, where the Java
+ * side's `UpdateSchemaParityE2ETest` recomputes them from `OpenApiComponentsBuilder`; to rewrite
+ * them, see that test's Javadoc.
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
@@ -23,7 +24,11 @@ import { TypeGenerator, updateOmittedFields } from '../../src/generators/api/typ
 import { DomainMetadataSchema, type DomainMetadata } from '../../src/models/domain-model.js';
 import { DslMapper } from '../../src/models/dsl-mapper.js';
 
-const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), '../fixtures/update-parity');
+// A missing directory must fail the suite, not skip it: the Java build writes these files.
+const FIXTURES = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../../exeris-e2e-tests/src/test/resources/contract/update-parity',
+);
 const javaProperties = (file: string): Record<string, string[]> =>
   JSON.parse(readFileSync(join(FIXTURES, file), 'utf8'));
 const javaEntity = javaProperties('java-entity-properties.json');

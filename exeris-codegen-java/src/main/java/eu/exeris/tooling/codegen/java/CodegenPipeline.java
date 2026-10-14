@@ -373,6 +373,9 @@ public final class CodegenPipeline {
      * beside the entities and no {@code enumType}; the TypeScript emitter reads the same two inputs
      * by the same rule, so the Java and TypeScript emitters agree on which fields are enums.
      *
+     * <p>A field with no {@code inCreate} or {@code inUpdate} key is left out of that body, as
+     * {@link eu.exeris.tooling.codegen.core.MetadataLoader} reads it: the wire form omits a {@code false}.
+     *
      * <p>The domains are returned in {@link #DOMAIN_ORDER}, whatever order the directory lists
      * the files in.
      *

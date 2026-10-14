@@ -1,0 +1,44 @@
+{
+  "entityName": "LifecycleNamedFields",
+  "packageName": "com.example.parity",
+  "softDelete": true,
+  "audited": true,
+  "fields": [
+    {
+      "name": "id",
+      "type": "java.util.UUID",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "title",
+      "type": "java.lang.String",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "active",
+      "type": "java.lang.Boolean",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "hierarchyLevel",
+      "type": "java.lang.Integer",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "deleted",
+      "type": "java.lang.Boolean",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "updatedAt",
+      "type": "java.time.Instant",
+      "inCreate": true,
+      "inUpdate": true
+    }
+  ]
+}

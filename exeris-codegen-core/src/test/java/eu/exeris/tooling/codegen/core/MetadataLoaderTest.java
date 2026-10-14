@@ -130,19 +130,20 @@ class MetadataLoaderTest {
     }
 
     @Test
-    @DisplayName("a field without inCreate / inUpdate keys is offered by both bodies; an explicit false is kept")
-    void absentLifecycleFlagsReadAsTrue() throws IOException {
+    @DisplayName("a field without inCreate / inUpdate keys is left out of both bodies; an explicit true is kept")
+    void absentLifecycleFlagsReadAsFalse() throws IOException {
         Path metaDir = Files.createDirectories(tempDir.resolve(MetadataLoader.METADATA_DIR));
         Files.writeString(metaDir.resolve("Ticket.json"), """
                 {"entityName":"Ticket","packageName":"com.example.domain","fields":[
                   {"name":"title","type":"String"},
-                  {"name":"code","type":"String","inUpdate":false},
-                  {"name":"slug","type":"String","inCreate":false}]}
+                  {"name":"code","type":"String","inCreate":true},
+                  {"name":"slug","type":"String","inUpdate":true},
+                  {"name":"both","type":"String","inCreate":true,"inUpdate":true}]}
                 """);
 
         DomainMetadata ticket = loader.load("Ticket", DomainMetadata.class);
 
         assertThat(ticket.fields()).extracting(f -> f.name() + ":" + f.inCreate() + ":" + f.inUpdate())
-                .containsExactly("title:true:true", "code:true:false", "slug:false:true");
+                .containsExactly("title:false:false", "code:true:false", "slug:false:true", "both:true:true");
     }
 }

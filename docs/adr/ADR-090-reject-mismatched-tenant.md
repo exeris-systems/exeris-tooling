@@ -15,7 +15,8 @@ slug: adr/ADR-090
   a request body does not write read-only fields, and the update schema is the body the update
   writes from) · amended 2026-10-08 (Amendment 3 — the create validates the body it carries, and
   `inCreate` / `inUpdate` shape the bodies like `readOnly`) · amended 2026-10-08 (Amendment 4 — the
-  create body leaves out every server-owned field)
+  create body leaves out every server-owned field) · amended 2026-10-14 (Amendment 5 — an absent
+  `inCreate` / `inUpdate` key reads as `false` in both loaders)
 - **Deciders:** the founder (finding **T36**)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / codegen pipeline — emitted repository, handler, error types, OpenAPI, TypeScript
@@ -604,3 +605,52 @@ declares keeps its own schema.
 - `CreateIgnoresServerOwnedFieldsBootE2ETest` boots the emitted application: a `POST` that forges
   `createdAt`, `updatedAt`, `version`, `deleted` and `createdBy` stores the server's values, and the
   author a service sets is kept.
+
+## Amendment 5 — an absent `inCreate` / `inUpdate` key reads as `false` in both loaders (2026-10-14)
+
+**Status:** Accepted *(supersedes, for the loaders, Amendment 3's rule that a field without
+`inCreate` / `inUpdate` keys reads as `true`, which Amendment 3 records under its verification of
+`MetadataLoaderTest`; the existing text of Amendment 3 is unchanged; §1 to §5 and Amendments 1, 2
+and 4 are otherwise unchanged)*
+
+**Deciders:** the founder.
+
+Amendment 3 had `MetadataLoader` and the TypeScript loader read a field without `inCreate` /
+`inUpdate` keys as `true`, the `@Field` default, on the premise that the processor writes both keys.
+It does not. `FieldMetadata` is a record under class-level `@JsonInclude(NON_DEFAULT)` and the two
+components are primitive booleans, so the wire form omits a `false` and keeps a `true`. A field
+marked `inCreate = false` or `inUpdate = false` therefore reached the loaders as a field without the
+key, and a loader that read the key as `true` offered the field to the body it was meant to leave out.
+`CodegenPipeline` read the metadata through its own mapper, which leaves a missing primitive `false`,
+so the Java bodies were right and the TypeScript `…Create` / `…Update` types and forms were not.
+
+**Until tooling pins an SDK that writes both keys, an absent key reads as `false`.** The SDK change
+that writes both keys (`exeris-sdk#194`) ships with SDK 0.13; tooling 0.10 does not pin it. In
+the meantime `MetadataLoader` and `CodegenPipeline` read a domain file by the same rule, and the
+TypeScript loader's schema defaults both keys to `false`; the field renderer and the server-owned
+field sets test the flag rather than comparing it with `false`. A hand-written metadata file names
+`"inCreate": true, "inUpdate": true` for a field the create and update bodies offer.
+
+**Open point, not decided here.** Whether the loaders read an absent key as `true` again once the
+pinned SDK writes both keys is left to tooling 0.11 (`exeris-tooling#401`).
+
+### Consequences of the amendment
+
+- **Corrects the TypeScript output for processor metadata.** A client generated from processor
+  metadata stops offering a field marked `inCreate = false` in `…Create`, `…CreateSchema` and the
+  create form, and a field marked `inUpdate = false` in `…Update`, `…UpdateSchema` and the edit
+  form's request. The Java bodies are unchanged. The regeneration note is
+  `docs/migration/0.10.0/ts-14-absent-create-and-update-flags-read-as-false.md`.
+- A hand-written metadata file without the keys now leaves its fields out of both bodies, in the
+  Java and the TypeScript emitters alike.
+
+### Verification of the amendment
+
+- `MetadataLoaderTest`, `CodegenPipelineTest` — a field without the keys reads as `false` through
+  the loader and through the pipeline, and an explicit `true` is kept.
+- `LifecycleFlagsContractE2ETest` — the real processor writes the fields of
+  `contract/lifecycle-flags/exeris-metadata/Ticket.json`, a `false` flag as an absent key, and the
+  Java create and update bodies list the properties of `contract/lifecycle-flags/java-bodies.json`.
+- `contract/lifecycle-flags.spec.ts` — the TypeScript `TicketCreate`, `TicketUpdate` and the form
+  list the same properties.
+- `LifecycleFlagsBootE2ETest` — the booted application is unchanged.

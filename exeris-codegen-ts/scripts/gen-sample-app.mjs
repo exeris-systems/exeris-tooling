@@ -35,9 +35,17 @@ const out = resolve(args.find((a) => !a.startsWith('--')) ?? '.fe-sample');
 // pathToFileURL: a bare Windows path (D:\…) is an unsupported ESM import scheme.
 const { buildGeneratedFiles } = await import(pathToFileURL(join(dist, 'orchestrator.js')).href);
 const { DomainMetadataSchema, ViewMetadataSchema } = await import(pathToFileURL(join(dist, 'models/domain-model.js')).href);
+
+// The schema reads an absent `inCreate` / `inUpdate` as `false` (the wire form omits a false), so
+// the hand-written fixtures name `true` for the fields the create and update bodies offer.
+const parseOffered = (o) =>
+  DomainMetadataSchema.parse({
+    ...o,
+    fields: o.fields?.map((f) => ({ inCreate: true, inUpdate: true, ...f })),
+  });
 const { DEFAULT_CONFIG } = await import(pathToFileURL(join(dist, 'config.js')).href);
 
-const d = (o) => DomainMetadataSchema.parse({ packageName: 'com.shop', ...o });
+const d = (o) => parseOffered({ packageName: 'com.shop', ...o });
 
 // Exercises the full surface: an enum-typed field (types/schemas/form select),
 // @Action endpoints incl. one with an enum param (service action method imports),
@@ -144,7 +152,16 @@ const domains = [
   // for, and two action stream files must share one StreamFrame rather than each declare their own.
   d({
     entityName: 'Product',
-    fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'name', type: 'String' }],
+    fields: [
+      { name: 'id', type: 'java.util.UUID' },
+      { name: 'name', type: 'String' },
+      // readOnly: the server writes it, so neither the create nor the update body carries it, the
+      // form has no control for it, and the list and detail show it.
+      { name: 'sku', type: 'String', readOnly: true, inCreate: true, inUpdate: true },
+      // required and readOnly together: the entity type requires it while the create body, the
+      // update body and their schemas leave it out.
+      { name: 'catalogCode', type: 'String', required: true, readOnly: true, inCreate: true, inUpdate: true },
+    ],
     // The other side of Order's foreign key: the detail view's related-records panel lists this
     // product's orders through the order list route's productId filter, labelled by orderNumber,
     // beside the link to the whole order list.
@@ -265,6 +282,24 @@ const domains = [
     entityName: 'Receipt',
     fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'amount', type: 'java.math.BigDecimal', dataType: 'currency' }],
     uiMetadata: { listView: false, detailView: true, createForm: true, editForm: false },
+  }),
+  // Listing is the UNIVERSE entity: its rows are owned by a tenant and readable across the owner's
+  // shared scope. The server owns the required tenantId (the owner), so the create and update
+  // bodies omit it. The shared scope `scopeId` is declared through systemFields and stays out of
+  // the create body, but the update still writes it from the body, unlike every other system field.
+  // Its foreign key into Product pins that a relation from a UNIVERSE entity builds.
+  d({
+    entityName: 'Listing',
+    dataScope: 'UNIVERSE',
+    fields: [
+      { name: 'id', type: 'java.util.UUID' },
+      { name: 'tenantId', type: 'java.util.UUID', required: true },
+      { name: 'scopeId', type: 'java.util.UUID', required: true },
+      { name: 'title', type: 'String', required: true, inCreate: true, inUpdate: true },
+      { name: 'productId', type: 'java.util.UUID', inCreate: true, inUpdate: true },
+    ],
+    relationships: [{ name: 'productId', targetEntity: 'Product', type: 'MANY_TO_ONE', displayField: 'name' }],
+    systemFields: { sharedScopeField: 'scopeId' },
   }),
   // Account is tenant-partitioned with no systemFields block: the server owns its required
   // tenantId, so the entity type carries it while AccountCreate, AccountUpdate and the create

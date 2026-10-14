@@ -14,15 +14,16 @@
 
 import { describe, expect, it } from 'vitest';
 import { buildGeneratedFiles, type OutputFile } from '../src/orchestrator.js';
-import { DomainMetadataSchema, ViewMetadataSchema } from '../src/models/domain-model.js';
+import { ViewMetadataSchema } from '../src/models/domain-model.js';
 import { DEFAULT_CONFIG } from '../src/config.js';
+import { parseOffered } from './support/offered.js';
 
 /**
  * An entity whose list, detail and form emit every control kind and panel: a filter per filter
  * kind, an enum badge, a boolean badge, a row and header action, a computed field and the
  * conflict panel of a versioned entity.
  */
-const order = DomainMetadataSchema.parse({
+const order = parseOffered({
   entityName: 'Order',
   packageName: 'com.shop',
   versioned: true,

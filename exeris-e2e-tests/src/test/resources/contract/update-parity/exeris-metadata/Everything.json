@@ -1,0 +1,87 @@
+{
+  "entityName": "Everything",
+  "packageName": "com.example.parity",
+  "audited": true,
+  "softDelete": true,
+  "versioned": true,
+  "dataScope": "UNIVERSE",
+  "systemFields": {
+    "primaryKeyField": "orderNo",
+    "tenantIdField": "ownerId",
+    "sharedScopeField": "scopeId"
+  },
+  "fields": [
+    {
+      "name": "orderNo",
+      "type": "java.util.UUID",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "title",
+      "type": "java.lang.String",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "ownerId",
+      "type": "java.util.UUID",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "scopeId",
+      "type": "java.util.UUID",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "createdAt",
+      "type": "java.time.Instant",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "createdBy",
+      "type": "java.lang.String",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "updatedAt",
+      "type": "java.time.Instant",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "updatedBy",
+      "type": "java.lang.String",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "deleted",
+      "type": "boolean",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "deletedAt",
+      "type": "java.time.Instant",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "deletedBy",
+      "type": "java.lang.String",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "version",
+      "type": "java.lang.Long",
+      "inCreate": true,
+      "inUpdate": true
+    }
+  ]
+}

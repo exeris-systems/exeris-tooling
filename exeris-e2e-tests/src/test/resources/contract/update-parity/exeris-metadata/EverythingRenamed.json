@@ -1,0 +1,88 @@
+{
+  "entityName": "EverythingRenamed",
+  "packageName": "com.example.parity",
+  "audited": true,
+  "softDelete": true,
+  "versioned": true,
+  "dataScope": "TENANT",
+  "systemFields": {
+    "primaryKeyField": "pk",
+    "tenantIdField": "org",
+    "createdAtField": "c1",
+    "createdByField": "c2",
+    "updatedAtField": "u1",
+    "updatedByField": "u2",
+    "versionField": "rev",
+    "softDeleteField": "d0",
+    "softDeleteTimestampField": "d1",
+    "softDeletedByField": "d2"
+  },
+  "fields": [
+    {
+      "name": "pk",
+      "type": "java.util.UUID",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "title",
+      "type": "java.lang.String",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "org",
+      "type": "java.util.UUID",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "c1",
+      "type": "java.time.Instant",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "c2",
+      "type": "java.lang.String",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "u1",
+      "type": "java.time.Instant",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "u2",
+      "type": "java.lang.String",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "rev",
+      "type": "java.lang.Long",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "d0",
+      "type": "boolean",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "d1",
+      "type": "java.time.Instant",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "d2",
+      "type": "java.lang.String",
+      "inCreate": true,
+      "inUpdate": true
+    }
+  ]
+}
