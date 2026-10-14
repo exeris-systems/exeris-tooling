@@ -20,7 +20,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * interrupt and returns, the boot callback returns, and the kernel shuts its subsystems down.
  *
  * <p>Configuration travels the way the kernel testkit's own fixtures send it: JVM-global system
- * properties, set under {@link FixtureBootLock} and restored once the boot has read them. Readiness
+ * properties, set under {@link FixtureBootLock} and restored once the boot has read them. The
+ * database is in-memory H2 unless the caller names another ({@link Database}). Readiness
  * is observed on the wire, not inferred: {@code GET /probe} answers {@code 503} from the edge handler
  * until the lifecycle has published the composed router, and {@code 200} after.
  */
@@ -42,13 +43,19 @@ final class BootedApplication implements AutoCloseable {
     }
 
     /**
-     * Boots {@code applicationClass} (a subclass of the emitted {@code Application}) and returns
-     * once its composed router answers {@code GET /probe}.
+     * Boots {@code applicationClass} (a subclass of the emitted {@code Application}) on a fresh
+     * in-memory H2 database, and returns once its composed router answers {@code GET /probe}.
      */
     static BootedApplication start(ClassLoader loader, String applicationClass) {
+        return start(loader, applicationClass, Database.h2());
+    }
+
+    /**
+     * Boots {@code applicationClass} against {@code database}, and returns once its composed router
+     * answers {@code GET /probe}.
+     */
+    static BootedApplication start(ClassLoader loader, String applicationClass, Database database) {
         int port = reserveLoopbackPort();
-        String jdbcUrl = "jdbc:h2:mem:generated_app_" + Long.toUnsignedString(System.nanoTime(), 36)
-                + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1";
         AtomicReference<Throwable> failure = new AtomicReference<>();
         AtomicReference<Thread> started = new AtomicReference<>();
 
@@ -56,7 +63,9 @@ final class BootedApplication implements AutoCloseable {
             SystemPropertySnapshot snapshot = SystemPropertySnapshot.capture(
                     "exeris.http.mode", "exeris.http.bindHost", "exeris.http.port",
                     "http.mode", "http.bindHost", "http.port",
-                    "exeris.persistence.jdbcUrl", "exeris.persistence.runMigrations");
+                    "exeris.persistence.jdbcUrl", "exeris.persistence.username",
+                    "exeris.persistence.password", "exeris.persistence.rlsEnabled",
+                    "exeris.persistence.runMigrations");
             try {
                 System.setProperty("exeris.http.mode", "SERVER");
                 System.setProperty("exeris.http.bindHost", RawHttp.LOOPBACK);
@@ -64,7 +73,10 @@ final class BootedApplication implements AutoCloseable {
                 System.setProperty("http.mode", "SERVER");
                 System.setProperty("http.bindHost", RawHttp.LOOPBACK);
                 System.setProperty("http.port", Integer.toString(port));
-                System.setProperty("exeris.persistence.jdbcUrl", jdbcUrl);
+                System.setProperty("exeris.persistence.jdbcUrl", database.jdbcUrl());
+                setOrClear("exeris.persistence.username", database.username());
+                setOrClear("exeris.persistence.password", database.password());
+                System.setProperty("exeris.persistence.rlsEnabled", Boolean.toString(database.rlsEnabled()));
                 System.setProperty("exeris.persistence.runMigrations", "true");
 
                 Thread thread = Thread.ofPlatform()
@@ -136,12 +148,39 @@ final class BootedApplication implements AutoCloseable {
                 + "; last probe: " + last, failure.get());
     }
 
+    private static void setOrClear(String key, String value) {
+        if (value == null) {
+            System.clearProperty(key);
+        } else {
+            System.setProperty(key, value);
+        }
+    }
+
     private static int reserveLoopbackPort() {
         try (ServerSocket socket = new ServerSocket()) {
             socket.bind(new InetSocketAddress(RawHttp.LOOPBACK, 0));
             return socket.getLocalPort();
         } catch (IOException e) {
             throw new UncheckedIOException("unable to reserve a loopback port", e);
+        }
+    }
+
+    /**
+     * The database the kernel's persistence subsystem connects to, handed over as the kernel's own
+     * {@code exeris.persistence.*} keys.
+     *
+     * @param jdbcUrl    the JDBC URL, without credentials
+     * @param username   the login role, or {@code null} for none
+     * @param password   its password, or {@code null} for none
+     * @param rlsEnabled whether the kernel installs its row-level-security connection interceptor,
+     *                   which publishes the bound tenant and shared scope as session keys
+     */
+    record Database(String jdbcUrl, String username, String password, boolean rlsEnabled) {
+
+        /** A fresh in-memory H2 database in PostgreSQL mode. H2 implements no row-level security. */
+        static Database h2() {
+            return new Database("jdbc:h2:mem:generated_app_" + Long.toUnsignedString(System.nanoTime(), 36)
+                    + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1", null, null, false);
         }
     }
 }

@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -57,6 +58,14 @@ final class SseConnection implements AutoCloseable {
      * {@code null}, and reads the response head.
      */
     static SseConnection open(int port, String method, String path, String jsonBody) {
+        return open(port, method, path, jsonBody, Map.of());
+    }
+
+    /**
+     * Opens {@code method path} as an event stream with {@code headers}, sending {@code jsonBody}
+     * when it is not {@code null}, and reads the response head.
+     */
+    static SseConnection open(int port, String method, String path, String jsonBody, Map<String, String> headers) {
         Socket socket = new Socket();
         try {
             socket.connect(new InetSocketAddress(RawHttp.LOOPBACK, port), 2_000);
@@ -66,6 +75,7 @@ final class SseConnection implements AutoCloseable {
             String request = method + " " + path + " HTTP/1.1\r\n"
                     + "Host: " + RawHttp.LOOPBACK + "\r\n"
                     + "Accept: text/event-stream\r\n"
+                    + RawHttp.headerLines(headers)
                     + (jsonBody == null ? "" : "Content-Type: application/json\r\n"
                             + "Content-Length: " + body.length + "\r\n")
                     + "\r\n";

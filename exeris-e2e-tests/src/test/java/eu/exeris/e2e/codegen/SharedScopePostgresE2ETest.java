@@ -1,6 +1,7 @@
 package eu.exeris.e2e.codegen;
 
 import eu.exeris.e2e.codegen.compile.ProcessorCompiler;
+import eu.exeris.e2e.postgres.PostgresTarget;
 import eu.exeris.kernel.spi.persistence.ConnectionInterceptor;
 import eu.exeris.tooling.codegen.java.CodegenPipeline;
 import org.junit.jupiter.api.AfterAll;
@@ -14,7 +15,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -25,18 +25,18 @@ import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * The shared-scope access matrix, run against a real PostgreSQL over the migrations the pipeline
- * actually emits. <b>Opt-in</b>: skipped unless {@code -Dexeris.e2e.postgres.url} names
- * a JDBC URL (credentials included) for a role that may create a schema and a role — this
- * repository's CI has no PostgreSQL, and H2 implements no row-level security, so no in-process
- * engine could make these cells mean anything.
+ * actually emits. H2 implements no row-level security, so no in-process engine could make these
+ * cells mean anything. Runs in the {@code e2e-postgres} profile, which the {@code e2e-postgres} CI job
+ * runs, against the server {@link PostgresTarget} names; it needs a role that may create a schema
+ * and a role.
  *
  * {@snippet lang="shell" :
- * mvn -pl exeris-e2e-tests -am test -Dtest=SharedScopePostgresE2ETest \
- *     -Dexeris.e2e.postgres.url='jdbc:postgresql://localhost:5432/postgres?user=postgres&password=…'
+ * mvn -pl exeris-e2e-tests -am verify -Pe2e-postgres \
+ *     -Dexeris.e2e.postgres.url=jdbc:postgresql://localhost:5432/postgres \
+ *     -Dexeris.e2e.postgres.username=postgres -Dexeris.e2e.postgres.password=…
  * }
  *
  * <p>The kernel's {@code AbstractSharedScopeAccessMatrixTck} cannot be bound verbatim: its keys are
@@ -56,7 +56,6 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 @DisplayName("Shared scope on PostgreSQL (opt-in): the emitted migrations hold the access matrix")
 class SharedScopePostgresE2ETest {
 
-    private static final String URL_PROPERTY = "exeris.e2e.postgres.url";
     private static final String SCHEMA = "exeris_shared_scope_e2e";
     private static final String APP_ROLE = "exeris_shared_scope_app";
 
@@ -77,9 +76,7 @@ class SharedScopePostgresE2ETest {
 
     @BeforeAll
     static void applyTheEmittedMigrations() throws IOException, SQLException {
-        String url = System.getProperty(URL_PROPERTY);
-        assumeTrue(url != null && !url.isBlank(),
-                "opt-in: set -D" + URL_PROPERTY + "=<jdbc:postgresql://…> to run the PostgreSQL matrix");
+        PostgresTarget target = PostgresTarget.required();
 
         Path classes = workspace.resolve("target/classes");
         Path generated = workspace.resolve("src/main/generated/java");
@@ -88,7 +85,7 @@ class SharedScopePostgresE2ETest {
         String create = migration(generated, "__create_galaxy_presences");
         String widen = migration(generated, "__shared_scope_galaxy_presences");
 
-        admin = DriverManager.getConnection(url);
+        admin = target.adminConnection();
         try (Statement st = admin.createStatement()) {
             st.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
             st.execute("DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '" + APP_ROLE

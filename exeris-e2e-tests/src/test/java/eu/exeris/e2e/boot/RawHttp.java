@@ -7,6 +7,7 @@ import java.io.UncheckedIOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
 /**
  * One HTTP/1.1 request over a plain socket, {@code Connection: close}, read to EOF.
@@ -40,6 +41,16 @@ final class RawHttp {
      * @throws UncheckedIOException when the port refuses the connection or the read fails
      */
     static String request(int port, String method, String path, String jsonBody) {
+        return request(port, method, path, jsonBody, Map.of());
+    }
+
+    /**
+     * Sends a request with {@code headers}, and a JSON body or none when {@code jsonBody} is
+     * {@code null}, and returns the whole response as text.
+     *
+     * @throws UncheckedIOException when the port refuses the connection or the read fails
+     */
+    static String request(int port, String method, String path, String jsonBody, Map<String, String> headers) {
         byte[] body = jsonBody == null ? new byte[0] : jsonBody.getBytes(StandardCharsets.UTF_8);
         try (Socket socket = new Socket()) {
             socket.connect(new InetSocketAddress(LOOPBACK, port), CONNECT_TIMEOUT_MILLIS);
@@ -47,6 +58,7 @@ final class RawHttp {
             OutputStream out = socket.getOutputStream();
             String head = method + " " + path + " HTTP/1.1\r\n"
                     + "Host: " + LOOPBACK + "\r\n"
+                    + headerLines(headers)
                     + (jsonBody == null ? "" : "Content-Type: application/json\r\n")
                     + "Content-Length: " + body.length + "\r\n"
                     + "Connection: close\r\n\r\n";
@@ -58,5 +70,12 @@ final class RawHttp {
         } catch (IOException e) {
             throw new UncheckedIOException(method + " " + path + " on port " + port + " failed", e);
         }
+    }
+
+    /** {@code headers} as request-head lines, each ending in CRLF, in the map's iteration order. */
+    static String headerLines(Map<String, String> headers) {
+        StringBuilder lines = new StringBuilder();
+        headers.forEach((name, value) -> lines.append(name).append(": ").append(value).append("\r\n"));
+        return lines.toString();
     }
 }

@@ -36,6 +36,29 @@ six Java modules (`exeris-diagnostics`, `exeris-codegen-core`, `exeris-codegen-m
 Run Maven on a GA JDK 25 or 26; an early-access JDK such as sdkman's 26-ea cannot compile at `--release 25`.
 Maven 3.9+ for Java modules; Node 18+ for `exeris-codegen-ts`.
 
+### PostgreSQL suite
+
+The `@Tag("postgres")` classes in `exeris-e2e-tests` need a real PostgreSQL, because H2 implements no
+row-level security: the shared-scope access matrix, the field-type matrix, and the booted tenant-isolation
+test. The default build excludes the tag. The `e2e-postgres` profile selects it and nothing else, and
+the `e2e-postgres` CI job runs it on JDK 25. Without `-Dexeris.e2e.postgres.url` the profile fails at
+`validate`, and a `postgres` class selected some other way fails rather than skipping.
+
+```bash
+docker run --rm -d --name exeris-e2e-pg -p 127.0.0.1:55432:5432 -e POSTGRES_PASSWORD=e2e postgres:16-alpine
+
+mvn -pl exeris-e2e-tests -am verify -Pe2e-postgres \
+    -Dexeris.e2e.postgres.url=jdbc:postgresql://127.0.0.1:55432/postgres \
+    -Dexeris.e2e.postgres.username=postgres -Dexeris.e2e.postgres.password=e2e
+
+docker stop exeris-e2e-pg
+```
+
+The login must be allowed to create schemas and roles. Each class creates its own schema and drops
+it afterwards. `SharedScopePostgresE2ETest` and `TenantIsolationPostgresBootE2ETest` also create a
+`NOSUPERUSER NOBYPASSRLS` role to act as and drop it afterwards; `PostgresTypeMatrixE2ETest`
+creates no role.
+
 ### Javadoc gate
 
 A pull request that changes a Java file under `src/main/java` of `exeris-diagnostics`,
