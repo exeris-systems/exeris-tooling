@@ -76,7 +76,11 @@ class InitializrArgsTest {
         "--database=mysql                    | --database is one of postgresql, h2: mysql",
         "--entity=item                       | entity must be",
         "--package=com.example.class         | package is not a Java package name",
-        "--group-id=com example              | groupId may hold only"
+        "--group-id=com example              | groupId may hold only",
+        "--artifact-id=.                     | artifactId must hold more than dots",
+        "--artifact-id=..                    | artifactId must hold more than dots",
+        "--artifact-id=a/b                   | artifactId may hold only",
+        "--artifact-id=..\\x                  | artifactId may hold only"
     })
     @DisplayName("refuses an argument it cannot use, naming it")
     void refuses(String arg, String message) {

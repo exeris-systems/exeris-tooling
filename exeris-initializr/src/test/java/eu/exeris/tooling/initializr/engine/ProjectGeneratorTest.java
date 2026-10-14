@@ -45,14 +45,27 @@ class ProjectGeneratorTest {
     void backendPom() {
         String pom = text(generate(ProjectTopology.BACKEND_ONLY, DatabaseType.H2), "pom.xml");
         assertThat(pom)
-                .contains("<artifactId>exeris-app-parent</artifactId>\n        <version>9.8.7</version>")
-                .contains("<groupId>com.example</groupId>\n    <artifactId>order-service</artifactId>")
+                .contains("""
+                        <artifactId>exeris-app-parent</artifactId>
+                                <version>9.8.7</version>""")
+                .contains("""
+                        <groupId>com.example</groupId>
+                            <artifactId>order-service</artifactId>""")
                 .contains("<description>Orders &amp; Co</description>")
-                .contains("<artifactId>exeris-app-starter</artifactId>\n            <type>pom</type>")
-                .contains("<groupId>com.h2database</groupId>\n            <artifactId>h2</artifactId>\n"
-                        + "            <version>2.3.232</version>\n            <scope>runtime</scope>")
-                .contains("<artifactId>junit-jupiter</artifactId>\n            <version>5.11.4</version>")
-                .contains("<artifactId>assertj-core</artifactId>\n            <version>3.27.7</version>")
+                .contains("""
+                        <artifactId>exeris-app-starter</artifactId>
+                                    <type>pom</type>""")
+                .contains("""
+                        <groupId>com.h2database</groupId>
+                                    <artifactId>h2</artifactId>
+                                    <version>2.3.232</version>
+                                    <scope>runtime</scope>""")
+                .contains("""
+                        <artifactId>junit-jupiter</artifactId>
+                                    <version>5.11.4</version>""")
+                .contains("""
+                        <artifactId>assertj-core</artifactId>
+                                    <version>3.27.7</version>""")
                 .contains("<exeris.tests>true</exeris.tests>")
                 .contains("<url/>", "<license/>", "<developer/>", "<developerConnection/>");
         assertThat(pom.split("<dependency>", -1)).hasSize(5);
@@ -63,8 +76,10 @@ class ProjectGeneratorTest {
     @DisplayName("PostgreSQL declares its driver and adds the compose file the README's values connect to")
     void postgresql() {
         ProjectTree tree = generate(ProjectTopology.BACKEND_ONLY, DatabaseType.POSTGRESQL);
-        assertThat(text(tree, "pom.xml")).contains("<groupId>org.postgresql</groupId>\n"
-                + "            <artifactId>postgresql</artifactId>\n            <version>42.7.13</version>");
+        assertThat(text(tree, "pom.xml")).contains("""
+                <groupId>org.postgresql</groupId>
+                            <artifactId>postgresql</artifactId>
+                            <version>42.7.13</version>""");
         assertThat(text(tree, "docker-compose.yml")).contains("POSTGRES_DB: order_service",
                 "POSTGRES_USER: exeris", "POSTGRES_PASSWORD: exeris");
         assertThat(text(tree, "README.md")).contains(
@@ -72,8 +87,10 @@ class ProjectGeneratorTest {
                 "| `exeris.persistence.jdbcUrl` | `jdbc:postgresql://localhost:5432/order_service` |",
                 "| `exeris.persistence.username` | `exeris` |",
                 "| `exeris.persistence.runMigrations` | `true` |",
-                "docker compose up -d --wait\nfor migration in src/main/generated/java/db/migration/V*.sql; do\n"
-                        + "  docker compose exec -T postgres psql -q -U exeris -d order_service",
+                """
+                docker compose up -d --wait
+                for migration in src/main/generated/java/db/migration/V*.sql; do
+                  docker compose exec -T postgres psql -q -U exeris -d order_service""",
                 "-Dexeris.persistence.username=exeris -Dexeris.persistence.password=exeris",
                 "-cp \"target/classes:$(cat target/classpath.txt)\" com.example.order.service.Application")
                 .doesNotContain("H2 builds", "\n\n\n", "{{");
@@ -97,7 +114,11 @@ class ProjectGeneratorTest {
     void firstBuildScript() {
         String script = text(generate(ProjectTopology.BACKEND_ONLY, DatabaseType.H2), "first-build.sh");
         assertThat(script).startsWith("#!/bin/sh\n")
-                .contains("\nmvn -Dexeris.codegen.skip=true compile \"$@\"\nmvn verify \"$@\"\n")
+                .contains("""
+
+                mvn -Dexeris.codegen.skip=true compile "$@"
+                mvn verify "$@"
+                """)
                 .doesNotContain("mvn clean");
     }
 
@@ -142,10 +163,15 @@ class ProjectGeneratorTest {
         // exeris-gen writes its own package.json, angular.json and src/ into app/; nothing here may
         // sit at a path it writes.
         assertThat(tree.paths()).noneMatch(path -> path.startsWith("frontend/app/") || path.startsWith("frontend/src/"));
-        assertThat(text(tree, "README.md")).contains("cd backend\nsh first-build.sh", "npm run generate",
+        assertThat(text(tree, "README.md")).contains("""
+                cd backend
+                sh first-build.sh""", "npm run generate",
                 "| `exeris.http.port` | `8443` |", "`localhost:8443`", "npm install <path>/exeris-codegen-ts",
                 "for migration in backend/src/main/generated/java/db/migration/V*.sql; do",
-                "done\ncd backend\nmvn dependency:build-classpath")
+                """
+                done
+                cd backend
+                mvn dependency:build-classpath""")
                 .doesNotContain("\n\n\n", "{{");
     }
 

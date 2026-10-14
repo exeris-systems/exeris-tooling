@@ -3,7 +3,10 @@ package eu.exeris.tooling.initializr.engine;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 class NamesTest {
 
@@ -33,6 +36,15 @@ class NamesTest {
         assertThat(Names.databaseName("order-service")).isEqualTo("order_service");
         assertThat(Names.databaseName("2fa.App")).isEqualTo("app_2fa_app");
         assertThat(Names.databaseName("-_-")).isEqualTo("app_");
+    }
+
+    @Test
+    @DisplayName("derives a database name from a long run of separators in linear time")
+    void databaseNameAdversarial() {
+        String adversarial = "_".repeat(200_000) + "-".repeat(200_000) + "x" + "_".repeat(200_000) + "!";
+        assertTimeoutPreemptively(Duration.ofSeconds(2), () -> {
+            assertThat(Names.databaseName(adversarial)).isEqualTo("x");
+        });
     }
 
     @Test

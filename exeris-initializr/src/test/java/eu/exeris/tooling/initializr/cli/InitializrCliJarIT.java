@@ -57,7 +57,7 @@ class InitializrCliJarIT {
     @DisplayName("--version prints the version the jar was built as")
     void version() throws IOException, InterruptedException {
         Result result = run("--version");
-        assertThat(result.status()).isEqualTo(0);
+        assertThat(result.status()).isZero();
         assertThat(result.out().strip()).isEqualTo("exeris-initializr " + VERSION);
     }
 
@@ -65,9 +65,11 @@ class InitializrCliJarIT {
     @DisplayName("writes a backend whose parent is the version the jar was built as")
     void writesBackend() throws IOException, InterruptedException {
         Result result = run("--artifact-id=shop", "--output-dir=shop");
-        assertThat(result.status()).as(result.err()).isEqualTo(0);
+        assertThat(result.status()).as(result.err()).isZero();
         assertThat(tmp.resolve("shop/pom.xml")).content(StandardCharsets.UTF_8)
-                .contains("<artifactId>exeris-app-parent</artifactId>\n        <version>" + VERSION + "</version>");
+                .contains("""
+                        <artifactId>exeris-app-parent</artifactId>
+                                <version>%s</version>""".formatted(VERSION));
         assertThat(tmp.resolve("shop/src/main/java/com/example/shop/domain/Item.java")).exists();
     }
 

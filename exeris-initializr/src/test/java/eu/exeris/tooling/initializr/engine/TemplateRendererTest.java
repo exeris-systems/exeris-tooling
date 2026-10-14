@@ -42,27 +42,32 @@ class TemplateRendererTest {
     @Test
     @DisplayName("refuses a variable the context does not hold")
     void unknownVariable() {
-        assertThatThrownBy(() -> TemplateRenderer.render("{{nope}}", Map.of()))
+        Map<String, Object> empty = Map.of();
+        assertThatThrownBy(() -> TemplateRenderer.render("{{nope}}", empty))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("nope");
     }
 
     @Test
     @DisplayName("refuses a section key that is absent or not a boolean")
     void nonBooleanSection() {
-        assertThatThrownBy(() -> TemplateRenderer.render("{{#k}}x{{/k}}", Map.of("k", "yes")))
+        Map<String, String> notBoolean = Map.of("k", "yes");
+        Map<String, Object> empty = Map.of();
+        assertThatThrownBy(() -> TemplateRenderer.render("{{#k}}x{{/k}}", notBoolean))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("'k'");
-        assertThatThrownBy(() -> TemplateRenderer.render("{{^k}}x{{/k}}", Map.of()))
+        assertThatThrownBy(() -> TemplateRenderer.render("{{^k}}x{{/k}}", empty))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     @DisplayName("refuses an unclosed tag, an unclosed section and a stray closing tag")
     void malformed() {
-        assertThatThrownBy(() -> TemplateRenderer.render("a {{b", Map.of()))
+        Map<String, Object> empty = Map.of();
+        Map<String, Object> open = Map.of("s", true);
+        assertThatThrownBy(() -> TemplateRenderer.render("a {{b", empty))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("unclosed tag");
-        assertThatThrownBy(() -> TemplateRenderer.render("{{#s}}body", Map.of("s", true)))
+        assertThatThrownBy(() -> TemplateRenderer.render("{{#s}}body", open))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("{{/s}}");
-        assertThatThrownBy(() -> TemplateRenderer.render("x{{/s}}", Map.of()))
+        assertThatThrownBy(() -> TemplateRenderer.render("x{{/s}}", empty))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("without its section");
     }
 

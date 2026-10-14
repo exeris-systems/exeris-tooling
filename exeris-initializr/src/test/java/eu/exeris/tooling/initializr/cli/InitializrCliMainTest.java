@@ -39,7 +39,7 @@ class InitializrCliMainTest {
     @DisplayName("writes the project, says where, and exits 0")
     void writesProject() {
         Path target = tmp.resolve("shop");
-        assertThat(run("--topology=e2e", "--artifact-id=shop", "--output-dir=" + target)).isEqualTo(0);
+        assertThat(run("--topology=e2e", "--artifact-id=shop", "--output-dir=" + target)).isZero();
         assertThat(target.resolve("backend/pom.xml")).content()
                 .contains("<version>" + ScaffoldVersions.bundled().tooling() + "</version>");
         assertThat(target.resolve("frontend/package.json")).exists();
@@ -51,7 +51,7 @@ class InitializrCliMainTest {
     @DisplayName("writes a ZIP archive with --zip")
     void writesArchive() {
         Path archive = tmp.resolve("shop.zip");
-        assertThat(run("--artifact-id=shop", "--zip=" + archive)).isEqualTo(0);
+        assertThat(run("--artifact-id=shop", "--zip=" + archive)).isZero();
         assertThat(archive).isRegularFile();
     }
 
@@ -63,7 +63,7 @@ class InitializrCliMainTest {
         assertThat(err()).startsWith("[Exeris] EXT-INIT-5002: ").contains("is not empty", "--force");
         assertThat(tmp.resolve("pom.xml")).doesNotExist();
 
-        assertThat(run("--output-dir=" + tmp, "--force")).isEqualTo(0);
+        assertThat(run("--output-dir=" + tmp, "--force")).isZero();
         assertThat(tmp.resolve("pom.xml")).exists();
         assertThat(tmp.resolve("keep.txt")).hasContent("mine");
     }
@@ -86,13 +86,26 @@ class InitializrCliMainTest {
     }
 
     @Test
+    @DisplayName("refuses an artifactId that names a directory, with EXT-INIT-5001 and exit 2, even with --force")
+    void refusesDirectoryNames() {
+        assertThat(run("--artifact-id=..", "--force")).isEqualTo(2);
+        assertThat(err()).startsWith("[Exeris] EXT-INIT-5001: artifactId must hold more than dots");
+        err.reset();
+        assertThat(run("--artifact-id=.")).isEqualTo(2);
+        assertThat(err()).startsWith("[Exeris] EXT-INIT-5001: ");
+        err.reset();
+        assertThat(run("--artifact-id=a/b")).isEqualTo(2);
+        assertThat(err()).startsWith("[Exeris] EXT-INIT-5001: artifactId may hold only");
+    }
+
+    @Test
     @DisplayName("prints the version it was built as, and the usage, with exit 0")
     void versionAndHelp() {
-        assertThat(run("--version")).isEqualTo(0);
+        assertThat(run("--version")).isZero();
         assertThat(out()).isEqualTo("exeris-initializr " + ScaffoldVersions.bundled().tooling()
                 + System.lineSeparator());
         out.reset();
-        assertThat(run("--help")).isEqualTo(0);
+        assertThat(run("--help")).isZero();
         assertThat(out()).contains("--topology=<t>", "Exit status: 0 success, 1 write refused or failed, 2 invalid");
         assertThat(err()).isEmpty();
     }

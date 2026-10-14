@@ -42,6 +42,16 @@ class ModelTest {
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("groupId");
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {".", "..", "...."})
+    @DisplayName("refuses an artifactId or groupId made only of dots, which name a directory")
+    void refusesDotsOnly(String value) {
+        assertThatThrownBy(() -> request("com.example", value, "com.example", null, null))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("artifactId");
+        assertThatThrownBy(() -> request(value, "demo", "com.example", null, null))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("groupId");
+    }
+
     @Test
     @DisplayName("refuses an artifactId with characters Maven does not allow")
     void refusesArtifactId() {
@@ -107,7 +117,7 @@ class ModelTest {
                 .isNotEqualTo(new ScaffoldFile("a/b", new byte[] {1, 2}, true))
                 .isNotEqualTo(new ScaffoldFile("a/c", new byte[] {1, 2}, false))
                 .isNotEqualTo("a/b");
-        assertThat(file.toString()).isEqualTo("ScaffoldFile[path=a/b, size=2, executable=false]");
+        assertThat(file).hasToString("ScaffoldFile[path=a/b, size=2, executable=false]");
         assertThat(ScaffoldFile.script("run.sh", "x").executable()).isTrue();
     }
 
@@ -115,7 +125,8 @@ class ModelTest {
     @DisplayName("a tree refuses two files at one path, and finds a file by path")
     void projectTree() {
         ScaffoldFile a = ScaffoldFile.text("a", "1");
-        assertThatThrownBy(() -> new ProjectTree(List.of(a, ScaffoldFile.text("a", "2"))))
+        List<ScaffoldFile> twice = List.of(a, ScaffoldFile.text("a", "2"));
+        assertThatThrownBy(() -> new ProjectTree(twice))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("a");
         ProjectTree tree = new ProjectTree(List.of(a));
         assertThat(tree.find("a")).contains(a);
