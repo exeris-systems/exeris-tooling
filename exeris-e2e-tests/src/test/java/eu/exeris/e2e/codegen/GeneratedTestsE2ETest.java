@@ -164,7 +164,23 @@ class GeneratedTestsE2ETest {
                             // service's request-body update and action update reach their own
                             // repository methods.
                             DiscoverySelectors.selectClass(
-                                    Class.forName("com.shop.service.InvoiceServiceTest", true, appLoader)))
+                                    Class.forName("com.shop.service.InvoiceServiceTest", true, appLoader)),
+                            // The renamed-key entity (ADR-104) and the entity referencing it: the
+                            // only executed proof that the emitted tests call the key's own accessors
+                            // and bind its own column, where KernelCodegenCompileTest only compiles
+                            // them.
+                            DiscoverySelectors.selectClass(
+                                    Class.forName("com.shop.handler.VoucherHandlerTest", true, appLoader)),
+                            DiscoverySelectors.selectClass(
+                                    Class.forName("com.shop.service.VoucherServiceTest", true, appLoader)),
+                            DiscoverySelectors.selectClass(
+                                    Class.forName("com.shop.repository.VoucherRepositoryTest", true, appLoader)),
+                            DiscoverySelectors.selectClass(
+                                    Class.forName("com.shop.handler.PaymentHandlerTest", true, appLoader)),
+                            DiscoverySelectors.selectClass(
+                                    Class.forName("com.shop.service.PaymentServiceTest", true, appLoader)),
+                            DiscoverySelectors.selectClass(
+                                    Class.forName("com.shop.repository.PaymentRepositoryTest", true, appLoader)))
                     .build();
 
             Launcher launcher = LauncherFactory.create();
@@ -213,8 +229,10 @@ class GeneratedTestsE2ETest {
             // its required reference and the handleUpdate case, which only the reference can drive;
             // the required read-only status is validated on neither route — and the two
             // foreign-tenant 400s) + 24 SpeciesHandlerTest cases (the 23 an Invoice gets, plus the
-            // foreign-shared-scope 400).
-            assertThat(summary.getTestsSucceededCount()).isEqualTo(138);
+            // foreign-shared-scope 400) + 76 for the renamed-key pair (ADR-104): Voucher —
+            // 8 repository, 9 service (seven CRUD delegations, findPage included, and two finders), 23 handler —
+            // and Payment, which references it — 8 repository, 8 service (one finder), 20 handler.
+            assertThat(summary.getTestsSucceededCount()).isEqualTo(214);
         }
     }
 
@@ -642,6 +660,76 @@ class GeneratedTestsE2ETest {
                     public void setWorldId(UUID worldId) {
                         this.worldId = worldId;
                     }
+                }
+                """);
+        // ADR-104: a renamed UUID key, a streaming action and a self-reference, and an entity
+        // whose MANY_TO_ONE targets it. Global scope, because realTimeApi is refused on a
+        // tenant-partitioned entity.
+        sources.put("com/shop/domain/Voucher.java",
+                """
+                package com.shop.domain;
+
+                import eu.exeris.sdk.annotation.Action;
+                import eu.exeris.sdk.annotation.DomainEvent;
+                import eu.exeris.sdk.annotation.ExerisDomain;
+                import eu.exeris.sdk.annotation.Field;
+                import eu.exeris.sdk.annotation.Relationship;
+
+                import java.util.UUID;
+
+                @ExerisDomain(module = "billing", path = "/vouchers", primaryKeyField = "voucherNo",
+                        realTimeApi = true)
+                @DomainEvent(name = "VoucherRevised", trigger = DomainEvent.Trigger.UPDATE, topic = "vouchers.revised")
+                @DomainEvent(name = "VoucherSettled", trigger = DomainEvent.Trigger.ACTION, action = "settle",
+                        topic = "vouchers.settled", includeFields = {"customer"})
+                public class Voucher {
+
+                    private UUID voucherNo;
+
+                    @Field(label = "Customer", required = true, sortable = true, filterable = true)
+                    private String customer;
+
+                    @Relationship(targetEntity = Voucher.class, displayField = "customer")
+                    private UUID correctsId;
+
+                    public UUID getVoucherNo() { return voucherNo; }
+                    public void setVoucherNo(UUID voucherNo) { this.voucherNo = voucherNo; }
+                    public String getCustomer() { return customer; }
+                    public void setCustomer(String customer) { this.customer = customer; }
+                    public UUID getCorrectsId() { return correctsId; }
+                    public void setCorrectsId(UUID correctsId) { this.correctsId = correctsId; }
+
+                    @Action(name = "settle", label = "Settle", streaming = true)
+                    public void settle() { this.customer = this.customer + " settled"; }
+                }
+                """);
+        sources.put("com/shop/domain/Payment.java",
+                """
+                package com.shop.domain;
+
+                import eu.exeris.sdk.annotation.ExerisDomain;
+                import eu.exeris.sdk.annotation.Field;
+                import eu.exeris.sdk.annotation.Relationship;
+
+                import java.util.UUID;
+
+                @ExerisDomain(module = "billing", path = "/payments")
+                public class Payment {
+
+                    private UUID id;
+
+                    @Field(label = "Note")
+                    private String note;
+
+                    @Relationship(targetEntity = Voucher.class, displayField = "customer")
+                    private UUID voucherId;
+
+                    public UUID getId() { return id; }
+                    public void setId(UUID id) { this.id = id; }
+                    public String getNote() { return note; }
+                    public void setNote(String note) { this.note = note; }
+                    public UUID getVoucherId() { return voucherId; }
+                    public void setVoucherId(UUID voucherId) { this.voucherId = voucherId; }
                 }
                 """);
         return sources;
