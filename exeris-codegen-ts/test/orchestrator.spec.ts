@@ -12,15 +12,15 @@
 import { describe, expect, it } from 'vitest';
 import { buildGeneratedFiles, generateEnumTypes, type EnumMetadataForGen } from '../src/orchestrator.js';
 import {
-  DomainMetadataSchema,
   ViewMetadataSchema,
   type DomainMetadata,
 } from '../src/models/domain-model.js';
 import { DEFAULT_CONFIG } from '../src/config.js';
 import { canonicalManifestPath } from '../src/output/manifest.js';
+import { parseOffered } from './support/offered.js';
 
 function domain(overrides: Partial<DomainMetadata> & { entityName: string }): DomainMetadata {
-  return DomainMetadataSchema.parse({ packageName: 'com.shop', ...overrides });
+  return parseOffered({ packageName: 'com.shop', ...overrides });
 }
 
 const BATTLE_STATUS: EnumMetadataForGen = {
@@ -201,7 +201,7 @@ describe('buildGeneratedFiles — presentation IR (@View) flows to src/app/pages
 
 describe('buildGeneratedFiles — peer contracts', () => {
   const peerOrder = (pkg: string, extra: Record<string, string>) =>
-    DomainMetadataSchema.parse({
+    parseOffered({
       packageName: pkg,
       entityName: 'Order',
       fields: [{ name: 'id', type: 'java.util.UUID' }, extra],
@@ -212,7 +212,7 @@ describe('buildGeneratedFiles — peer contracts', () => {
     { name: 'shipping', domains: [peerOrder('com.shipping', { name: 'trackingCode', type: 'String' })], enums: [] },
   ];
 
-  const localOrder = DomainMetadataSchema.parse({
+  const localOrder = parseOffered({
     packageName: 'com.shop',
     entityName: 'Order',
     fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'total', type: 'java.math.BigDecimal' }],

@@ -4,7 +4,7 @@ type: roadmap
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-13
+last-verified: 2026-10-14
 ---
 
 # Exeris Tooling — Roadmap to 1.0.0 GA
@@ -1710,7 +1710,7 @@ never-invoked emitter start emitting, and its output did not build.
       lists what the update writes from the body and `<Entity>CreateDto` what the create
       validates. The entity schema, `<Entity>CreateDto` and `<Entity>UpdateDto` each have a
       property set equal to the TS entity type, `<Entity>Create` and `<Entity>Update` (local and
-      peer) for every metadata shape in `exeris-codegen-ts/test/fixtures/update-parity/`.
+      peer) for every metadata shape in `exeris-e2e-tests/src/test/resources/contract/update-parity/`.
 - [x] **Locale determinism — shipped 0.9.0 (2026-09-26).** Nineteen `toLowerCase()` calls in
       codegen-java used the JVM default locale. Under `tr-TR`: table `ınvoices`, column `item_ıd`,
       `ınvoice-api.yaml`, and an `InvalidPathException` writing `V…__create_lıne_ıtems.sql` on a
@@ -4047,6 +4047,11 @@ enters only if its upstream half is final first.
       compared with CRLF folded to LF, and a replaced file that is CRLF on disk (a line ending, every LF
       preceded by CR) is written as CRLF; a mixed file is written as LF.
 - [x] The removals below.
+- [ ] **Pre-cut end-to-end matrix** (#371): the generated sample app's `ng build` and `ng test` now
+      also cover a UNIVERSE entity (`Listing`, with its `@SharedScope` field `scopeId` and a foreign
+      key into `Product`), a `readOnly` field (`Product.sku`) and a `required` + `readOnly` field
+      (`Product.catalogCode`). Open: the booted Java matrix in `exeris-e2e-tests` and the Java-side
+      parity fixtures.
 - [ ] **`exeris-initializr`** (ADR-091 Amendment 5; does not hold the cut): a launchable jar that writes
       a new project on `exeris-app-parent` and `exeris-app-starter`, backend-only or e2e, PostgreSQL by
       default, with the two-pass first build scripted, and two invoker fixtures that build what it

@@ -48,6 +48,7 @@ import {
   type ContractCoverageEntry,
   type NestedContractCoverageEntry,
 } from '../../src/models/contract-coverage.js';
+import { parseOffered } from '../support/offered.js';
 
 const SCHEMA_KEYS = Object.keys(DomainMetadataSchema.shape);
 
@@ -99,7 +100,7 @@ function watch<T extends object>(target: T, rec: Recorder): T {
   });
 }
 
-const d = (o: Record<string, unknown>): DomainMetadata => DomainMetadataSchema.parse({ packageName: 'com.shop', ...o });
+const d = (o: Record<string, unknown>): DomainMetadata => parseOffered({ packageName: 'com.shop', ...o });
 
 /** Every schema field set, none at its default. */
 const MAXIMAL = {

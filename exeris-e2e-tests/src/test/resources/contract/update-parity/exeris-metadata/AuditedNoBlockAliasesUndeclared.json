@@ -1,0 +1,19 @@
+{
+  "entityName": "AuditedNoBlockAliasesUndeclared",
+  "packageName": "com.example.parity",
+  "audited": true,
+  "fields": [
+    {
+      "name": "id",
+      "type": "java.util.UUID",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "title",
+      "type": "java.lang.String",
+      "inCreate": true,
+      "inUpdate": true
+    }
+  ]
+}

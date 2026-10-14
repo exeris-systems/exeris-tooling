@@ -1,0 +1,48 @@
+{
+  "entityName": "SoftDeleteRenamed",
+  "packageName": "com.example.parity",
+  "softDelete": true,
+  "systemFields": {
+    "softDeleteField": "gone",
+    "softDeleteTimestampField": "goneAt",
+    "softDeletedByField": "goneBy"
+  },
+  "fields": [
+    {
+      "name": "id",
+      "type": "java.util.UUID",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "title",
+      "type": "java.lang.String",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "gone",
+      "type": "boolean",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "goneAt",
+      "type": "java.time.Instant",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "goneBy",
+      "type": "java.lang.String",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "deleted",
+      "type": "boolean",
+      "inCreate": true,
+      "inUpdate": true
+    }
+  ]
+}

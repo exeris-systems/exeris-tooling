@@ -127,6 +127,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     private static final String HANDLER_SLOT = "handlerSlot";
     // ADR-105: the three overridable hooks that compose the route policy the kernel is handed.
     private static final String ROUTE_POLICY_METHOD = "routePolicy";
+    private static final String PATH_WITHOUT_QUERY_METHOD = "pathWithoutQuery";
     private static final String APPLICATION_POLICY_METHOD = "applicationPolicy";
     private static final String UNMATCHED_ROUTES_METHOD = "unmatchedRoutes";
     private static final String ROUTE_POLICY_TYPE_NAME = "GeneratedRoutePolicy";
@@ -638,7 +639,8 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addMethod(componentsMethod)
                 .addMethod(routePolicyMethod(policyType))
                 .addMethod(applicationPolicyMethod())
-                .addMethod(unmatchedRoutesMethod());
+                .addMethod(unmatchedRoutesMethod())
+                .addMethod(pathWithoutQueryMethod());
         if (composed) {
             applicationType.addMethod(capManifestMethod());
         }
@@ -698,9 +700,32 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("<p>Called before the kernel boots, because the http subsystem reads the\n")
                 .addJavadoc("policy once, when it starts: a body must not read a kernel\n")
                 .addJavadoc("{@link $T} that the boot binds.\n", SCOPED_VALUE)
-                .addStatement("return $T.firstDeclared($T.of($L(), $T.INSTANCE), $L())",
-                        HTTP_ROUTE_POLICY, LIST, APPLICATION_POLICY_METHOD, policyType,
+                .addJavadoc("<p>A policy decides on the path without its query string, and on a\n")
+                .addJavadoc("{@code HEAD} request as {@code GET}: the composition hands every\n")
+                .addJavadoc("policy it folds that path and that method. An override of this method\n")
+                .addJavadoc("answers for the request as the kernel hands it, and does that\n")
+                .addJavadoc("normalisation itself.\n")
+                .addStatement("$T declared = $T.firstDeclared($T.of($L(), $T.INSTANCE), $L())",
+                        HTTP_ROUTE_POLICY, HTTP_ROUTE_POLICY, LIST, APPLICATION_POLICY_METHOD, policyType,
                         UNMATCHED_ROUTES_METHOD)
+                .addStatement("return (method, path) -> declared.requirementFor(\n"
+                                + "        method == $T.HEAD ? $T.GET : method, $L(path))",
+                        HTTP_METHOD, HTTP_METHOD, PATH_WITHOUT_QUERY_METHOD)
+                .build();
+    }
+
+    /** The request path with any query string removed. */
+    private MethodSpec pathWithoutQueryMethod() {
+        return MethodSpec.methodBuilder(PATH_WITHOUT_QUERY_METHOD)
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(String.class)
+                .addParameter(String.class, "path")
+                .addJavadoc("The request path with any query string removed.\n")
+                .addJavadoc("\n")
+                .addJavadoc("@param path the request path, with or without a query string\n")
+                .addJavadoc("@return the path before the first {@code ?}\n")
+                .addStatement("int query = path.indexOf('?')")
+                .addStatement("return query < 0 ? path : path.substring(0, query)")
                 .build();
     }
 
