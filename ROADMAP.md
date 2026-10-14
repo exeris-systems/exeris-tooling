@@ -4151,7 +4151,7 @@ keeps compiling where it still uses one. 0.10.0 removes them.
 ## 0.11.0 — SDK annotations to emitted output, scope set 2026-10-07
 
 Pairs with SDK 0.13, which 0.10.0 does not wait for. Order, gates and the Java/TS pairing are in
-[`docs/0.11.0-release-plan.md`](docs/0.11.0-release-plan.md). Every row needs an SDK 0.13 half: the
+[`docs/0.11.0-release-plan.md`](docs/0.11.0-release-plan.md). Every row but S6 needs an SDK 0.13 half: the
 `-io` reader half under ADR-042 (exeris-sdk#187) or a carrier (exeris-sdk#186).
 
 - [ ] **Wave 0, decisions** (may start during 0.10.0): RFC/ADR for the `@Blob` routes and the
@@ -4167,6 +4167,10 @@ Pairs with SDK 0.13, which 0.10.0 does not wait for. Order, gates and the Java/T
       `routeAccess`, the obligation-12 table, `route-policy.json` with its conformance test, the
       OpenAPI security block (ADR-079), and the TS guards that read the declared names
       (ADR-105 J3-3, J3-4 and S3). Gate: exeris-sdk#161 in a final SDK 0.13.
+- [ ] **S6 `@View` page gaps** left open by 0.10.0 wave S6: SEO fields (#412, upstream: SDK
+      presentation IR), the view's name in its route (#413), the prerender list under `scaffold: false`
+      (#414), `viewHeading` per view (#415), typed CUSTOM block props (#416), no hand-maintained
+      `customBlocks` map (#417).
 
 Not in 0.11.0: `@Encrypted` / `@RowLevelSecurity` (C2) and `@GraphQuery`, with the reasons in the
 plan.
