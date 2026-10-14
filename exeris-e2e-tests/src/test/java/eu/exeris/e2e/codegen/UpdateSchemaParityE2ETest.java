@@ -83,8 +83,8 @@ class UpdateSchemaParityE2ETest {
         URL dir = UpdateSchemaParityE2ETest.class.getResource(CONTRACT_DIR + "/" + MetadataLoader.METADATA_DIR);
         assertThat(dir).as(CONTRACT_DIR + "/" + MetadataLoader.METADATA_DIR + " on the test classpath")
                 .isNotNull();
-        // MetadataLoader reads a field with no inCreate / inUpdate key as offered by both bodies,
-        // which the files rely on; the fixtures state only the flags that differ from the default.
+        // An absent inCreate / inUpdate key reads as false in MetadataLoader, so the fixtures state
+        // both flags on every field.
         return new MetadataLoader(Path.of(dir.toURI()).getParent()).loadAll(DomainMetadata.class).stream()
                 .sorted(Comparator.comparing(DomainMetadata::entityName))
                 .toList();
