@@ -4,7 +4,7 @@ type: migration-guide
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-07
+last-verified: 2026-10-14
 ---
 
 # Migration: 0.x → 1.0
@@ -2786,10 +2786,1134 @@ resolved to the CLI entry point and ran it.
 
 ## 0.10.0 train — regeneration deltas
 
-<!-- BEGIN migration-fragments 0.10.0 -->
-Until 0.10.0 is cut, each step of this train is a file of its own under `docs/migration/0.10.0/`,
-and the release assembles them here ([how a step is written](migration/README.md)).
-<!-- END migration-fragments 0.10.0 -->
+### Maven coordinates move to the `eu.exeris` group
+
+From 0.10.0 every tooling artefact is published under the groupId **`eu.exeris`**, the group the
+kernel (`eu.exeris:exeris-kernel-*`) and the SDK (`eu.exeris:exeris-sdk-*`) already publish under.
+The artifactIds do not change, and none of them collides with a kernel or SDK artifactId.
+
+| 0.9.0 and earlier | 0.10.0 and later |
+|---|---|
+| `eu.exeris.tooling:exeris-tooling-root` | `eu.exeris:exeris-tooling-root` |
+| `eu.exeris.tooling:exeris-tooling-parent` | `eu.exeris:exeris-tooling-parent` |
+| `eu.exeris.tooling:exeris-tooling-bom` | `eu.exeris:exeris-tooling-bom` |
+| `eu.exeris.tooling:exeris-diagnostics` | `eu.exeris:exeris-diagnostics` |
+| `eu.exeris.tooling:exeris-codegen-core` | `eu.exeris:exeris-codegen-core` |
+| `eu.exeris.tooling:exeris-processor` | `eu.exeris:exeris-processor` |
+| `eu.exeris.tooling:exeris-codegen-java` | `eu.exeris:exeris-codegen-java` |
+| `eu.exeris.tooling:exeris-codegen-maven-plugin` | `eu.exeris:exeris-codegen-maven-plugin` |
+| `eu.exeris.tooling:exeris-app-bom` | `eu.exeris:exeris-app-bom` |
+| `eu.exeris.tooling:exeris-app-parent` | `eu.exeris:exeris-app-parent` |
+| `eu.exeris.tooling:exeris-app-starter` | `eu.exeris:exeris-app-starter` |
+
+**0.9.0 and every earlier release stay where they are**, under `eu.exeris.tooling`, and no
+relocation POM points from the old group to the new one. A build that keeps the old groupId and
+raises the version to 0.10.0 fails to resolve: the coordinate does not exist.
+
+**What to do:** when you move to 0.10.0, replace `eu.exeris.tooling` with `eu.exeris` in every
+`<groupId>` that names a tooling artefact:
+
+- the `<parent>` of an application on `exeris-app-parent`;
+- the `exeris-app-bom` import in `<dependencyManagement>`;
+- the `exeris-app-starter` dependency;
+- the `exeris-processor` entry in `maven-compiler-plugin`'s `<annotationProcessorPaths>`;
+- the `exeris-codegen-maven-plugin` declaration in `<build><plugins>` or `<pluginManagement>`;
+- any other dependency on a tooling artefact, such as `exeris-codegen-java` or `exeris-diagnostics`.
+
+`mvn exeris:generate` and the other `exeris:*` goals resolve as before when the plugin is declared in
+the POM, under either route of the README's quick start. A command line that names the plugin in
+full (`mvn eu.exeris.tooling:exeris-codegen-maven-plugin:<version>:generate`) and a `<pluginGroup>`
+entry for `eu.exeris.tooling` in `settings.xml` name the old group and change with it. A cache, a
+repository-manager proxy rule or a dependency-update tool that matches on `eu.exeris.tooling` matches
+nothing from 0.10.0.
+
+**Java packages do not change.** The classes stay in `eu.exeris.tooling.*`
+(`eu.exeris.tooling.diagnostics.DiagnosticId`, `eu.exeris.tooling.codegen.*`, …): an import, a
+`-Aexeris.*` processor option or a diagnostic identifier is unaffected. Generated code changes in one
+Javadoc line: the generated `Application` names the starter as `eu.exeris:exeris-app-starter`.
+`@exeris/codegen-ts` keeps its npm name and still versions in lockstep with the Maven artefacts.
+
+### `EXT-PROC-1104` is retired
+
+The processor prints no warning for an entity whose derived default table differs from the
+snake-cased class name plus "s" (0.9.0's `EXT-PROC-1104`, T6). Nothing changes in generated code or
+in the table an entity gets: `effectiveTableName()` names it, and `@ExerisDomain(tableName = …)`
+overrides it, as in 0.9.0. A `tableName` set only to silence the warning can stay. The identifier is
+listed under *Retired identifiers* in [`diagnostics.md`](diagnostics.md) and is never reused.
+
+### An `@ExerisDomain` type without its primary key field is a compile error (`EXT-PROC-1015`)
+
+From 0.10.0 the annotation processor refuses an `@ExerisDomain` type that declares no field named
+by its primary key, at the annotation. The key is `id` unless `@ExerisDomain(primaryKeyField = …)`
+names another field:
+
+```
+[Exeris] EXT-PROC-1015: @ExerisDomain type 'Workspace' declares no field 'id', its primary key. The
+generated schema, repository and Angular model identify a row by the primary key, which is 'id'
+unless primaryKeyField names another field. Declare 'private UUID id;' with its getter and setter.
+```
+
+Every generated artefact identifies a row by that field: the migration's `id UUID PRIMARY KEY`, the
+repository's `WHERE id = ?`, the `getId()` and `setId(...)` calls in the generated handlers and
+services, and the list, detail, form and store the TypeScript generator emits. Through 0.9.0 an entity without the field passed the processor, and the
+failure surfaced downstream: in the generated repository and handler, which call accessors the
+entity does not have, and at `ng build` of the generated Angular app, with
+`TS2339: Property 'id' does not exist on type '<Entity>'`.
+
+**What to do:** declare the key on the entity, with its accessors:
+
+```java
+private UUID id;
+
+public UUID getId() { return id; }
+public void setId(UUID id) { this.id = id; }
+```
+
+A field inherited from a superclass satisfies the check. An entity that names its key with
+`primaryKeyField` declares that field instead, as a `UUID` (the step on `primaryKeyField` below). A
+build that compiled on 0.9.0 and declares `id` is unaffected; its emitted output is
+byte-identical.
+
+**An `id` inherited from a superclass** passes the check, but the processor records only the
+fields the entity type declares itself, so the generated Angular model of such an entity still has
+no `id` and `ng build` still reports TS2339 until the TypeScript generator always emits it (release
+plan wave S2). Declaring `id` on the entity itself avoids both.
+
+The check runs in the annotation processor. Metadata JSON that reaches `exeris:generate` without
+passing through the processor is not checked.
+
+### Code examples in generated Javadoc are `{@snippet}` blocks
+
+Regeneration rewrites the code examples in the Javadoc of the generated `Application`,
+`RuntimeComponents` and `<Entity>Client` from `<pre>{@code … }</pre>` to `{@snippet : … }`. The
+example text inside is unchanged, and so are the API and the behaviour. Expect a two-line diff per
+example in a committed generated tree. `{@snippet}` needs a `javadoc` from JDK 18 or later, below
+the JDK 25 the generated code already requires.
+
+### `GraphMetadata.queries` is absent from the metadata, as `properties` is
+
+An `@Graph` entity's metadata JSON carries no `queries` key from 0.10.0; through 0.9.0 it carried
+`"queries" : [ ]`. The processor extracts neither `@GraphQuery` nor `@GraphProperty`, and an empty
+list claimed the entity declares no queries. Both components are written `null`, and
+`@JsonInclude(NON_NULL)` keeps them off the wire: absent means "not carried", `[]` means "carried,
+and there are none".
+
+Generated Java and TypeScript are unchanged: no generator reads either component.
+
+**If you read the metadata JSON yourself,** treat an absent `queries` as unknown, not as an empty
+list.
+
+### The `CodegenMain` command line refuses arguments it does not know
+
+This affects a script that runs `eu.exeris.tooling.codegen.java.CodegenMain` directly; a build that
+generates through `exeris:generate` is unaffected, and so is generated code. From 0.10.0 the same
+class is the `Main-Class` of the new `eu.exeris:exeris-codegen-cli` jar (ADR-097).
+
+| | 0.9.0 and earlier | 0.10.0 and later |
+|---|---|---|
+| An unknown `--switch`, a positional argument | ignored | argument error, nothing generated |
+| `--metadata-dir` / `--output-dir` / `--base-package` without `=<value>` | ignored | argument error |
+| Exit status for invalid arguments | `1` | `2` |
+| Exit status for a refused or failed run | `1` | `1` |
+| A failed or refused run other than `EXT-GEN-3003` | `EXT-GEN-3001`, through the JDK logger | the event's identifier, printed on `stderr` |
+| Version in the start-up log line | always `v0.1.0` | the jar's `Implementation-Version`, or `unknown` |
+
+From 0.10.0 the empty-metadata refusal prints `EXT-PLUG-2001` and an unresolved capability graph
+`EXT-PLUG-2201`, the identifiers `exeris:generate` prints for the same events; an I/O failure keeps
+`EXT-GEN-3001` ([diagnostics](diagnostics.md)).
+
+**What to do:** drop any argument the command line does not list (run it with no arguments to see the
+list), pass every value as `--switch=value`, and treat exit status `2` as a usage error where a script
+checked for `1`. The new switches are `--tests` with `--test-output-dir=<path>` (ADR-058's test root),
+`--allow-empty` and `--print-catalogue`.
+
+### The auto-detected base package no longer depends on the filesystem (`EXT-GEN-3104`)
+
+When `exeris.basePackage` (`--base-package` on the command line) is not set, generation picks the
+package for `Application`, `RuntimeComponents`, `RuntimeLifecycle` and the generated `testsupport`
+package itself. Up to 0.9.0 it took the package of whichever entity the metadata directory happened to
+list first, with `.domain` removed. Directory listing order is the filesystem's: on ext4 it differs
+between machines, so with entities in several packages a developer and CI could generate the bootstrap
+into different packages from the same sources.
+
+From 0.10.0 the metadata is read in order of fully-qualified entity name, and the base package is the
+package of the first entity in that order, with `.domain` removed. With more than one entity package
+and no `exeris.basePackage`, `exeris:generate` logs the `EXT-GEN-3104` warning naming the packages
+and the one chosen.
+
+**Single-package applications** generate into the same package as before. Their `RuntimeComponents`
+and `RuntimeLifecycle` list the entities in name order now, where they followed the directory listing,
+so the first regeneration may reorder their members and statements once. The reordering changes no
+behaviour: every publisher is still built before any subscriber subscribes, and the kernel router
+resolves an exact path before a template whatever the registration order.
+
+**Applications with entities in several packages and no `exeris.basePackage`** get the first package
+in qualified-name order (`com.shop.billing` before `com.shop.order`), which may differ from the one a
+given filesystem produced before. If it does, the bootstrap and the generated `testsupport` package
+move: the regeneration prunes the old files, which the previous run's manifest owns, but a subclass of
+`Application` or `RuntimeComponents`, an import of a `testsupport` double, and a main class named in
+the POM, a jar manifest or a container entry point keep the old package.
+
+**What to do:** set the package explicitly, to the one your application already uses:
+
+```xml
+<properties>
+  <exeris.basePackage>com.shop.order</exeris.basePackage>
+</properties>
+```
+
+An explicit base package is used as given and silences the warning. A detached application that no
+longer runs `exeris:generate` is unaffected.
+
+### `exeris:generate` names a dependency the generated code imports and the build does not declare (`EXT-PLUG-2004`)
+
+After it writes the generated tree, `exeris:generate` checks this module's dependencies for every
+artefact the generated code imports, and logs the `EXT-PLUG-2004` warning naming each one that is
+missing by `groupId:artifactId` ([diagnostics](diagnostics.md)):
+
+| Artefact | Imported when | Classpath |
+|---|---|---|
+| `eu.exeris:exeris-kernel-spi`, `eu.exeris:exeris-kernel-core` | always | compile |
+| `eu.exeris:exeris-sdk-composition-runtime` | the build has a `@CapabilityModule` | compile |
+| `tools.jackson.core:jackson-databind` | an entity has a `List<X>` field | compile |
+| `org.junit.jupiter:junit-jupiter-api`, `org.assertj:assertj-core` | `exeris.tests=true` | test |
+
+A missing compile artefact still fails the build at `compile`, as before; the warning printed ahead of
+the `javac` error names the jar where `javac` names a package. A build on `eu.exeris:exeris-app-starter`
+declares every compile artefact in the table and prints nothing. A dependency at runtime scope does not
+count for the compile classpath, so Jackson 3 reached only through the runtime-scoped Community driver
+is reported.
+
+The goal now asks Maven to collect this module's dependency graph (coordinates only, nothing is
+downloaded), so a build that cannot resolve its own dependency POMs fails at `generate-sources` instead
+of at `compile`. The check does not run with `exeris.codegen.skip=true` or
+`exeris.addCompileSourceRoot=false`, where another module compiles the generated tree.
+
+**What to do:** nothing for a build that compiles. For a build that does not, add each artefact the
+warning lists, the compile ones at compile scope (or depend on `exeris-app-starter`, type `pom`) and
+JUnit 5 and AssertJ at test scope.
+
+### `exeris-app-bom` manages Jackson 3 at 3.2.3
+
+`exeris-app-bom`, and through it `exeris-app-parent` and `exeris-app-starter`, now manage
+`tools.jackson.core:jackson-databind` at 3.2.3, the version `exeris-kernel-bom` and `exeris-sdk-bom`
+0.12.0 manage. 0.9.0 managed 3.2.2, which takes precedence over the kernel's and SDK's own version and
+keeps an application on a release affected by GHSA-cxp5-3px4-pw24 and GHSA-wv8q-qhhj-9h54. Generated
+code is unchanged.
+
+**What to do:** on 0.10.0, nothing. On 0.9.0, set `<jackson3.version>3.2.3</jackson3.version>` in an
+application whose parent is `exeris-app-parent`; an application that imports `exeris-app-bom` declares
+`tools.jackson.core:jackson-databind` at 3.2.3 in its own `<dependencyManagement>`, which takes
+precedence over the import.
+
+### The OpenAPI document gives every schema its type and defines each action's request schema
+
+Regeneration rewrites `openapi/<entity>-api.yaml`. Through 0.9.0 no schema in it carried a `type`:
+entity, DTO and page properties, list-query parameters and path parameters were written with their
+`format` and constraints only, and a filter on a `String`, enum or `boolean` property came out as
+`schema: {}`. Every schema now carries its OpenAPI 3.1 `type`: `object` for the entity, DTO, page
+and request schemas, `array` for the page's `content`, and `string`, `integer`, `number` or
+`boolean` for each property and query parameter.
+
+An action that declares `@ActionParam` parameters had its request body reference
+`#/components/schemas/<Entity><Action>Request`, a schema the document did not define. The document
+now defines it: an `object` with one property per parameter, in declaration order, with the
+parameter's type and format. No property is listed as `required`, because no emitted handler
+checks that a parameter is present.
+
+Generated Java and TypeScript are unchanged. No public Java API changes.
+
+**If you generate a client or validate requests from the document,** regenerate from the new
+document. A tool that treated an untyped schema as "any value" now applies the declared type, and a
+tool that failed on the unresolved action reference now resolves it.
+
+### The composed Application holds its conductor in an unnamed resource
+
+Regeneration rewrites `Application.java` of a composed build. Its boot block declared the
+`CompositionConductor` as a named try-with-resources variable that the body never used, so
+`javac -Xlint:try` reported `compiler.warn.try.resource.not.referenced` and a consumer building with
+`-Xlint:try -Werror` could not compile the application. The resource is now the unnamed variable
+`_`, which `-Xlint:try` does not report.
+
+The emitted statement changes from `try (CompositionConductor conductor = ...)` to
+`try (CompositionConductor _ = ...)`. The conductor still starts before the lifecycle runs and
+closes after it returns; there is no behaviour change. No public Java API changes, and generated
+TypeScript is unchanged.
+
+**If you build with `-Xlint:try -Werror`,** regenerate; the warning no longer appears.
+
+### `-Aexeris.strict` reports the `@DomainEvent` attributes no generator consumes
+
+Through 0.9.0 the strict audit skipped `@DomainEvent`: an attribute set on it was never reported,
+whichever annotation form carried it. A build with `-Aexeris.strict` now warns, with diagnostic
+`EXT-PROC-1201`, on each `@DomainEvent` attribute that no generator reads, on a class-level event
+and on an event declared as a nested class.
+
+The attributes generators read, and which stay silent, are `name`, `trigger`, `topic`, `action`,
+`includeFields`, `excludeFields` and `sensitiveFields`. Every other attribute is reported, among
+them `description` and `field`, which reach the metadata JSON but no emitter, and the messaging,
+schema, retention, outbox and monitoring attributes, which the processor does not read.
+
+Generated Java and TypeScript, the metadata JSON and the default build are unchanged. No public
+Java API changes.
+
+**If your build treats warnings as errors under `-Aexeris.strict`,** remove the reported attribute
+from the event, or leave strict mode off for that build. Nothing else changes.
+
+### `@ExerisDomain(primaryKeyField)` renames the primary key, and the key must be a `UUID` (`EXT-PROC-1018`, `EXT-PROC-1019`)
+
+From 0.10.0 the generated code identifies a row by the field `@ExerisDomain(primaryKeyField = …)`
+names, and by `id` when the attribute is absent ([ADR-104](adr/ADR-104-declared-primary-key-uuid-only.md)).
+For `primaryKeyField = "invoiceNo"`:
+
+- the migration declares `invoice_no UUID PRIMARY KEY DEFAULT gen_random_uuid()`;
+- the repository selects, updates and deletes `WHERE invoice_no = ?`, closes every list
+  `ORDER BY` with `invoice_no`, and fills a new row's key through `setInvoiceNo(UUID.randomUUID())`;
+- the handler, which passes the key to the event publisher as the stream id, the graph sync and the
+  generated tests call `getInvoiceNo()` and `setInvoiceNo(...)`;
+- a `MANY_TO_ONE` into the entity references `invoices(invoice_no)`; the referencing column keeps its
+  name, such as `invoice_id`;
+- the OpenAPI entity schema carries the key as `invoiceNo`, and the create and update schemas omit it.
+
+The route variable stays `{id}` (`/invoices/{id}`), and so do the generated `findById`,
+`deleteById` and `UUID id` parameter names: they name the URL segment and the operation, not the
+field. An entity that does not set `primaryKeyField` regenerates byte-identically.
+
+**An application that already sets `primaryKeyField`** to something other than `id` gets a changed
+`CREATE TABLE` migration for that entity: the key column moves from `id` to the named field's
+column. Flyway refuses a changed migration that a database has already applied (checksum
+mismatch). Before regenerating, decide per entity:
+
+- if no database has applied the entity's migration, regenerate and keep the new migration;
+- if one has, either remove `primaryKeyField` to keep `id` as the key, or write the
+  `ALTER TABLE … RENAME COLUMN` migration yourself and keep the applied `CREATE TABLE` file
+  unchanged (for example with `exeris:detach`). The generator writes only `CREATE TABLE`.
+
+Two new refusals come with the switch, both at the `@ExerisDomain` type:
+
+- `EXT-PROC-1018`: the key field, `id` included, is not a `java.util.UUID`. The kernel identifies an
+  entity's event stream and graph node by a UUID. An entity that declared `Long id` or `String id`
+  compiled through the processor before and failed in the generated repository at
+  `setId(UUID.randomUUID())`; it now fails at the declaration. Declare the key as `UUID` and keep any
+  other identifier, such as an order number, as an ordinary unique field.
+- `EXT-PROC-1019`: the entity sets `primaryKeyField` to a name other than `id` and also declares a
+  field `id`, its own or inherited. Honouring the rename would move an existing key column without a
+  diagnostic. Drop `primaryKeyField` to keep `id` as the key; if no database has applied the
+  migration, rename or remove the field `id` instead.
+
+`EXT-PROC-1015` now names the effective key: an entity with `primaryKeyField = "invoiceNo"` that
+declares no field `invoiceNo` is refused with that name. `-Aexeris.strict` no longer reports
+`@ExerisDomain.primaryKeyField` as having no effect. The field-level `@PrimaryKey` marker is still
+not read and is still reported by `-Aexeris.strict`; name the key with `primaryKeyField`.
+
+See [the diagnostic reference](diagnostics.md) for every identifier.
+
+### A streaming action runs and streams the events it triggers; `EXT-PROC-1107` is retired
+
+Through 0.9.0, `POST {base}/{id}/actions/{kebab}` for an `@Action(streaming = true)` sent four
+`keep-alive` frames and closed without calling the entity method, and the processor said so on
+every build (`EXT-PROC-1107`). From 0.10.0 the generated `<Entity><Action>StreamHandler` runs the
+action (ADR-044 Amendment 2), in this order:
+
+1. on a `TENANT` or `UNIVERSE` entity, the tenant guard: no bound `STORAGE_CONTEXT` is refused;
+2. the path `id`, then the `@ActionParam` body when the action declares one;
+3. `findById(id)` under row-level security;
+4. a subscription to each `@DomainEvent` whose trigger is `ACTION` and whose `action` names this
+   action, forwarding only events published under this row's id;
+5. the entity method, `service.update`, and the publish calls, as the respond-once action route
+   runs them;
+6. one frame per forwarded event, named by the `@DomainEvent` name, carrying the encoded payload.
+
+The stream closes once every triggered event has arrived, or 30 seconds after the action ran. An
+action that triggers no event closes as soon as it has run. Because the `200` response head is
+written before the handler runs, every refusal is one frame named `stream-error` whose data is a
+problem object, for example `{"type":"about:blank","title":"Not Found","status":404}`, with the
+status the respond-once action route answers: `400` for a malformed id, a body the caller got wrong
+or a write naming another tenant, `404` for a row that is absent or not visible, `409` for a version
+conflict, `500` for the tenant guard and any other failure. The `EXT-PROC-1107` warning is gone and
+listed under *Retired identifiers* in [`diagnostics.md`](diagnostics.md).
+
+The handler emits no frame named by `@Action.streamEventType`: that frame carries the action's
+return value, and the generators do not know its type until exeris-sdk#191 lands. The TypeScript
+client reads the attribute, so `-Aexeris.strict` does not report it as inert.
+
+Two invocations on the same row at the same time publish under the same stream id, and kernel
+events carry no correlation id, so each stream can receive the other's event frames.
+
+**A `TENANT` or `UNIVERSE` entity's streaming action is refused at runtime until the application
+binds a route policy.** The kernel binds `STORAGE_CONTEXT` only on a route whose policy is not
+`permitAll()`, and the generated application binds none, so the guard sends `stream-error` with
+`500` on every call. The generated TypeScript emits no per-action stream client for these entities.
+
+**What to do:**
+
+- An override of `RuntimeComponents.create<Entity><Action>StreamHandler()` constructs the handler
+  with the new constructor: the entity's service, then the `MemoryAllocator` when the action has an
+  `@ActionParam`, then the entity's publisher and the `EventEngine` when the action triggers an
+  event — the arguments the generated factory passes.
+- A client of the stream reads event frames by their `@DomainEvent` names, treats `stream-error` as
+  the failure, and the end of the stream as completion. The generated TypeScript client delivers
+  every named frame already.
+- A `@DomainEvent` named `stream-error` or `keep-alive` is now a compile error
+  (`EXT-PROC-1016`): rename the event. A streaming action whose `streamEventType` — or, when that is
+  blank, whose action name — is `stream-error`, `keep-alive`, or the name of an event the action
+  triggers is a compile error too (`EXT-PROC-1017`): set `streamEventType` to another name.
+
+The checks run in the annotation processor. Metadata JSON that reaches `exeris:generate` without
+passing through the processor is not checked.
+
+### An update no longer writes the audit and soft-delete columns from the request body
+
+`Compatibility impact: breaking (ADR-090)`, for a client that sets a creation stamp, an author or a
+soft-delete flag through `PUT {base}/{id}`.
+
+The generated `PUT {base}/{id}` still replaces every domain field with the body's value. The
+columns the server owns now keep their stored value, whatever the body says
+([ADR-090, Amendment 1](adr/ADR-090-reject-mismatched-tenant.md)):
+
+- the key and a tenant-partitioned entity's owner, as before;
+- on an `audited` entity, the creation stamp and the fields marked `@AuditCreatedBy` and
+  `@AuditUpdatedBy`;
+- on a `softDelete` entity, the soft-delete flag and the fields marked `@SoftDeleteTimestamp` and
+  `@SoftDeletedBy`;
+- any field a `systemFields` role names for one of those roles.
+
+The update stamp and the version are still set by the server: `updatedAt` is `Instant.now()`, and
+a versioned entity's version is the expected version from the body plus one. A UNIVERSE entity's
+shared-scope field is still written from the body, as ADR-090 decides.
+
+After regenerating:
+
+- the repository's `UPDATE` lists fewer columns. For an audited, soft-deleted, versioned entity
+  `UPDATE orders SET order_number = ?, created_at = ?, updated_at = ?, deleted = ?, version = ? WHERE id = ? AND version = ?`
+  becomes `UPDATE orders SET order_number = ?, updated_at = ?, version = ? WHERE id = ? AND version = ? AND deleted = false`;
+- `update` reads the kept columns back in the same transaction, through a new private
+  `readStoredColumns` method, so the entity it returns, and the `PUT` response, carry the stored
+  creation stamp, author, owner and soft-delete flag rather than the body's;
+- a `PUT` against a soft-deleted row answers `404`, or `409` on a versioned entity, like a `PUT`
+  against a missing row; it no longer writes the row or clears its soft-delete flag;
+- the OpenAPI `<Entity>UpdateDto` leaves out the audit and soft-delete fields. It keeps the version;
+- the generated `RecordingPersistence` gains `writeBinds`, the binds of the last write, and the
+  generated `<Entity>RepositoryTest` reads the update's binds from it.
+
+**What to do:** a client that corrected a creation stamp or an author through `PUT`, or restored a
+soft-deleted row by sending `deleted: false`, can no longer do so through the generated route. Write
+such a change through your own route or repository method. The generated TypeScript `<Entity>Update`
+type still carries these fields; the server ignores them.
+
+### The generated `Application` binds a route policy and gains three hooks
+
+The generated `Application` binds `HttpKernelProviders.HTTP_ROUTE_POLICY` beside the server handler,
+and a new generated file, `GeneratedRoutePolicy`, sits in the base package next to it. The policy
+declines every route, so each route answers as it did before: it is public, and its handler runs
+without a principal.
+
+`Application` gains three `protected` methods:
+
+- `routePolicy()` returns `HttpRoutePolicy.firstDeclared(List.of(applicationPolicy(),
+  GeneratedRoutePolicy.INSTANCE), unmatchedRoutes())`.
+- `applicationPolicy()` is your own route rules. It is asked first and abstains on every route by
+  default.
+- `unmatchedRoutes()` is the answer for a route no policy describes. It returns `permitAll()` by
+  default, so an undeclared route is public.
+
+A subclass that overrides a requirement-bearing `applicationPolicy()` must also put `security` in
+`subsystems()`, or the route answers `401`.
+
+If you edited the generated `Application` to bind an `HTTP_ROUTE_POLICY` of your own, regeneration
+rewrites that file and drops the binding. Move the policy into an `applicationPolicy()` override in
+a subclass of `Application` and start the subclass from its own `main`. An `Application` you
+detached (`exeris:detach`) is yours and is not rewritten; add the generated binding by hand, or move
+your policy into the same override.
+
+### A `realTimeApi` entity serves `GET {base}/{id}/stream`; `message`, `open` and `error` are reserved frame names
+
+From 0.10.0 an `@ExerisDomain(realTimeApi = true)` entity gets a second stream route beside the
+live view `GET {base}/stream`: `GET {base}/{id}/stream` streams the events of one row (ADR-044
+Amendment 2). The generated `<Entity>SpectateStreamHandler`:
+
+1. reads the path `id`;
+2. loads the row with `findById(id)`;
+3. subscribes to each of the entity's `@DomainEvent`s, forwarding only the events published under
+   this row's id — the id the generated create, update, delete and action routes publish under;
+4. sends each forwarded event as a frame named by its `@DomainEvent` name, and a `keep-alive` frame
+   after 15 seconds without one, until the client disconnects. There is no deadline.
+
+An entity with no `@DomainEvent` gets the route too: it checks the row and sends `keep-alive`
+frames. Because the `200` response head is written before the handler runs, a refusal is one frame
+named `stream-error` whose data is a problem object with the status the by-id `GET` answers: `400`
+for a malformed id, `404` for a row that is absent or not visible, `500` for any other failure. The
+stream then closes. Row visibility is checked once, when the stream opens. The emitted OpenAPI
+document describes the route as a `text/event-stream` response. The live view and the spectate route
+do not shadow each other: a path placeholder matches exactly one segment.
+
+The generated TypeScript opens the route through `spectate(id)` on the entity's `<Entity>StreamClient`;
+the stream route contract lists it under `routes`.
+
+**What to do:**
+
+- A `RuntimeComponents` subclass gains `create<Entity>SpectateStreamHandler()`; its constructor takes
+  the entity's service, then the `EventEngine` when the entity declares an event. Nothing changes for
+  code that does not override it.
+- A hand-written `GET` stream route of the shape `{base}/{x}/stream`, registered in
+  `configureRoutes`, no longer serves: spelled `{base}/{id}/stream` it fails the boot, because the
+  router admits one stream route per method and path; under another placeholder name it is never
+  reached, because the generated template is registered first. Remove it, or move it to another path.
+- A `@DomainEvent` named `message`, `open` or `error` is now a compile error (`EXT-PROC-1016`): a
+  browser `EventSource` dispatches these event types itself, so a client built on it could not tell
+  the event from the connection's own. Rename the event. A streaming action whose `streamEventType`,
+  or, when that is blank, whose action name, is one of them is a compile error too
+  (`EXT-PROC-1017`): set `streamEventType` to another name. The names match case-sensitively, so
+  `Error` or `OrderOpened` are not affected.
+- A `realTimeApi` entity that also declares a streaming action named `spectate` fails generation:
+  both stream handlers would be named `<Entity>SpectateStreamHandler`. Rename the action.
+
+The name checks run in the annotation processor. Metadata JSON that reaches `exeris:generate`
+without passing through the processor is not checked for them.
+
+### A PUT no longer writes read-only fields, and the update schema lists the shared scope and the version
+
+`Compatibility impact: breaking (ADR-090)`, for a client that sets a field marked
+`@Field(readOnly = true)` through `PUT {base}/{id}`.
+
+A read-only field is one the client does not set
+([ADR-090, Amendment 2](adr/ADR-090-reject-mismatched-tenant.md)). The generated
+`PUT {base}/{id}` keeps its stored value; an action whose entity method changes it still stores the
+change. An entity with a read-only field gets a second update for that:
+
+- `<Entity>Repository#updateFromRequest` and `<Entity>Service#updateFromRequest`, which the `PUT`
+  handler calls. Its `UPDATE … SET` list leaves the read-only fields out, and it reads their stored
+  value back, through a private `readStoredRequestColumns`, so the `PUT` response carries the stored
+  value rather than the body's;
+- `update`, which the action routes call, as before. It writes the read-only fields, and keeps the
+  server-owned columns as every update does.
+
+An entity without a read-only field has `update` alone. A field that also plays a system role keeps
+that role's rule: a read-only version is still matched and incremented, and a read-only shared scope
+is still written.
+
+After regenerating:
+
+- for an entity with a read-only `status`, the `PUT` writes
+  `UPDATE orders SET order_number = ? WHERE id = ?` and an action writes
+  `UPDATE orders SET order_number = ?, status = ? WHERE id = ?`;
+- `handleUpdate` validates only the fields the update body carries. A `required` read-only field, or
+  a required server-owned one, no longer answers `400` to a `PUT` that leaves it out; `handleCreate`
+  still validates every field;
+- the OpenAPI `<Entity>UpdateDto` now lists a UNIVERSE entity's shared-scope field, which the update
+  writes from the body, and, on a versioned entity, the version field, `integer`/`int64`, under the
+  name the `systemFields` block gives it, also when the entity declares no such field. It still
+  leaves out read-only fields.
+
+**What to do:** a client that set a read-only field through `PUT` must write it through an action or
+a route of your own. Code of your own that applies a client's values to an entity with read-only
+fields should call `updateFromRequest`; code that applies a domain change calls `update`. A client
+generated from the OpenAPI document sends the shared scope and the expected version in the update
+body.
+
+### A POST validates the fields its schema lists, a PUT leaves inUpdate = false fields as stored, and the entity schema lists the version
+
+`Compatibility impact: breaking (ADR-090)`, for a client that sets a field marked
+`@Field(inUpdate = false)` through `PUT {base}/{id}`, and for code that creates a row with a
+`required` read-only field left null, which now fails in the repository; additive for a `POST` that omits a `required` field its
+schema does not list.
+
+The create and update routes each validate the fields their published body lists
+([ADR-090, Amendment 3](adr/ADR-090-reject-mismatched-tenant.md)):
+
+- `handleCreate` no longer answers `400` for a `required` field that `<Entity>CreateDto` leaves out:
+  a read-only field, a field marked `@Field(inCreate = false)`, the key, the owner and a UNIVERSE
+  entity's shared scope. The insert still writes the entity it is handed; which values of it a
+  `POST` body can set is [the step on the create body](#a-post-ignores-the-audit-version-and-soft-delete-fields-and-the-entity-schema-lists-createdat-and-updatedat-only-for-an-audited-entity).
+- A field marked `@Field(inUpdate = false)` is treated as a read-only field on `PUT`: it is out of
+  `<Entity>UpdateDto`, out of `updateFromRequest`'s `UPDATE ... SET` list, read back so the response
+  carries the stored value, and not validated. An action whose entity method changes it still stores
+  the change, through `update`. An entity with such a field gets `updateFromRequest` on its
+  repository and service, as an entity with a read-only field does.
+- A field marked `@Field(inCreate = false)` is out of `<Entity>CreateDto` and still in
+  `<Entity>UpdateDto`.
+- The entity schema of a versioned entity that declares no version field lists the version,
+  `integer`/`int64` and `readOnly`, under the name the `systemFields` block gives it.
+
+- A plain domain field of a reference type that is both `required` and `readOnly` is one the server
+  sets before the row is written. The repository's `save` throws an `IllegalStateException`
+  (`Cannot create <Entity>: field '<field>' is required and read-only, ...`) when it is still null,
+  which the handler logs and answers with `500`, instead of the database's `NOT NULL` violation. A
+  system-role field and a primitive are not checked. The generated repository test gains a
+  `save<Field>LeftNull` case per such field.
+- The metadata loader reads a field without `inCreate` / `inUpdate` keys as `true`, the `@Field`
+  default; hand-written metadata JSON no longer drops those fields from the create and update bodies.
+
+**What to do:** set a `required` read-only field in your own service (`MyTicketService extends
+TicketService`, overriding `save`) before it reaches the repository. A client that set an `inUpdate = false` field through `PUT` must write it
+through an action or a route of your own. Code of your own that applies a client's values to such an entity
+should call `updateFromRequest`; code that applies a domain change calls `update`. A client generated
+from the OpenAPI document gains the `version` property on the entity type.
+
+### The live view writes keep-alive frames during quiet periods
+
+`Compatibility impact: additive`, for a client of `GET {base}/stream` on an entity that declares a
+`@DomainEvent`.
+
+The generated `<Entity>StreamHandler` of such an entity writes a `keep-alive` frame, with empty
+data, after each 15 seconds without an event. A client that disconnects while the entity is quiet
+is noticed by the failed write of the next frame, which ends the stream and releases its event-bus
+subscriptions and its thread; until now the stream was released only when the next event was
+written. The handler declares a `KEEPALIVE_INTERVAL_MILLIS` constant for the interval.
+
+After regenerating:
+
+- `keep-alive` is a reserved frame name ([ADR-044](adr/ADR-044-tooling-sse-stream-emitter-shape.md)).
+  A native `EventSource` does not deliver a named frame to `onmessage`, and a client that registers
+  a listener per event name receives nothing for it;
+- a client that reads the stream with a parser that rejects an event it does not know must accept
+  `keep-alive`.
+
+**What to do:** nothing, unless a client or a proxy treats every frame as a domain event.
+
+### A POST ignores the audit, version and soft-delete fields, and the entity schema lists createdAt and updatedAt only for an audited entity
+
+`Compatibility impact: breaking (ADR-090)`, for a client that sets an audit, version or soft-delete
+field through `POST {base}`; additive otherwise.
+
+A create is server-owned the way a `PUT` is
+([ADR-090, Amendment 4](adr/ADR-090-reject-mismatched-tenant.md)):
+
+- `<Entity>CreateDto` and the create route's validation leave out the audit fields (created and
+  updated at and by), the version and the soft-delete fields (flag, time and actor), under the names
+  the `systemFields` block gives them, besides the key, the owner, a UNIVERSE entity's shared scope,
+  the read-only fields and the `inCreate = false` fields.
+- `handleCreate` sets those properties back to the server's initial values before the service sees
+  the entity: times and actors `null`, the version `0`, the soft-delete flag `false`. The repository
+  stamps `createdAt` and `updatedAt` with the current time, as it did.
+- The entity schema of the OpenAPI document lists `createdAt` and `updatedAt` for an audited entity,
+  under their role names and `readOnly`; an entity that is not audited and declares no such field no
+  longer has them.
+
+**What to do:** set an author, or any other value the body can no longer carry, in your own service
+(`MyNoteService extends NoteService`, overriding `save`) before it reaches the repository; the value
+is kept. A client generated from the OpenAPI document loses `createdAt` and `updatedAt` on the entity
+type of an entity that is not audited.
+
+### A write naming a missing row through a relationship answers 422, and a delete of a still-referenced row answers 409
+
+`Compatibility impact: breaking (ADR-076)`, for a client that branches on the `500` a foreign-key
+violation used to answer; additive otherwise.
+
+A foreign-key violation is the caller's to correct, so it no longer falls into the handler's `500`
+([ADR-076, Amendment 1](adr/ADR-076-write-rejection-status.md)):
+
+- `POST`, `PUT` and a respond-once action whose `MANY_TO_ONE` field names a row that does not exist
+  answer `422` with a problem object (`type`, `title`, `status`, `detail`) whose `field` member names
+  the relationship. A streaming action reports it as a `stream-error` frame with status `422`.
+- `DELETE` of a row other rows still reference answers `409`. A soft-deleted entity's delete keeps
+  the row, so it is never refused this way.
+- The generated repository raises `<Entity>ReferenceNotFoundException` (carrying `relation()`) and
+  `<Entity>StillReferencedException` (carrying `id()`), in the repository package beside
+  `<Entity>NotFoundException`. They are emitted only where a foreign key of the build can produce
+  them: the first for an entity that references an entity of the build, the second for an entity
+  some entity of the build references and whose delete removes the row.
+- The OpenAPI document declares `422` on those writes and `409` on that delete.
+
+**What to do:** a client that retried or reported a `500` on these requests reads the new statuses
+instead; a `409` on `DELETE` means "remove or repoint the referencing rows first", not a version
+conflict. Code of your own that caught `RuntimeException` around `save`, `update` or `deleteById` to
+detect a constraint violation can catch the typed exceptions. A foreign key you declared yourself,
+outside the generated migration, is not attributed to a relationship: a write violating it still
+answers `500`.
+
+### The OpenAPI document describes a streaming action and the live view as event streams
+
+`Compatibility impact: additive`. The document now matches the routes the application already
+serves; no route changes.
+
+Regenerating changes `openapi/<entity>-api.yaml` for an entity with an
+`@Action(streaming = true)` or with `realTimeApi = true`:
+
+- `POST {base}/{id}/actions/{kebab}` of a streaming action answers only `200` with a
+  `text/event-stream` body. It no longer declares the respond-once `200` "Action result" and the
+  `400`, `404`, `409` and `500` responses, which the route never sent: the stream handler writes
+  the `200` head before it runs, and every refusal is one `stream-error` frame whose data is a
+  problem object with the status the respond-once action route answers. The description names the
+  frames: one per `@DomainEvent` the action triggers, then the stream closes. The request body is
+  the action's request schema, as before.
+- `GET {base}/stream`, the live view, is described for the first time: operation `stream<Entity>`,
+  `200` `text/event-stream`, one frame per `@DomainEvent` of the entity and a `keep-alive` frame
+  while the stream is quiet.
+- `GET {base}/{id}/stream`, the spectate route, names the entity's events in its description.
+
+**What to do:** nothing, unless a client was generated from the OpenAPI document. Such a client
+called a streaming action as a JSON request and expected a JSON result; regenerate it, and read the
+action's response as a server-sent event stream.
+
+### The route policy decides on the path without its query string, and on HEAD as GET
+
+`Compatibility impact: additive` (ADR-105): the emitted `Application.routePolicy()` now matches its
+documented contract, and a rule that never matched a request with a query string now does.
+
+`Application.routePolicy()` folds `applicationPolicy()`, `GeneratedRoutePolicy` and
+`unmatchedRoutes()` as before, then hands each of them the request path with any query string removed
+and a `HEAD` request as `GET`. The router serves a `HEAD` request from the `GET` route when none is
+registered for `HEAD`, so a `GET` rule now governs both. A new private `pathWithoutQuery(String)`
+helper is emitted beside it.
+
+- An exact-path rule such as `path.equals("/reports")` in `applicationPolicy()` refuses
+  `GET /reports?x=1` and `HEAD /reports` as it refuses `GET /reports`.
+- A rule written for `HEAD` alone is not consulted: `HEAD` is asked as `GET`.
+
+**What to do:** regenerate; `Application.java` changes. An application that overrides
+`routePolicy()` answers for the request as the kernel hands it and normalises the path and method
+itself.
+
+### `exeris-codegen-ts`: `restore()` is removed from a soft-delete entity's service and store (T58)
+
+`<Entity>Service` and `<Entity>Store` of a `@SoftDelete` entity no longer have `restore(id)`. In
+0.9.0 it was deprecated and sent no request: the service's Observable errored and the store set its
+error and rejected, because nothing on the generated server un-sets the soft-delete flag. The service
+also drops the `throwError` import that only `restore` used. `softDelete(id)` on the service and
+`archive(id)` on the store are unchanged: they call `DELETE {base}/{id}`, which on a `@SoftDelete`
+entity is the archive.
+
+**What to do:** remove every call to `restore(...)`; the TypeScript compiler names each one. There is
+no generated replacement. An app that needs to restore an archived row writes the route and the
+repository statement by hand.
+
+### `exeris-codegen-ts`: a tenant-partitioned entity's DTOs omit `tenantId` (T36)
+
+A tenant-partitioned (TENANT or UNIVERSE) entity with no `systemFields` block no longer has
+`tenantId` in its `<Entity>Create` and `<Entity>Update` types or in its `<Entity>CreateSchema`; the
+`<Entity>` type and `<Entity>Schema` keep it. 0.9.0 kept it there, marked `@deprecated`. The server
+owns it: the generated repository stamps the bound tenant, answers 400 to another one and never
+updates it, and the emitted OpenAPI marks it `readOnly` and leaves it out of `…CreateDto` and
+`…UpdateDto` (ADR-090). The TypeScript DTOs now say the same. Peer DTOs (`peers/<peer>/…`) follow the
+same rule.
+
+The DTOs omit exactly the field the OpenAPI marks `readOnly`: on a TENANT or UNIVERSE entity, the
+`systemFields.tenantIdField` it names, else `tenantId`, with or without a block. A GLOBAL entity has
+no owner, so a field it declares as `tenantId` is an ordinary field and stays in its DTOs. That
+includes a GLOBAL entity with a `systemFields` block, which the processor writes for any system-field
+override and always with `tenantIdField = "tenantId"`: 0.9.0 omitted such an entity's `tenantId` from
+the `…Create` and `…Update` types and the create schema while its OpenAPI accepted it, and 0.10.0
+puts it back.
+
+**What to do:** on a tenant-partitioned entity, stop setting `tenantId` on the objects you pass to
+`create` and `update`. A literal that still sets it fails to compile (an excess property), and
+`CreateSchema.parse` strips it. On a GLOBAL entity with a block and a declared `tenantId` field, the
+field is back in `…Create`; if it is required, a create call that does not set it fails to compile.
+
+### `exeris-codegen-ts`: the environments carry no `apiVersion` (T38)
+
+The emitted `environment.development.ts` no longer carries `apiVersion`, and a newly written
+`environment.ts` does not either. No emitted service, store or client reads it, and no generated
+route has a version segment. `ClientConfig`, the shape the KERNEL strategy's `getClientConfig()`
+returns, loses the field with it.
+
+**What to do:** remove any read of `environment.apiVersion` from your own code. `environment.ts` is
+written only when it is absent, so an existing app keeps the key there until you delete it; the key
+is harmless, but nothing reads it.
+
+### `exeris-codegen-ts`: a computed form field shows the loaded value, and has no compute stub
+
+`Compatibility impact: breaking (ADR-092)`, for an entity with a `@Field(computed = true)` field. TS
+only: the Java side does not read `computed` or `computedFrom`.
+
+The metadata names a computed field's dependencies (`computedFrom`) and no formula, so the emitted
+`<Entity>FormComponent` computes nothing. It has no `compute<Name>()` method, the stub whose body
+was a `TODO` and `return null`. Its `computed<Name>` signal reads the loaded entity,
+`computed(() => this.current()?.<name> ?? null)`, so in edit mode the read-only field shows the
+value the server returned, and on create it is empty. The input, its `data-testid`
+(`field-<name>`), the `(Auto)` label and the "Computed from:" note are unchanged, and the field
+stays out of the form model and the submitted DTO.
+
+**What to do.** Regenerate (L1). A component that edited the stub to compute in the browser loses
+the edit, since regeneration overwrites it; move the computation to the server, where the entity
+sets the field. **If you ran `exeris:detach` (L2),** the component is yours and keeps its copy of
+the stub and any edit to it.
+
+### `exeris-codegen-ts`: the output manifest names project-root files without `./`
+
+`@exeris/codegen-ts` records every file it owns in `.exeris-codegen-manifest`, in the same form as
+the Java manifest: relative, forward slashes, no `.` or `..` segment. Up to 0.9.0 the project-root
+scaffold files were recorded as `./package.json`, `./angular.json`, `./tsconfig.json`,
+`./tsconfig.app.json`, `./tsconfig.spec.json`, `./.postcssrc.json` and `./proxy.conf.json`; from
+0.10.0 they are recorded as `package.json`, `angular.json`, and so on, and sort among the other
+entries by that name.
+
+**What to do:** nothing beyond committing the result. The first regeneration rewrites
+`.exeris-codegen-manifest` without the `./` prefix. An entry from the previous manifest is read in
+the same canonical form before orphans are computed, so `./package.json` and `package.json` name the
+same file and no file is deleted. No emitted file changes.
+
+### `exeris-codegen-ts`: a file the manifest owns is rewritten on regeneration
+
+Up to 0.9.0 `exeris-gen generate` skipped every file that already existed unless `--overwrite` was
+passed, so a page, component or service whose metadata changed kept its old content. From 0.10.0
+the previous run's `.exeris-codegen-manifest` decides:
+
+- a file the manifest records is rewritten when its content differs, without `--overwrite`;
+- a seed file, written once for you to edit, is written when absent and kept otherwise. The seed
+  files are `package.json`, `angular.json`, `tsconfig.json`, `tsconfig.app.json`,
+  `tsconfig.spec.json`, `.postcssrc.json`, `proxy.conf.js`, `src/main.ts`, `src/index.html`,
+  `src/styles.css`, `src/environments/environment.ts`, `src/environments/environment.development.ts`,
+  `src/app/app.config.ts`, `src/app/app.component.ts`, `src/app/app.routes.ts` and the auth service
+  template `core/auth.service.ts`. A seed file the run no longer generates, such as an existing
+  `proxy.conf.json`, is kept and dropped from the manifest, never deleted;
+- an existing file the manifest does not record, a symbolic link, or a path reached through a link
+  below the output root is never replaced or deleted without `--overwrite`, and is not recorded.
+  `--overwrite` replaces a link at the path itself, never its target, and never writes through a
+  linked directory;
+- a missing or empty metadata directory generates and deletes nothing; a missing one fails the run.
+  Up to 0.9.0 it deleted every file the previous run had generated.
+
+`--overwrite` replaces every differing file, seeds and unrecorded files included, and records it as
+owned. `--dry-run` lists what each file would get (create, rewrite, unchanged, keep, skip) and every
+file the run would prune or release.
+
+The manifest gains a second header line, `# ownership: written`. A manifest without it, written by
+0.9.x or earlier, also recorded files those releases skipped because they existed, so on the first
+0.10.0 run an entry of it is owned only when the file already holds what the run generates, starts
+with the header the generator writes (the `Generated by @exeris/codegen-ts` provenance line or the
+do-not-edit notice, within the first 10 lines), or is a seed file. Every file 0.9.x generated,
+except the seed files and `favicon.ico`, carries that header, so its 0.10.0 changes are written on
+the first run, and one the run no longer generates is deleted. A hand-written file at a generated
+path has no header: it is kept as it is and dropped from the manifest, whether the run still
+generates that path or not. A file you copied from generated output and edited still carries the
+header, so it is treated as generated: rewritten, or deleted when the path is no longer generated.
+
+**What to do:** first run `exeris-gen generate --dry-run`. It lists what each file would get
+(`Would create`, `Would rewrite`, `Would keep`, `Would skip`) and every file it would delete
+(`Would prune`) or keep and stop owning (`Would release`), and changes nothing. Before the real
+run, move out of the output directory any file listed as `Would rewrite` or `Would prune` that you
+want to keep, and stop generating it (remove its view or entity, or turn its generator off); a
+file the generator still produces is created again at its old path. Then regenerate. Files
+reported as skipped are ones the manifest did not prove to be the generator's, such as a file you
+wrote at a generated path; keep them, or pass `--overwrite` to replace them (it replaces seed files
+too). Commit the result, `.exeris-codegen-manifest` included: it is what marks a file as the
+generator's on the next run.
+
+### `exeris-codegen-ts`: a `@View` CUSTOM block imports its component through `customBlocks`, and a LIST renders `<li>`
+
+`Compatibility impact: breaking (ADR-092)`, for an app with a `@View` that uses a CUSTOM or a LIST
+block. TS only: the Java side emits no `@View` page.
+
+A CUSTOM block emits the element its `customType` names, and the page component it sits in did not
+import the component behind that element, so `ng build` failed with NG8001. The new config key
+`customBlocks` maps each `customType`, exactly as the IR writes it, to the module the page imports
+from and the exported class it imports:
+
+```json
+{
+  "customBlocks": {
+    "StarRating": { "import": "../blocks/star-rating.component", "symbol": "StarRatingComponent" }
+  }
+}
+```
+
+The page imports each mapped class once and lists it in its component `imports`, ordered by class
+name. `import` is written verbatim into `src/app/pages/<view>.component.ts`, so a relative specifier
+resolves from there. The component's selector is the kebab-cased `customType`, as before.
+
+A block's `@Block(props)` is parsed as JSON and becomes a field of the page, `blockProps1`,
+`blockProps2`, … in template order, bound as `[props]="blockProps<N>"`. The component declares an
+input named `props`. A block without props gets no binding.
+
+Generation now fails when a view has a CUSTOM block whose `customType` has no entry, that declares
+no `customType`, or whose props are not valid JSON; the message names the view and the block's place
+in it. It also fails when `customBlocks` maps one class name (`symbol`) from two different modules;
+that message names the view, the class and both modules.
+
+A LIST block's `<ul>` now holds `<li>` items: each child is wrapped in one, and a LIST bound to an
+entity collection emits one `<li>` per row inside its `@for`. Authored text on a LIST is an item too.
+
+**What to do.** Add a `customBlocks` entry for every `customType` your views use, give each
+component an input named `props` if its block declares props, and regenerate (L1). A stylesheet or
+test that selected a LIST child as a direct child of the `<ul>` now selects it inside the `<li>`.
+**If you ran `exeris:detach` (L2),** the pages are yours and keep their markup.
+
+### `exeris-codegen-ts`: `npm start` proxies the entity paths through `proxy.conf.js`
+
+The scaffold of an app with a backend writes `proxy.conf.js` in place of `proxy.conf.json`, and
+`package.json` starts `ng serve --proxy-config proxy.conf.js`. The emitted services call
+`apiBasePath` followed by the entity path (`/orders` by default), and the single `/api` rule in
+`proxy.conf.json` matched none of those requests, so `npm start` reached no backend.
+
+`proxy.conf.js` has one rule per entity path, each forwarding to `http://localhost:8443`. An
+entity's API path is also its page route, so every rule has a `bypass`: a request whose `Accept`
+header includes `text/html` is a browser navigation, and the dev server answers it with
+`index.html`. A deep link or a refresh on `/orders` loads the app, and the list page's `HttpClient`
+call to `/orders` reaches the kernel application.
+
+**What to do.** Both files are seeds, so a regeneration (L1) writes `proxy.conf.js` and keeps the
+`package.json` and `proxy.conf.json` you have; the run says so when it writes the proxy beside a
+kept `package.json`. Change the `start` script to `ng serve --proxy-config proxy.conf.js`, move
+any change you made to `proxy.conf.json`, such as the target port, into `proxy.conf.js`, and delete
+`proxy.conf.json`. The generator no longer owns it and does not delete it. `proxy.conf.js` is kept
+on later runs too, so an entity added afterwards needs its rule added by hand, or the file deleted
+so the next run writes it with every entity. **If you ran `exeris:detach` (L2),** the scaffold is
+yours: adopt `proxy.conf.js` from a fresh generation if you want the bypass.
+
+### `exeris-codegen-ts`: an `inCreate = false` field is editable in the edit form, and the relationship picker leaves out the edited record and reports a failed load
+
+`Compatibility impact: breaking (ADR-092)`, for an entity with a `@Field(inCreate = false)` field
+whose `inUpdate` is left `true`, and additive for a form with a relationship picker. TS only: the
+Java side already reads `inCreate` and `inUpdate`.
+
+The emitted `<Entity>FormComponent` changes in three ways:
+
+- A field with `inCreate = false` and `inUpdate = true` (the `@Field` default, and what
+  `validateOn = UPDATE` resolves to) has a control in edit mode only, inside
+  `@if (editMode())`. Its form-model member is seeded from the loaded record, a
+  `disabled(path.<name>, { when: () => !this.editMode() })` rule keeps a required one from
+  blocking a create, the create payload lists the other members and leaves it out, and an edit
+  sends it. Such a field used to have no control in either mode, so an edit always sent back the
+  stored value. A field with `inCreate = false` and `inUpdate = false` still has no control.
+- A picker for a `MANY_TO_ONE` to the entity itself (`Tag.parentId`) leaves out the option whose
+  value is the edited record's id while the form edits.
+- Each picker has a `<field>OptionsError` signal, and a failed options request shows its message
+  after the select (`role="alert"`, `data-testid="options-error-<field>"`), worded by
+  `httpErrorMessage` with the target's plural noun and the `load` action.
+
+**What to do.** Regenerate (L1). A field that is meant to be set only by the server, and that
+declares `@Field(inCreate = false)` alone, now gets an edit control and an edit sends the user's
+value; declare `@Field(inCreate = false, inUpdate = false)`, or `readOnly = true`, to keep it out of
+both forms. An end-to-end test that fills the create form is unaffected, since the new control is
+not rendered there; one that fills the edit form sees one more field. **If you ran
+`exeris:detach` (L2),** the component is yours and keeps its earlier shape.
+
+### `exeris-codegen-ts`: `<Entity>Update` is the whole record, not a partial create DTO
+
+`Compatibility impact: breaking (ADR-092)`, for code that calls a generated service's or store's
+`update` with an object it builds itself.
+
+The generated server's update is a full replacement. Its `PUT {base}/{id}` handler decodes the body
+into the whole entity and checks it with the same rules as a create, and the repository's `UPDATE`
+writes every domain column but the server-owned and the read-only ones, which keep their stored
+value. A domain property the body leaves out is stored as null. 0.9.0 typed the body as
+`Partial<<Entity>Create>`, so a call such as `update(id, { title })` compiled and nulled every other
+column.
+
+`<Entity>Update` is now the entity record without its key (the path carries it) and without the
+fields the update does not take from the body: the server-owned fields, among them the owner of a
+TENANT or UNIVERSE entity, and the `@Field(readOnly = true)` fields (the step "`<Entity>Update`
+omits every field the server owns" lists them). A versioned
+entity's update also requires the version, as in 0.9.0:
+
+```ts
+// a GLOBAL, unversioned entity
+export type OrderUpdate = Omit<Order, 'id'>;
+// a TENANT entity, versioned, that declares `version` as a Long
+export type TicketUpdate = Omit<Ticket, 'id' | 'tenantId'> & { version: number | null };
+```
+
+`<Entity>UpdateSchema` follows it: `<Entity>Schema.omit({ id: true, … })`, with `.extend({ version })`
+on a versioned entity, in place of `<Entity>CreateSchema.partial()`. Required fields are required,
+and so is a UNIVERSE entity's shared scope; a read-only field is not part of the body. Peer DTOs (`peers/<peer>/…`)
+follow the same rule.
+
+The emitted edit form already sent the loaded record with the form's values over it, so the values
+it sends are unchanged.
+
+**What to do:** build an update body from the record you loaded, then change what you mean to
+change: `service.update(id, { ...loaded, title })`. A call that passes only some fields fails to
+compile when the entity has a required field it leaves out; where every field is optional it still
+compiles, and still nulls what it leaves out, so check those calls by hand.
+`<Entity>UpdateSchema.parse` now refuses a body without a required field.
+
+### `exeris-codegen-ts`: the emitted model, views and store identify a row by the key `primaryKeyField` names, and always carry it
+
+`Compatibility impact: breaking (ADR-104)`, for an application whose metadata sets
+`systemFields.primaryKeyField` to a name other than `id`, and for code that reads the key of such an
+entity's rows.
+
+From 0.10.0 the emitted TypeScript identifies a row by the field `@ExerisDomain(primaryKeyField = …)`
+names, and by `id` when the attribute is absent or blank, the same rule as the generated Java
+([ADR-104](adr/ADR-104-declared-primary-key-uuid-only.md)). For `primaryKeyField = "invoiceNo"`:
+
+- the entity type carries the key as `invoiceNo?: string`, and `InvoiceCreate`,
+  `InvoiceCreateSchema`, `InvoiceUpdate` (`Omit<Invoice, 'invoiceNo'>`) and `InvoiceUpdateSchema`
+  leave it out;
+- the list tracks, links and deletes by `item.invoiceNo`, the detail view's system panel and title
+  read `entity()?.invoiceNo`, the form dispatches its update on `current.invoiceNo`, and the store
+  matches `e.invoiceNo === id` in its lookups, updates and deletes;
+- a `@View` collection bound to the entity is tracked by `invoiceNo`;
+- a foreign-key `<select>` into the entity is valued by `invoiceNo`. A form whose selects point at
+  targets with different keys passes each target's key to its `pickerOptions` helper.
+
+The route variable stays `:id` (`/invoices/:id`, `/invoices/:id/edit`), and so do the service's and
+the store's `findById(id)`, `update(id, …)`, `delete(id)` and `loadById(id)`: they name the URL
+segment, which carries the key's value. An entity that does not set `primaryKeyField` regenerates
+byte-identically.
+
+The entity type and schema now always carry the key. The processor records an entity's own fields
+only, so an entity whose key is inherited from a superclass got a model without it, and the emitted
+list, detail, form and store failed `ng build` with `TS2339: Property 'id' does not exist`. The key
+is now the model's first property, an optional UUID string like a declared one, whether or not the
+metadata lists it.
+
+**What to do.** Regenerate. Code of your own that reads the key of a renamed-key entity's rows as
+`row.id` reads the named property instead; a URL you build from such a row takes its value, as in
+`['/invoices', invoice.invoiceNo]`. The Java side of the same change, with the two new processor
+refusals, is in the Maven step for `primaryKeyField`.
+
+### `exeris-codegen-ts`: `<Entity>Update` omits every field the server owns
+
+`Compatibility impact: breaking (ADR-090)`, for code that calls a generated service's or
+store's `update` with an object it builds itself and sets one of the omitted properties.
+
+A field marked `@Field(readOnly = true)` is one the client does not set (ADR-090 Amendment 2): a
+`PUT` leaves its stored value as it is and the response carries it, while an action whose entity
+method changes it still stores the change. `<Entity>Update` and `<Entity>UpdateSchema` leave out the
+read-only fields as they leave out the server-owned ones. A read-only field that plays a system
+role keeps that role's rule: a read-only version is still required, and a read-only shared scope is
+still sent.
+
+The generated server's `PUT {base}/{id}` never writes these columns from the body, and its response
+carries the stored values (ADR-090 Amendment 1): the key, the owner of a TENANT or UNIVERSE entity,
+`createdAt`, `createdBy`, `updatedBy`, the soft-delete flag, `deletedAt` and `deletedBy`, and every
+field a `systemFields` role names, under the name the block gives it. The server sets `updatedAt` and
+the version itself. `<Entity>Update` and `<Entity>UpdateSchema` now leave all of them out, the
+properties the Java `<Entity>UpdateDto` leaves out. A versioned entity's update still requires the
+version, the value the edit was loaded at, and a UNIVERSE entity's shared scope stays, because the
+update writes it from the body.
+
+```ts
+// an audited, soft-delete, versioned TENANT entity
+export type TicketUpdate = Omit<Ticket, 'id' | 'tenantId' | 'createdAt' | 'createdBy' | 'deleted' | 'deletedAt' | 'deletedBy' | 'updatedAt' | 'updatedBy'> & { version: number | null };
+```
+
+`<Entity>UpdateSchema` omits the same keys. The emitted edit form builds its request from the loaded
+record with those properties taken out, so the request no longer carries them either; the form
+offers no control for a read-only field.
+
+A soft-delete entity's `PUT` to a row that is soft-deleted answers `404`, or `409` when the entity is
+versioned, as a read of that row does.
+
+**What to do:** where you build an update body from a loaded record, take the omitted properties out
+of it before the call; the same holds for a read-only field. TypeScript refuses a literal that names one, but an object with those
+properties arriving through a spread still compiles, and the server ignores them:
+`const { id, createdAt, ...rest } = loaded; service.update(id, { ...rest, title })`. A call that
+sets one of them in a literal fails to compile; remove the property.
+
+### `exeris-codegen-ts`: the create and update types follow the Java bodies
+
+`Compatibility impact: breaking (ADR-090)`, for code that builds a `<Entity>Update` that names an
+`inUpdate = false` property, or a `<Entity>Create` that names a property the create type used to
+carry or to drop.
+
+The generated server's `PUT` treats a field marked `@Field(inUpdate = false)` as it treats a
+read-only one: the stored value stays and the response carries it (ADR-090 Amendment 3).
+`<Entity>Update` and `<Entity>UpdateSchema` leave the field out, and the emitted edit form leaves it
+out of the request: its control, disabled while the form edits, is taken out of the values the body
+is built from. An action whose entity method changes the field still stores the change.
+
+The create body is the fields the server does not set (ADR-090 Amendment 4). `<Entity>Create` and
+`<Entity>CreateSchema` list the properties the Java `<Entity>CreateDto` lists: every declared field
+except
+
+- the key, the owner of a TENANT or UNIVERSE entity and a UNIVERSE entity's shared scope;
+- the audit stamps of an audited entity, the version of a versioned one and the soft-delete fields
+  of a soft-delete one, under the names the entity's `systemFields` block gives them;
+- every name a `systemFields` block declares, whatever the entity's data scope;
+- the read-only fields and the fields marked `inCreate = false`.
+
+`<Entity>CreateSchema` omitted only the system-role names, so it listed a read-only or
+`inCreate = false` field the `<Entity>Create` type already left out. A field named `active`,
+`onboardingStatus`, `onboardingStartedAt`, `onboardingCompletedAt`, `hierarchyLevel` or
+`parentTenantId` is in `<Entity>Create` like any other declared field that plays no role; the type
+no longer drops it by name.
+
+A versioned entity that declares no version field gets an optional `version` (or the name
+`systemFields.versionField` gives it) on `<Entity>` and `<Entity>Schema`, and an audited one that
+declares no stamps gets optional `createdAt` and `updatedAt` (under the names the block gives them),
+the properties the Java entity schema lists. `<Entity>Update` still requires the version and leaves
+the stamps out; `<Entity>Create` carries none of them.
+
+**What to do:** remove an `inUpdate = false` property from an update body you build, and read it from
+the response. Where you build a `<Entity>Create` with a field that is now a property of no create
+body, remove it, and set a field that plays a system role through the server. A `<Entity>Create`
+that named a field only because it is called `active` or `hierarchyLevel` still compiles. TypeScript
+refuses an update literal that names an omitted property, but an object arriving through a spread
+still compiles and the server ignores the property.
+
+### `exeris-codegen-ts`: the event bus takes its endpoint from the consumer
+
+`Compatibility impact: breaking (ADR-044)`, for code that imports `EventBusService`, `DomainEvent` or
+an `<Entity>EventHandler` from the generated tree.
+
+`EventBusService` used to open an `EventSource` on `/api/v1/events/stream`, a path no generated
+server route serves: a feed across every entity and every tenant is not generated (ADR-044
+Amendment 2). The service now connects to the URL the new `eventBusEndpoint` configuration key names,
+and without the key the event surface is not emitted: no `events/event-bus.service.ts`, no
+`events/<entity>.events.ts` (each handler injects the bus), and none of their exports in the app
+barrel. No emitted file contains the old path.
+
+**What to do:** where the app uses the bus or an event handler, set `eventBusEndpoint` in
+`exeris-codegen.json` to the URL of the feed your server runs, then regenerate:
+
+```json
+{ "eventBusEndpoint": "/orders/events" }
+```
+
+The key is file-only; it has no CLI flag. An app that never imported the bus needs no change: its
+regeneration removes the files it never used. A
+single entity's live view is the generated `<entity>.stream.ts` client.
+
+### `exeris-codegen-ts`: a streaming action on a tenant-partitioned entity gets its stream client
+
+`Compatibility impact: additive`.
+
+A streaming action (`@Action(streaming = true)`) on a tenant-partitioned entity (`dataScope`
+`TENANT` or `UNIVERSE`, or the deprecated `tenantScoped: true`) had no front-end entry point: no
+stream client and no service method. The per-action stream route now runs a tenant guard, reads the
+row through row-level security before the stream opens and filters the events by stream id
+(ADR-044 Amendment 2), so the regeneration emits `src/app/services/<entity>.action-streams.ts` and
+its export in `services/action-streams.index.ts` for such an entity, in the shape a `GLOBAL`
+entity's client has. The streaming action still has no service method.
+
+Until a route policy binds a requirement that is not permit-all, the server binds no storage
+context for the stream, and the tenant guard answers the stream with a `stream-error` frame (status
+500). The client is correct; the stream opens usefully once route authorization binds that context.
+
+The live view (`<entity>.stream.ts`) and the spectate stream stay `GLOBAL`-only: the events they
+forward carry no isolation key.
+
+**What to do:** nothing. An app that wrote its own client for such an action can switch to the
+generated one.
+
+### `exeris-codegen-ts`: an absent `inCreate` or `inUpdate` reads as false
+
+`Compatibility impact: breaking (ADR-090)`, for code that builds a `<Entity>Create` that names a
+`@Field(inCreate = false)` property, or a `<Entity>Update` that names a `@Field(inUpdate = false)`
+property, of an entity read from processor metadata.
+
+The processor's metadata omits a `false` flag, so a field marked `inCreate = false` or
+`inUpdate = false` reached the TypeScript generators as a field without the key, which they read as
+`true` (ADR-090 Amendment 5). The generated `<Entity>Create`, `<Entity>CreateSchema` and the create
+form offered the `inCreate = false` field, and `<Entity>Update`, `<Entity>UpdateSchema` and the edit
+form's request offered the `inUpdate = false` one, although the Java bodies leave them out. They now
+leave them out. The Java output is unchanged.
+
+A hand-written metadata file, for the generators or for `exeris:generate`, reads a field without the
+keys as left out of both bodies in the Java and the TypeScript emitters alike: name
+`"inCreate": true, "inUpdate": true` for a field the bodies offer.
+
+**What to do:** remove an `inCreate = false` property from a create body you build, and an
+`inUpdate = false` property from an update body. Where a metadata file is written by hand, add
+`"inCreate": true, "inUpdate": true` to each field the create and update bodies offer.
+
+### `exeris-codegen-ts`: the error message names a still-referenced delete and a missing related record
+
+`Compatibility impact: additive`, for an app that shows the generated `httpErrorMessage` text.
+
+The generated server answers a delete of a row other rows still reference with `409`, and a write
+whose relationship names a row that does not exist with `422`
+([ADR-076, Amendment 1](adr/ADR-076-write-rejection-status.md)). `core/http-error.ts` now says
+so: a `409` on a delete reads "… is still referenced by other records. Remove or change them first."
+instead of the version-conflict text, and a `422` reads "… refers to a related record that does not
+exist." in place of the generic "(status 422)". The helper still reads no response body.
+
+**What to do:** nothing; regenerate to pick up the wording. A test of your own that pinned the old
+text for these statuses needs the new one.
 
 ---
 
