@@ -106,13 +106,29 @@ public class KernelGeneratorStrategy {
     }
 
     /**
-     * Runs every registered generator that supports the entity.
+     * Runs every registered generator that supports the entity, taking it as a build of its own.
+     *
+     * <p>A build of one knows no other entity, so what only a reference from another entity can
+     * produce — a delete's {@code 409} for a still-referenced row (ADR-076 Amendment 1) — is not
+     * emitted. {@code CodegenPipeline} generates with the whole build; see
+     * {@link #generate(DomainMetadata, List)}.
      *
      * @param metadata the entity to generate for
      * @return the generated files, in the registry's dispatch order
      */
     public List<GeneratedFile> generate(DomainMetadata metadata) {
-        return registry.generateAll(metadata);
+        return generate(metadata, List.of(metadata));
+    }
+
+    /**
+     * Runs every registered generator that supports the entity, as one entity of {@code build}.
+     *
+     * @param metadata the entity to generate for
+     * @param build    every entity of the build, {@code metadata} included
+     * @return the generated files, in the registry's dispatch order
+     */
+    public List<GeneratedFile> generate(DomainMetadata metadata, List<DomainMetadata> build) {
+        return registry.generateAll(metadata, build);
     }
 
     /**

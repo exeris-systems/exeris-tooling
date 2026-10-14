@@ -54,7 +54,9 @@ public final class ForeignKeys {
 
     /**
      * The constraints {@code source}'s rows are checked against: one per {@code MANY_TO_ONE}
-     * relationship whose target is an entity of {@code build}, in relationship-name order.
+     * relationship whose target is an entity of {@code build}, sorted by relationship name and then
+     * constraint name — an order that depends on neither the order of {@code build} nor the order
+     * the relationships are declared in.
      *
      * @param source the referencing entity
      * @param build  every entity of the build, {@code source} included
@@ -74,7 +76,7 @@ public final class ForeignKeys {
             String column = ColumnNaming.foreignKeyColumn(rel.name());
             references.add(new Reference(rel, table, column, "fk_" + table + "_" + column));
         }
-        references.sort(Comparator.comparing(Reference::relation));
+        references.sort(Comparator.comparing(Reference::relation).thenComparing(Reference::constraint));
         return List.copyOf(references);
     }
 

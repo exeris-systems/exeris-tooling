@@ -258,6 +258,14 @@ build, they take the entity as a build of its own, where only a reference to its
 generators take the build the same way. No metadata field is added: the contract stays
 `DomainMetadata`, read whole.
 
+The new `KernelArtifactGenerator` method in `exeris-codegen-core` widens the pipeline contract
+between `CodegenPipeline` and its generators: a generator may read every entity of the run, not only
+its own. The widening is recorded here; ADR-015, which owns the emission strategy, is not amended.
+`GeneratorRegistry#generateAll(DomainMetadata)` and `KernelGeneratorStrategy#generate(DomainMetadata)`
+route through the build-wide forms with a build of one, so they emit nothing that only another
+entity's reference produces. `docs/generators.md` names the generators that read the whole build;
+the catalogue JSON gains no field, because ADR-097 fixes its row keys and their order.
+
 ### Consequences of the amendment
 
 - **Breaking for a client that branched on the `500`.** The regeneration note is

@@ -85,20 +85,39 @@ public class GeneratorRegistry {
 
     /**
      * Runs every generator that {@linkplain KernelArtifactGenerator#supports supports} the
-     * metadata, in dispatch order, and collects the files each one emits; a {@code null} result
-     * is dropped.
+     * metadata, in dispatch order, taking the entity as a build of its own; see
+     * {@link #generateAll(DomainMetadata, List)}.
+     *
+     * <p>A build of one knows no entity but this one, so it emits only what this entity's own
+     * metadata decides: a status or a file that only a reference from another entity can produce
+     * — the {@code 409} of a delete refused because other rows reference the row — is absent.
+     * {@code CodegenPipeline} calls the build-wide form.
      *
      * @param metadata the domain metadata to generate from
      * @return the generated files, in dispatch order
      */
     public List<GeneratedFile> generateAll(DomainMetadata metadata) {
+        return generateAll(metadata, List.of(metadata));
+    }
+
+    /**
+     * Runs every generator that {@linkplain KernelArtifactGenerator#supports supports} the
+     * metadata, in dispatch order, through
+     * {@link KernelArtifactGenerator#generateMultiple(DomainMetadata, List)}, and collects the
+     * files each one emits; a {@code null} result is dropped.
+     *
+     * @param metadata the domain metadata to generate from
+     * @param build    every entity of the build, {@code metadata} included
+     * @return the generated files, in dispatch order
+     */
+    public List<GeneratedFile> generateAll(DomainMetadata metadata, List<DomainMetadata> build) {
         return getGenerators().stream()
                 .filter(g -> g.supports(metadata))
                 // generateMultiple(...) lets a single generator emit N files
                 // (e.g. one stream handler per @Action(streaming); ADR-044
                 // Slice 2). The default wraps the single generate(...) result,
                 // so single-file generators are unaffected.
-                .flatMap(g -> g.generateMultiple(metadata).stream())
+                .flatMap(g -> g.generateMultiple(metadata, build).stream())
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList());
     }

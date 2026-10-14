@@ -46,6 +46,15 @@ does not consult `supports()`, so a generator's own guard decides whether a file
 named `*Generator` that write no file have no row: `OpenApiGenerator` renders the YAML that
 `KernelOpenApiGenerator` writes, and `KernelGeneratorStrategy` is the registry.
 
+Five generators read the whole build as well as their own entity, through
+`generateMultiple(metadata, build)`, because what they write for an entity depends on how the other
+entities reference it (ADR-076 Amendment 1): `KernelRepositoryGenerator`, `KernelErrorGenerator`,
+`KernelHandlerGenerator`, `KernelActionStreamHandlerGenerator` and `KernelOpenApiGenerator`, and in
+the `test` tree `KernelHandlerTestGenerator` and `KernelRepositoryTestGenerator`. For them a row's
+`condition` can name another entity — "referenced by a `MANY_TO_ONE` relationship of an entity of
+the build" — and the same entity run on its own, as a build of one, writes fewer files than it does
+in the build it belongs to.
+
 A detached tree (`exeris:detach`) belongs to the application. The rows still explain its paths, but
 none of them promises that a file still matches what its generator wrote.
 

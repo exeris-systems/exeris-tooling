@@ -83,4 +83,27 @@ class ForeignKeysTest {
         assertThat(ColumnNaming.table(CATEGORY)).isEqualTo("product_categories");
         assertThat(ColumnNaming.table(CUSTOMER)).isEqualTo("customers");
     }
+
+    @Test
+    @DisplayName("the order is ForeignKeys' own: neither the build's order nor the declaration order changes it")
+    void orderIsIndependentOfInput() {
+        DomainMetadata declaredOneWay = DomainMetadata.builder("Invoice", PACKAGE)
+                .relationships(List.of(
+                        relationship("payer", "Customer", RelationshipMetadata.RelationType.MANY_TO_ONE),
+                        relationship("category", "Category", RelationshipMetadata.RelationType.MANY_TO_ONE)))
+                .build();
+        DomainMetadata declaredTheOther = DomainMetadata.builder("Invoice", PACKAGE)
+                .relationships(List.of(
+                        relationship("category", "Category", RelationshipMetadata.RelationType.MANY_TO_ONE),
+                        relationship("payer", "Customer", RelationshipMetadata.RelationType.MANY_TO_ONE)))
+                .build();
+
+        List<ForeignKeys.Reference> forward = ForeignKeys.outgoing(declaredOneWay, List.of(CATEGORY, CUSTOMER));
+        List<ForeignKeys.Reference> reversed = ForeignKeys.outgoing(declaredTheOther, List.of(CUSTOMER, CATEGORY));
+
+        assertThat(forward).extracting(ForeignKeys.Reference::constraint)
+                .containsExactly("fk_invoices_category_id", "fk_invoices_payer_id");
+        assertThat(reversed).extracting(ForeignKeys.Reference::constraint)
+                .containsExactlyElementsOf(forward.stream().map(ForeignKeys.Reference::constraint).toList());
+    }
 }

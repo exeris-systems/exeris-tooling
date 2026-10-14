@@ -58,8 +58,14 @@ class OpenApiForeignKeyStatusesTest {
         assertThat(paths.get("/orders/{id}/actions/approve").getPost().getResponses())
                 .containsOnlyKeys("200", "400", "404", "409", "422", "500");
         assertThat(item.getDelete().getResponses()).containsOnlyKeys("204", "400", "404", "500");
-        assertThat(paths.get("/orders").getPost().getResponses().get("422").getDescription())
+        var unprocessable = paths.get("/orders").getPost().getResponses().get("422");
+        assertThat(unprocessable.getDescription())
+                .contains("problem object (RFC 9457) sent as application/json")
                 .contains("field member names the relationship");
+        var problem = unprocessable.getContent().get("application/json").getSchema();
+        assertThat(problem.getProperties()).containsOnlyKeys("type", "title", "status", "detail", "field");
+        assertThat(problem.getRequired()).containsExactlyInAnyOrder("type", "title", "status", "detail", "field");
+        assertThat(unprocessable.getContent()).containsOnlyKeys("application/json");
     }
 
     @Test

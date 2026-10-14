@@ -33,6 +33,8 @@ public final class OpenApiPathsBuilder {
     private static final String OK = "200";
     /** The OpenAPI type of a string schema. */
     private static final String STRING_TYPE = "string";
+    /** The problem-object member naming the relationship of a missing reference (ADR-076 Amendment 1). */
+    private static final String PROBLEM_FIELD = "field";
 
     private OpenApiPathsBuilder() {}
 
@@ -411,12 +413,29 @@ public final class OpenApiPathsBuilder {
             return add("409", "Still referenced by other rows — remove or repoint them first");
         }
 
-        /** {@code 422} when {@code declared}: the write can name a missing row through a relationship. */
-        Responses unprocessable(boolean declared) {
-            return declared
-                    ? add("422", "A relationship names a row that does not exist; the problem body's "
-                            + "field member names the relationship")
-                    : this;
+        /**
+         * {@code 422} when {@code reachable}: the write can name a missing row through a relationship.
+         * The body is an RFC 9457 problem object, sent as {@code application/json} — the media type
+         * the kernel's typed-response encoder writes — whose {@code field} member names the
+         * relationship.
+         */
+        Responses unprocessable(boolean reachable) {
+            if (!reachable) {
+                return this;
+            }
+            Schema<Object> problem = OpenApiSchemas.typed(new Schema<>(), "object");
+            problem.addProperty("type", OpenApiSchemas.typed(new Schema<String>(), STRING_TYPE));
+            problem.addProperty("title", OpenApiSchemas.typed(new Schema<String>(), STRING_TYPE));
+            problem.addProperty("status", OpenApiSchemas.typed(new Schema<Integer>(), "integer").format("int32"));
+            problem.addProperty("detail", OpenApiSchemas.typed(new Schema<String>(), STRING_TYPE));
+            problem.addProperty(PROBLEM_FIELD, OpenApiSchemas.typed(new Schema<String>(), STRING_TYPE)
+                    .description("The relationship that names the missing row"));
+            problem.setRequired(List.of("type", "title", "status", "detail", PROBLEM_FIELD));
+            add("422", "A relationship names a row that does not exist. The body is a problem object "
+                    + "(RFC 9457) sent as application/json; its field member names the relationship");
+            this.declared.get("422").setContent(new Content().addMediaType("application/json",
+                    new MediaType().schema(problem)));
+            return this;
         }
 
         /** Terminal, because every emitted handler can answer it. */
