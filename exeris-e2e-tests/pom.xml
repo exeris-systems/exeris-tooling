@@ -16,9 +16,9 @@
     <name>Exeris Tooling :: E2E Tests</name>
     <description>
         End-to-end tests for the codegen pipeline: feed sample DomainMetadata
-        through generators, assert kernel-target output shape and content.
-        Heavyweight runtime integration tests (Postgres, RestAssured) live in
-        downstream platform/integration-test repos, not here.
+        through generators, assert kernel-target output shape and content, and
+        boot the emitted application on a real kernel. The @Tag("postgres")
+        classes run against a real PostgreSQL in the e2e-postgres profile.
     </description>
 
     <properties>
@@ -32,6 +32,10 @@
              because central-publishing-maven-plugin replaces maven-deploy-plugin
              and does not read this property. -->
         <maven.deploy.skip>true</maven.deploy.skip>
+        <!-- The @Tag("postgres") classes need a PostgreSQL server and run in the e2e-postgres
+             profile below, which swaps these two. -->
+        <e2e.groups></e2e.groups>
+        <e2e.excludedGroups>postgres</e2e.excludedGroups>
     </properties>
 
     <dependencies>
@@ -143,9 +147,9 @@
             </exclusions>
         </dependency>
 
-        <!-- The opt-in @Tag("postgres") access matrix (SharedScopePostgresE2ETest)
-             applies the emitted migrations to a real PostgreSQL, and is skipped unless
-             -Dexeris.e2e.postgres.url is set. Test scope, in this module only, and deliberately
+        <!-- The @Tag("postgres") classes apply the emitted migrations to a real PostgreSQL,
+             and the booted ones connect the kernel to it (e2e-postgres profile, below).
+             Test scope, in this module only, and deliberately
              not in exeris-tooling-bom: a consumer importing the BOM should inherit no driver
              opinion from tooling. 42.7.13 is the version exeris-kernel-bom 0.12.0 pins. -->
         <dependency>
@@ -185,9 +189,51 @@
                          0 stamps across spi/core/community/community-testkit, all class-file
                          major 69. Adding the flag would pin the suite to one exact JDK. -->
                     <argLine>@{argLine}</argLine>
+                    <groups>${e2e.groups}</groups>
+                    <excludedGroups>${e2e.excludedGroups}</excludedGroups>
                 </configuration>
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- The @Tag("postgres") classes, and only those, against a real PostgreSQL. The default
+             build excludes the tag; this profile selects it and refuses to start without the
+             server's URL, so a run that was asked for cannot pass by skipping. The classes fail
+             the same way when the tag is selected some other way without the URL
+             (PostgresTarget.required()). CONTRIBUTING.md has the local command; the e2e-postgres
+             job in .github/workflows/build.yml runs it. -->
+        <profile>
+            <id>e2e-postgres</id>
+            <properties>
+                <e2e.groups>postgres</e2e.groups>
+                <e2e.excludedGroups></e2e.excludedGroups>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-enforcer-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>require-postgres-url</id>
+                                <goals>
+                                    <goal>enforce</goal>
+                                </goals>
+                                <configuration>
+                                    <rules>
+                                        <requireProperty>
+                                            <property>exeris.e2e.postgres.url</property>
+                                            <message>-Pe2e-postgres runs the @Tag("postgres") classes and needs -Dexeris.e2e.postgres.url=jdbc:postgresql://host:port/database (with -Dexeris.e2e.postgres.username and -Dexeris.e2e.postgres.password, or user and password in the URL). See CONTRIBUTING.md.</message>
+                                        </requireProperty>
+                                    </rules>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 
 </project>

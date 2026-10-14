@@ -1,6 +1,7 @@
 package eu.exeris.e2e.codegen;
 
 import eu.exeris.e2e.codegen.compile.GeneratedTree;
+import eu.exeris.e2e.postgres.PostgresTarget;
 import eu.exeris.kernel.community.testkit.persistence.EmbeddedPersistenceEngineFixture;
 import eu.exeris.kernel.community.testkit.persistence.EmbeddedPersistenceEngineFixtures;
 import eu.exeris.kernel.core.persistence.TransactionOrchestrator;
@@ -48,18 +49,18 @@ import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * Every field type the repository generator stores, written, read, updated, found and listed
  * through the emitted repository on a real PostgreSQL over the emitted migration, and every type it
- * refuses, refused. <b>Opt-in</b>: skipped unless {@code -Dexeris.e2e.postgres.url} names a JDBC URL
- * (credentials included) for a role that may create a schema. The run works in its own schema,
+ * refuses, refused. Runs in the {@code e2e-postgres} profile against the server
+ * {@link PostgresTarget} names, as a role that may create a schema. The run works in its own schema,
  * {@value #SCHEMA}, which it drops before and after.
  *
  * {@snippet lang="shell" :
- * mvn -pl exeris-e2e-tests -am test -Dtest=PostgresTypeMatrixE2ETest -Dsurefire.failIfNoSpecifiedTests=false \
- *     -Dexeris.e2e.postgres.url='jdbc:postgresql://localhost:5432/postgres?user=postgres&password=…'
+ * mvn -pl exeris-e2e-tests -am verify -Pe2e-postgres \
+ *     -Dexeris.e2e.postgres.url=jdbc:postgresql://localhost:5432/postgres \
+ *     -Dexeris.e2e.postgres.username=postgres -Dexeris.e2e.postgres.password=…
  * }
  *
  * <p>PostgreSQL types a {@code bindString} parameter {@code character varying} and refuses it
@@ -85,7 +86,6 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 @DisplayName("Field types on PostgreSQL (opt-in): every stored type round-trips through the emitted repository")
 class PostgresTypeMatrixE2ETest {
 
-    private static final String URL_PROPERTY = "exeris.e2e.postgres.url";
     private static final String REPORT_PROPERTY = "exeris.e2e.postgres.matrixReport";
     private static final String SCHEMA = "exeris_type_matrix_e2e";
     private static final String BASE_PACKAGE = "com.lab";
@@ -118,9 +118,7 @@ class PostgresTypeMatrixE2ETest {
 
     @BeforeAll
     static void measure() throws Throwable {
-        String url = System.getProperty(URL_PROPERTY);
-        assumeTrue(url != null && !url.isBlank(),
-                "opt-in: set -D" + URL_PROPERTY + "=<jdbc:postgresql://…> to run the PostgreSQL type matrix");
+        String url = PostgresTarget.required().url();
         adminUrl = url;
         schemaUrl = url + (url.contains("?") ? "&" : "?") + "currentSchema=" + SCHEMA;
 
