@@ -1,3 +1,12 @@
+---
+title: "ADR-076 — A write against a row that is not there answers 404, not 500"
+type: adr
+visibility: public
+owning-repo: exeris-tooling
+status: active
+slug: adr/ADR-076
+---
+
 # ADR-076 — A write against a row that is not there answers 404, not 500
 
 - **Status:** ACCEPTED (2026-08-27) · amended 2026-10-14 (Amendment 1 — a write naming a missing row
@@ -214,7 +223,7 @@ delete of a row other rows still reference. The client caused each of them.
 4. **The handler maps them**, ahead of the `500` tail, without a log:
 
    | Route | Catches | Answers |
-   |---|---|---|
+   | --- | --- | --- |
    | `POST`, `PUT /{id}`, `POST /{id}/actions/{name}` | `<Entity>ReferenceNotFoundException` | `422`, problem body |
    | `DELETE /{id}` | `<Entity>StillReferencedException` | `409` |
    | streaming action | `<Entity>ReferenceNotFoundException` | `stream-error` frame, status `422` |
