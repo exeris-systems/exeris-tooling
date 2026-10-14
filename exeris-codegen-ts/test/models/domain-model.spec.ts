@@ -47,9 +47,20 @@ describe('FieldMetadataSchema', () => {
     expect(result.audited).toBe(false);
     expect(result.readOnly).toBe(false);
     expect(result.hidden).toBe(false);
-    expect(result.inCreate).toBe(true);
-    expect(result.inUpdate).toBe(true);
+    expect(result.inCreate).toBe(false);
+    expect(result.inUpdate).toBe(false);
     expect(result.computed).toBe(false);
+  });
+
+  it('reads an absent inCreate or inUpdate as false and keeps an explicit true', () => {
+    expect(FieldMetadataSchema.parse({ name: 'a', type: 'String', inCreate: true })).toMatchObject({
+      inCreate: true,
+      inUpdate: false,
+    });
+    expect(FieldMetadataSchema.parse({ name: 'a', type: 'String', inUpdate: true })).toMatchObject({
+      inCreate: false,
+      inUpdate: true,
+    });
   });
 
   it('round-trips the computedFrom array', () => {

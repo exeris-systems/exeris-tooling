@@ -129,6 +129,20 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- OpenApiFromProcessorE2ETest reads the emitted YAML back with the parser, because the
+             3.1 writer drops what the model holds in a form it does not serialise. -->
+        <dependency>
+            <groupId>io.swagger.parser.v3</groupId>
+            <artifactId>swagger-parser</artifactId>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>commons-logging</groupId>
+                    <artifactId>commons-logging</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
         <!-- The opt-in @Tag("postgres") access matrix (SharedScopePostgresE2ETest)
              applies the emitted migrations to a real PostgreSQL, and is skipped unless
              -Dexeris.e2e.postgres.url is set. Test scope, in this module only, and deliberately

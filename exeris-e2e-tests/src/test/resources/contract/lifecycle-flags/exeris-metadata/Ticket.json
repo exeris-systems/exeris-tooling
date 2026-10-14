@@ -1,0 +1,41 @@
+{
+  "entityName": "Ticket",
+  "packageName": "eu.exeris.e2e.lifecycle.domain",
+  "module": "tickets",
+  "path": "/tickets",
+  "fields": [
+    {
+      "name": "id",
+      "type": "java.util.UUID",
+      "searchable": true,
+      "sortable": true,
+      "filterable": true,
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "title",
+      "type": "java.lang.String",
+      "displayName": "Title",
+      "inCreate": true,
+      "inUpdate": true
+    },
+    {
+      "name": "code",
+      "type": "java.lang.String",
+      "displayName": "Code",
+      "inCreate": true
+    },
+    {
+      "name": "slug",
+      "type": "java.lang.String",
+      "displayName": "Slug",
+      "inUpdate": true
+    },
+    {
+      "name": "fixed",
+      "type": "java.lang.String",
+      "displayName": "Fixed"
+    }
+  ]
+}

@@ -1040,8 +1040,8 @@ class KernelApplicationGeneratorTest {
                 .contains("import eu.exeris.kernel.spi.http.RouteRequirement")
                 .contains("import java.util.List");
         assertThat(method(application, "protected HttpRoutePolicy routePolicy()"))
-                .contains("return HttpRoutePolicy.firstDeclared(List.of(applicationPolicy(), "
-                        + "GeneratedRoutePolicy.INSTANCE), unmatchedRoutes());");
+                .contains("HttpRoutePolicy declared = HttpRoutePolicy.firstDeclared(List.of("
+                        + "applicationPolicy(), GeneratedRoutePolicy.INSTANCE), unmatchedRoutes());");
         assertThat(method(application, "protected HttpRoutePolicy applicationPolicy()"))
                 .contains("return (method, path) -> RouteRequirement.abstain();");
         assertThat(method(application, "protected RouteRequirement unmatchedRoutes()"))
@@ -1050,6 +1050,27 @@ class KernelApplicationGeneratorTest {
                 .contains("a route is public, and its handler runs without a principal")
                 .contains("a route no policy describes is public")
                 .doesNotContain("SecurityProvider");
+    }
+
+    @Test
+    @DisplayName("ADR-105: the composed route policy asks its members about the path without its query "
+            + "string and about HEAD as GET")
+    void composedRoutePolicyNormalisesPathAndMethod() {
+        String application = application(new KernelApplicationGenerator().generateAll(
+                List.of(DomainMetadata.builder("Order", "com.example.domain").path("/orders").build()),
+                "com.example.foundation"));
+
+        assertThat(application).contains("import eu.exeris.kernel.spi.http.HttpMethod");
+        assertThat(method(application, "protected HttpRoutePolicy routePolicy()"))
+                .contains("return (method, path) -> declared.requirementFor(")
+                .contains("method == HttpMethod.HEAD ? HttpMethod.GET : method, pathWithoutQuery(path));")
+                .doesNotContain("kernel defect");
+        assertThat(application)
+                .contains("A policy decides on the path without its query string, and on a")
+                .contains("An override of this method");
+        assertThat(method(application, "private static String pathWithoutQuery(String path)"))
+                .contains("int query = path.indexOf('?');")
+                .contains("return query < 0 ? path : path.substring(0, query);");
     }
 
     @Test

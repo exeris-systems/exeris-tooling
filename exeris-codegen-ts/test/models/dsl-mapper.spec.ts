@@ -255,7 +255,7 @@ describe('DslMapper.mapType — custom-entity fallback', () => {
  * drifting from the source.
  */
 function field(overrides: Partial<FieldMetadata>): FieldMetadata {
-  return FieldMetadataSchema.parse({ name: 'someField', type: 'String', ...overrides });
+  return FieldMetadataSchema.parse({ name: 'someField', type: 'String', inCreate: true, inUpdate: true, ...overrides });
 }
 
 describe('DslMapper.mapField — validation builder', () => {

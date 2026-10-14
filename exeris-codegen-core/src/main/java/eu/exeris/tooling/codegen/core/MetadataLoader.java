@@ -1,10 +1,8 @@
 package eu.exeris.tooling.codegen.core;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 import java.io.IOException;
@@ -109,24 +107,13 @@ public final class MetadataLoader {
 
     /**
      * Reads one metadata file. A field that carries no {@code inCreate} or {@code inUpdate} key is
-     * offered by that form and body, as {@code @Field} defaults both to {@code true}: the record
-     * components are primitive, so an absent key would otherwise read as {@code false}.
+     * left out of that form and body: the SDK's wire form omits a {@code false} flag, and the record
+     * components are primitive, so an absent key reads as {@code false}. A hand-written file names
+     * {@code true} for a field the create and update bodies offer. {@code CodegenPipeline} reads a
+     * domain file by the same rule.
      */
     private <T> T read(Path file, Class<T> metadataClass) throws IOException {
-        JsonNode root = objectMapper.readTree(file.toFile());
-        JsonNode fields = root == null ? null : root.get("fields");
-        if (fields != null && fields.isArray()) {
-            for (JsonNode field : fields) {
-                if (field instanceof ObjectNode object) {
-                    for (String flag : List.of("inCreate", "inUpdate")) {
-                        if (!object.has(flag)) {
-                            object.put(flag, true);
-                        }
-                    }
-                }
-            }
-        }
-        return objectMapper.treeToValue(root, metadataClass);
+        return objectMapper.readValue(file.toFile(), metadataClass);
     }
 
     /**

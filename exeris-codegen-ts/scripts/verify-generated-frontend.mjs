@@ -28,13 +28,21 @@ const dist = join(pkgRoot, 'dist');
 // throws ERR_UNSUPPORTED_ESM_URL_SCHEME on Windows. pathToFileURL is a no-op-equivalent on POSIX.
 const { buildGeneratedFiles } = await import(pathToFileURL(join(dist, 'orchestrator.js')).href);
 const { DomainMetadataSchema } = await import(pathToFileURL(join(dist, 'models/domain-model.js')).href);
+
+// The schema reads an absent `inCreate` / `inUpdate` as `false` (the wire form omits a false), so
+// the hand-written fixtures name `true` for the fields the create and update bodies offer.
+const parseOffered = (o) =>
+  DomainMetadataSchema.parse({
+    ...o,
+    fields: o.fields?.map((f) => ({ inCreate: true, inUpdate: true, ...f })),
+  });
 const { DEFAULT_CONFIG } = await import(pathToFileURL(join(dist, 'config.js')).href);
 
 // Fixture: an entity with an ENUM-typed field, so the generated entity type and Zod
 // schema import the enum module — if that module were the empty stub, this fails. Its bounded
 // fields put `min` / `max` on a boxed number (a nullable schema), a primitive and a string: a
 // bound that lands on Zod's nullable wrapper does not type-check.
-const domain = DomainMetadataSchema.parse({
+const domain = parseOffered({
   packageName: 'com.shop',
   entityName: 'Battle',
   fields: [
@@ -157,7 +165,7 @@ function check(label, domains, fixtureEnums, peers = [], consumer = null, withSe
 // (1) entity with an enum-typed field; (2) zero-enum project — the empty enum module
 // + barrels re-exporting ./enums must still resolve (dangling re-export = TS2307).
 check('with-enums', [domain], enums);
-check('zero-enums', [DomainMetadataSchema.parse({ packageName: 'com.shop', entityName: 'Plain', fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'name', type: 'String' }] })], []);
+check('zero-enums', [parseOffered({ packageName: 'com.shop', entityName: 'Plain', fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'name', type: 'String' }] })], []);
 
 // (3) T42/ADR-048 §3 — the app and two peers each declare an entity named `Order`, and one
 // peer declares an enum with the same name as the app's own. Emitting them is not the claim;
@@ -165,7 +173,7 @@ check('zero-enums', [DomainMetadataSchema.parse({ packageName: 'com.shop', entit
 // all three into ONE namespace under distinct local names and cross-assigns their fields.
 // Nothing else in this repository proves that: unit tests assert on emitted text, and
 // `ng build` type-checks the peer trees without any module importing them together.
-const peerOrder = (pkg, extra) => DomainMetadataSchema.parse({
+const peerOrder = (pkg, extra) => parseOffered({
   packageName: pkg,
   entityName: 'Order',
   fields: [{ name: 'id', type: 'java.util.UUID' }, ...extra],
@@ -211,7 +219,7 @@ check(
 // schema keeps it (or the reverse) fails here rather than at the first 409.
 check(
   'versioned-update',
-  [DomainMetadataSchema.parse({
+  [parseOffered({
     packageName: 'com.shop',
     entityName: 'Ticket',
     versioned: true,
@@ -245,7 +253,7 @@ check(
 // directions, and a body that leaves out a required field does not type-check.
 check(
   'full-replacement-update',
-  [DomainMetadataSchema.parse({
+  [parseOffered({
     packageName: 'com.shop',
     entityName: 'Ledger',
     dataScope: 'TENANT',
@@ -282,12 +290,12 @@ check(
 check(
   'inherited-key',
   [
-    DomainMetadataSchema.parse({
+    parseOffered({
       packageName: 'com.studio',
       entityName: 'Workspace',
       fields: [{ name: 'name', type: 'String', required: true }],
     }),
-    DomainMetadataSchema.parse({
+    parseOffered({
       packageName: 'com.studio',
       entityName: 'Statement',
       fields: [{ name: 'total', type: 'java.math.BigDecimal' }],
@@ -323,7 +331,7 @@ check(
 // agree in both directions as well.
 check(
   'server-owned-update',
-  [DomainMetadataSchema.parse({
+  [parseOffered({
     packageName: 'com.shop',
     entityName: 'Ticket',
     dataScope: 'TENANT',
@@ -395,7 +403,7 @@ check(
 // update sends the version back and leaves the stamps out, and the create carries none of them.
 check(
   'undeclared-version',
-  [DomainMetadataSchema.parse({
+  [parseOffered({
     packageName: 'com.shop',
     entityName: 'Note',
     versioned: true,
@@ -435,7 +443,7 @@ check(
 check(
   'spectate-stream',
   [
-    DomainMetadataSchema.parse({
+    parseOffered({
       packageName: 'com.shop',
       entityName: 'Order',
       path: '/orders',
@@ -450,7 +458,7 @@ check(
         { name: 'OrderCancelled', payloadFields: ['id'] },
       ],
     }),
-    DomainMetadataSchema.parse({
+    parseOffered({
       packageName: 'com.shop',
       entityName: 'Quiet',
       path: '/quiet',
@@ -494,7 +502,7 @@ check(
 // an id that is not a string does not type-check.
 check(
   'tenant-action-stream',
-  [DomainMetadataSchema.parse({
+  [parseOffered({
     packageName: 'com.shop',
     entityName: 'Shipment',
     dataScope: 'TENANT',
@@ -533,7 +541,7 @@ check(
 check(
   'cross-entity-fields',
   [
-    DomainMetadataSchema.parse({
+    parseOffered({
       packageName: 'com.x',
       entityName: 'Order',
       fields: [
@@ -553,7 +561,7 @@ check(
       realTimeApi: true,
       events: [{ name: 'OrderPlaced', payloadFields: ['id', 'customer', 'total', 'priorities'] }],
     }),
-    DomainMetadataSchema.parse({
+    parseOffered({
       packageName: 'com.x',
       entityName: 'Customer',
       fields: [
@@ -564,7 +572,7 @@ check(
         { name: 'orders', type: 'java.util.List<com.x.Order>' },
       ],
     }),
-    DomainMetadataSchema.parse({
+    parseOffered({
       packageName: 'com.x',
       entityName: 'Line',
       fields: [
@@ -573,7 +581,7 @@ check(
         { name: 'parent', type: 'com.x.Line' },
       ],
     }),
-    DomainMetadataSchema.parse({
+    parseOffered({
       packageName: 'com.x',
       entityName: 'Component',
       fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'label', type: 'String' }],

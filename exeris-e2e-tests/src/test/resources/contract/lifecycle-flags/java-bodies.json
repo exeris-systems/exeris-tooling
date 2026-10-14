@@ -1,0 +1,1 @@
+{ "Ticket": { "create": ["code", "title"], "update": ["slug", "title"] } }

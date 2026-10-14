@@ -1,7 +1,9 @@
 package eu.exeris.tooling.codegen.java.openapi;
 
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
+import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.tooling.codegen.java.support.KernelStreamScaffold;
 import eu.exeris.tooling.codegen.java.support.ListQuerySupport;
 import eu.exeris.tooling.codegen.java.support.NameCasing;
 import io.swagger.v3.oas.models.Operation;
@@ -24,7 +26,7 @@ import java.util.List;
  */
 public final class OpenApiPathsBuilder {
 
-    /** The media type of the spectate route's response. */
+    /** The media type of a stream route's response. */
     private static final String EVENT_STREAM = "text/event-stream";
     /** The status of a request the route served. */
     private static final String OK = "200";
@@ -56,8 +58,12 @@ public final class OpenApiPathsBuilder {
         paths.addPathItem(basePath + "/{id}", itemPath);
 
         if (metadata.realTimeApi()) {
+            PathItem livePath = new PathItem();
+            livePath.setGet(buildLiveViewOperation(metadata));
+            paths.addPathItem(basePath + "/stream", livePath);
+
             PathItem spectatePath = new PathItem();
-            spectatePath.setGet(buildSpectateOperation(entityName));
+            spectatePath.setGet(buildSpectateOperation(metadata));
             paths.addPathItem(basePath + "/{id}/stream", spectatePath);
         }
 
@@ -65,7 +71,9 @@ public final class OpenApiPathsBuilder {
             for (ActionMetadata action : metadata.actions()) {
                 String actionPath = basePath + "/{id}/actions/" + NameCasing.kebab(action.name());
                 PathItem actionPathItem = new PathItem();
-                actionPathItem.setPost(buildActionOperation(entityName, action, metadata.versioned()));
+                actionPathItem.setPost(action.streaming()
+                        ? buildActionStreamOperation(metadata, action)
+                        : buildActionOperation(entityName, action, metadata.versioned()));
                 paths.addPathItem(actionPath, actionPathItem);
             }
         }
@@ -193,31 +201,127 @@ public final class OpenApiPathsBuilder {
     }
 
     /**
+     * A streaming action, {@code POST {base}/{id}/actions/{kebab}} (ADR-044 Amendment 2, decisions
+     * 1 and 2): the request runs the action and opens an SSE stream of the events it triggers. The
+     * path has no respond-once form, and the engine writes the {@code 200} head before the handler
+     * runs, so {@code 200} is the only status the route answers; every refusal is one
+     * {@code stream-error} frame carrying the status the respond-once action route answers for the
+     * same failure (ADR-079: declare what the handler can answer). The request body is the
+     * action's, as on the respond-once route.
+     */
+    private static Operation buildActionStreamOperation(DomainMetadata metadata, ActionMetadata action) {
+        String entity = metadata.entityName();
+        List<String> events = new ArrayList<>();
+        for (DomainEventMetadata event : metadata.events()) {
+            if (event.trigger() == DomainEventMetadata.Trigger.ACTION
+                    && action.name().equals(event.actionName())) {
+                events.add(KernelStreamScaffold.bindingOf(event, entity).wireName());
+            }
+        }
+        Operation op = new Operation();
+        op.setOperationId(action.name() + entity);
+        op.setSummary(action.description() != null ? action.description() : "Execute " + action.name());
+        op.setTags(List.of(entity + " Actions"));
+        op.addParametersItem(buildIdParam());
+        if (action.hasParams()) {
+            op.setRequestBody(RequestBodyFactory.buildActionRequestBody(entity, action));
+        }
+        String frames = events.isEmpty()
+                ? "The action triggers no @DomainEvent, so the stream closes once the action has run, "
+                        + "with no event frame. "
+                : "The stream carries the events the action publishes for this " + entity + ", each one "
+                        + "frame named by its @DomainEvent name (" + String.join(", ", events) + ") whose "
+                        + "data is the event payload, and closes once each has arrived or a deadline has "
+                        + "passed. ";
+        String refusals = "A malformed id, "
+                + (action.hasParams() ? "a request body that does not decode, " : "")
+                + "an absent or invisible row, "
+                + (metadata.versioned() ? "a version conflict, " : "")
+                + "or a server failure is one " + KernelStreamScaffold.STREAM_ERROR_FRAME
+                + " frame, whose data is a problem object (RFC 9457) with status "
+                + (metadata.versioned() ? "400, 404, 409 or 500" : "400, 404 or 500")
+                + ", after which the stream closes.";
+        op.setDescription("A server-sent event stream: the request runs the action. " + frames + refusals);
+        op.setResponses(eventStream("The event stream of the " + action.name() + " action"));
+        return op;
+    }
+
+    /**
+     * The live view, {@code GET {base}/stream} (ADR-044 obligation 1): an SSE stream of every event
+     * of the entity. Like every stream route it answers only {@code 200}; it reads no id and no row,
+     * so it has no refusal to send as a frame, and a failure closes the stream.
+     */
+    private static Operation buildLiveViewOperation(DomainMetadata metadata) {
+        String entity = metadata.entityName();
+        List<String> events = eventNames(metadata);
+        Operation op = new Operation();
+        op.setOperationId("stream" + entity);
+        op.setSummary("Stream the events of every " + entity);
+        op.setDescription(events.isEmpty()
+                ? "A server-sent event stream. " + entity + " declares no @DomainEvent, so the stream "
+                        + "carries only " + KernelStreamScaffold.KEEP_ALIVE_FRAME + " frames and closes "
+                        + "after a fixed number of them; a client reconnects."
+                : "A server-sent event stream that stays open until the client disconnects. "
+                        + eventFrames("any " + entity, events) + " A failure closes the stream.");
+        op.setTags(List.of(entity));
+        op.setResponses(eventStream("The event stream of every " + entity));
+        return op;
+    }
+
+    /**
      * The spectate route, {@code GET {base}/{id}/stream} (ADR-044 Amendment 2, decision 7): an SSE
      * stream of one row's events. The engine writes the {@code 200} head before the handler runs,
      * so {@code 200} is the only status the route answers; a malformed id, an absent row and a
      * failure arrive in the stream as one {@code stream-error} frame carrying the status the by-id
      * {@code GET} answers (ADR-079: declare what the handler can answer).
      */
-    private static Operation buildSpectateOperation(String entity) {
+    private static Operation buildSpectateOperation(DomainMetadata metadata) {
+        String entity = metadata.entityName();
+        List<String> events = eventNames(metadata);
         Operation op = new Operation();
         op.setOperationId("spectate" + entity);
         op.setSummary("Stream the events of one " + entity);
         op.setDescription("A server-sent event stream that stays open until the client disconnects. "
-                + "Each event published for this " + entity + " is one frame named by its @DomainEvent "
-                + "name, whose data is the event payload; a keep-alive frame is sent while the row is "
-                + "quiet. A malformed id, an absent or invisible row, or a server failure is one "
-                + "stream-error frame, whose data is a problem object (RFC 9457) with status 400, 404 or "
-                + "500, after which the stream closes.");
+                + (events.isEmpty()
+                        ? entity + " declares no @DomainEvent, so the stream carries only "
+                                + KernelStreamScaffold.KEEP_ALIVE_FRAME + " frames."
+                        : eventFrames("this " + entity, events))
+                + " A malformed id, an absent or invisible row, or a server failure is one "
+                + KernelStreamScaffold.STREAM_ERROR_FRAME + " frame, whose data is a problem object "
+                + "(RFC 9457) with status 400, 404 or 500, after which the stream closes.");
         op.setTags(List.of(entity));
         op.addParametersItem(buildIdParam());
+        op.setResponses(eventStream("The event stream of the " + entity));
+        return op;
+    }
+
+    /** The SSE wire name of each of the entity's events, in declaration order. */
+    private static List<String> eventNames(DomainMetadata metadata) {
+        List<String> names = new ArrayList<>();
+        for (DomainEventMetadata event : metadata.events()) {
+            names.add(KernelStreamScaffold.bindingOf(event, metadata.entityName()).wireName());
+        }
+        return names;
+    }
+
+    /** The sentence naming an open-ended stream's event frames and its keep-alive. */
+    private static String eventFrames(String subject, List<String> events) {
+        return "Each event published for " + subject + " is one frame named by its @DomainEvent name ("
+                + String.join(", ", events) + "), whose data is the event payload; a "
+                + KernelStreamScaffold.KEEP_ALIVE_FRAME + " frame is sent while the stream is quiet.";
+    }
+
+    /**
+     * The only response of a stream route: {@code 200} with a {@code text/event-stream} body. The
+     * engine writes that head before the handler runs, so the route can answer nothing else.
+     */
+    private static ApiResponses eventStream(String description) {
         ApiResponses responses = new ApiResponses();
         responses.addApiResponse(OK, new ApiResponse()
-                .description("The event stream of the " + entity)
+                .description(description)
                 .content(new Content().addMediaType(EVENT_STREAM,
                         new MediaType().schema(OpenApiSchemas.typed(new Schema<String>(), STRING_TYPE)))));
-        op.setResponses(responses);
-        return op;
+        return responses;
     }
 
     private static Parameter buildIdParam() {
