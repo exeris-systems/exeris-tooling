@@ -1710,7 +1710,7 @@ never-invoked emitter start emitting, and its output did not build.
       lists what the update writes from the body and `<Entity>CreateDto` what the create
       validates. The entity schema, `<Entity>CreateDto` and `<Entity>UpdateDto` each have a
       property set equal to the TS entity type, `<Entity>Create` and `<Entity>Update` (local and
-      peer) for every metadata shape in `exeris-codegen-ts/test/fixtures/update-parity/`.
+      peer) for every metadata shape in `exeris-e2e-tests/src/test/resources/contract/update-parity/`.
 - [x] **Locale determinism — shipped 0.9.0 (2026-09-26).** Nineteen `toLowerCase()` calls in
       codegen-java used the JVM default locale. Under `tr-TR`: table `ınvoices`, column `item_ıd`,
       `ınvoice-api.yaml`, and an `InvalidPathException` writing `V…__create_lıne_ıtems.sql` on a
