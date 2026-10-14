@@ -2,8 +2,8 @@
  * Coverage for src/generators/angular/http-error-gen.ts — the app-wide status-to-message helper —
  * and for every emitted call site that routes a failed request through it.
  *
- * The emitted handler answers failures with a status and no body, so the helper's text is fixed
- * per status. Its behaviour is exercised by transpiling the emitted module and running it against
+ * The helper reads the status and the action, never a body, so its text is fixed per status and
+ * action. Its behaviour is exercised by transpiling the emitted module and running it against
  * a stand-in `HttpErrorResponse`, since `@angular/common/http` is not installed here.
  */
 
@@ -95,6 +95,16 @@ describe('httpErrorMessage — one message per status the handler answers', () =
   it('409: a newer version exists', () => {
     expect(message(new FakeHttpErrorResponse(409), order))
       .toBe('The order was changed by someone else. Reload to see the latest version.');
+  });
+
+  it('409 on a delete: other rows still reference the row', () => {
+    expect(message(new FakeHttpErrorResponse(409), { entity: 'customer', action: 'delete' }))
+      .toBe('The customer is still referenced by other records. Remove or change them first.');
+  });
+
+  it('422: a relationship names a row that does not exist', () => {
+    expect(message(new FakeHttpErrorResponse(422), order))
+      .toBe('The order refers to a related record that does not exist.');
   });
 
   it('500 and any 5xx: the server could not complete it', () => {

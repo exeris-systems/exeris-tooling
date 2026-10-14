@@ -2,10 +2,13 @@
  * HTTP Error Message Helper Generator
  *
  * Emits the one app-wide function every emitted component, store and saga uses to turn a failed
- * request into a user-facing message. The emitted handler answers each failure with a status
- * and no body (400 malformed or rejected input, 404 absent row, 409 stale version, 500 anything
- * the server could not complete; no 401/403, because no route binds a policy), so the status is
- * all the message can be built from. Status 0 is the browser's report that no response arrived.
+ * request into a user-facing message. The emitted handler answers each failure with a status (400
+ * malformed or rejected input, 404 absent row, 409 stale version or, on a delete, a row other rows
+ * still reference, 422 a relationship naming a row that does not exist, 500 anything the server
+ * could not complete; no 401/403, because no route binds a policy). Only the 422 carries a body,
+ * a problem object naming the relationship, and the message does not depend on it: the status and
+ * the action are all the message is built from. Status 0 is the browser's report that no response
+ * arrived.
  *
  * The emitted text is a constant: no metadata reaches it, so it is byte-identical across runs
  * and across apps.
@@ -36,8 +39,8 @@ export function generateHttpErrorHelper(): { path: string; content: string } {
       title: 'HTTP error messages',
       notes: [
         '',
-        'The generated server answers a failed request with a status and no body, so the status',
-        'is all a message can be built from.',
+        'A message is built from the status of the failed request and from what the request was',
+        'doing; no response body is read.',
       ],
     }),
   );
@@ -75,8 +78,14 @@ export function generateHttpErrorHelper(): { path: string; content: string } {
   lines.push(`  if (status === 404) {`);
   lines.push(`    return \`\${Subject} was not found. It may have been deleted.\`;`);
   lines.push(`  }`);
+  lines.push(`  if (status === 409 && context.action === 'delete') {`);
+  lines.push(`    return \`\${Subject} is still referenced by other records. Remove or change them first.\`;`);
+  lines.push(`  }`);
   lines.push(`  if (status === 409) {`);
   lines.push(`    return \`\${Subject} was changed by someone else. Reload to see the latest version.\`;`);
+  lines.push(`  }`);
+  lines.push(`  if (status === 422) {`);
+  lines.push(`    return \`\${Subject} refers to a related record that does not exist.\`;`);
   lines.push(`  }`);
   lines.push(`  if (status >= 500) {`);
   lines.push(`    return \`The server could not \${task}. Try again later.\`;`);
