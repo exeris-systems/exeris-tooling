@@ -2,6 +2,7 @@ package eu.exeris.tooling.codegen.java.openapi;
 
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
+import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.PathItem;
@@ -238,6 +239,86 @@ class OpenApiPathsBuilderTest {
         assertThat(spectate.getResponses()).containsOnlyKeys("200");
         assertThat(spectate.getResponses().get("200").getContent()).containsOnlyKeys("text/event-stream");
         assertThat(spectate.getDescription()).contains("stream-error").contains("400, 404 or 500");
+    }
+
+    @Test
+    @DisplayName("ADR-044 Amendment 2: a streaming action is an event stream answering only 200, with the "
+            + "action's request body, its triggered events and its stream-error statuses described")
+    void streamingActionIsAnEventStream() {
+        DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").versioned(true)
+                .actions(List.of(
+                        ActionMetadata.builder("track").streaming(true)
+                                .addParam(ActionParamMetadata.builder("note", "java.lang.String").build())
+                                .build(),
+                        ActionMetadata.builder("hold").streaming(true).build(),
+                        ActionMetadata.builder("approve").build()))
+                .events(List.of(
+                        DomainEventMetadata.builder("OrderTracked")
+                                .trigger(DomainEventMetadata.Trigger.ACTION).actionName("track").build(),
+                        DomainEventMetadata.builder("OrderCreated")
+                                .trigger(DomainEventMetadata.Trigger.CREATE).build()))
+                .build();
+
+        Paths paths = OpenApiPathsBuilder.buildPaths(meta);
+
+        Operation track = paths.get("/orders/{id}/actions/track").getPost();
+        assertThat(track.getOperationId()).isEqualTo("trackOrder");
+        assertThat(track.getTags()).containsExactly("Order Actions");
+        assertThat(track.getResponses()).containsOnlyKeys("200");
+        assertThat(track.getResponses().get("200").getContent()).containsOnlyKeys("text/event-stream");
+        assertThat(track.getRequestBody().getContent().get("application/json").getSchema().get$ref())
+                .isEqualTo("#/components/schemas/OrderTrackRequest");
+        assertThat(track.getDescription())
+                .contains("(OrderTracked)")
+                .doesNotContain("OrderCreated")
+                .contains("a request body that does not decode")
+                .contains("a version conflict")
+                .contains("stream-error frame")
+                .contains("400, 404, 409 or 500");
+
+        Operation hold = paths.get("/orders/{id}/actions/hold").getPost();
+        assertThat(hold.getResponses()).containsOnlyKeys("200");
+        assertThat(hold.getRequestBody()).isNull();
+        assertThat(hold.getDescription())
+                .contains("triggers no @DomainEvent")
+                .doesNotContain("request body");
+
+        // A respond-once action on the same entity keeps its respond-once statuses.
+        assertThat(paths.get("/orders/{id}/actions/approve").getPost().getResponses())
+                .containsOnlyKeys("200", "400", "404", "409", "500");
+    }
+
+    @Test
+    @DisplayName("ADR-044: realTimeApi adds GET {base}/stream, the live view, an event stream answering only 200")
+    void liveViewIsAnEventStream() {
+        DomainMetadata quiet = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").realTimeApi(true).build();
+        DomainMetadata live = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").realTimeApi(true)
+                .events(List.of(DomainEventMetadata.builder("OrderCreated")
+                        .trigger(DomainEventMetadata.Trigger.CREATE).build()))
+                .build();
+
+        assertThat(OpenApiPathsBuilder.buildPaths(DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").build())).doesNotContainKey("/orders/stream");
+
+        PathItem item = OpenApiPathsBuilder.buildPaths(live).get("/orders/stream");
+        assertThat(item.readOperations()).hasSize(1);
+        Operation stream = item.getGet();
+        assertThat(stream.getOperationId()).isEqualTo("streamOrder");
+        assertThat(stream.getTags()).containsExactly("Order");
+        assertThat(stream.getParameters()).isNull();
+        assertThat(stream.getResponses()).containsOnlyKeys("200");
+        assertThat(stream.getResponses().get("200").getContent()).containsOnlyKeys("text/event-stream");
+        // The live view reads no id and no row, so it has nothing to refuse with a stream-error frame.
+        assertThat(stream.getDescription()).contains("(OrderCreated)").contains("keep-alive")
+                .doesNotContain("stream-error");
+        assertThat(OpenApiPathsBuilder.buildPaths(live).get("/orders/{id}/stream").getGet().getDescription())
+                .contains("(OrderCreated)");
+
+        assertThat(OpenApiPathsBuilder.buildPaths(quiet).get("/orders/stream").getGet().getDescription())
+                .contains("declares no @DomainEvent").contains("keep-alive");
     }
 
     @Test
