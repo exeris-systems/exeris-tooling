@@ -136,8 +136,7 @@ public final class ServerOwnedFields {
                     declared == null ? null : declared.softDeletedByField(), "deletedBy"));
         }
         if (metadata.versioned()) {
-            String version = versionField(metadata);
-            resets.add(new Reset(version, versionStart(metadata, version)));
+            resets.add(new Reset(versionField(metadata), versionStart(metadata)));
         }
         return List.copyOf(resets);
     }
@@ -149,16 +148,31 @@ public final class ServerOwnedFields {
     }
 
     /** The version's initial value, as a literal of the declared field's integer width. */
-    private static String versionStart(DomainMetadata metadata, String version) {
-        if (metadata.hasFields()) {
-            for (FieldMetadata field : metadata.fields()) {
-                if (field.name().equals(version) && ("int".equals(field.type())
-                        || "Integer".equals(field.type()) || "java.lang.Integer".equals(field.type()))) {
-                    return "0";
-                }
+    private static String versionStart(DomainMetadata metadata) {
+        return hasIntegerVersion(metadata) ? "0" : "0L";
+    }
+
+    /**
+     * Whether the entity declares its version field as a 32-bit integer ({@code int} or
+     * {@code Integer}). An undeclared version, and one declared as any other type, is a 64-bit
+     * {@code Long}: the width every emitter that reads, writes, stores or describes the version
+     * agrees on.
+     *
+     * @param metadata the entity
+     * @return true when the declared version field is {@code int} or {@code Integer}
+     */
+    public static boolean hasIntegerVersion(DomainMetadata metadata) {
+        if (!metadata.hasFields()) {
+            return false;
+        }
+        String version = versionField(metadata);
+        for (FieldMetadata field : metadata.fields()) {
+            if (field.name().equals(version)) {
+                return "int".equals(field.type()) || "Integer".equals(field.type())
+                        || "java.lang.Integer".equals(field.type());
             }
         }
-        return "0L";
+        return false;
     }
 
     /**

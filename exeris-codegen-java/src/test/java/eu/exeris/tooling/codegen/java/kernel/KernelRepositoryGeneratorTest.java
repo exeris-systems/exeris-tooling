@@ -1309,4 +1309,53 @@ class KernelRepositoryGeneratorTest {
 
         assertThat(src).contains("String order = \" ORDER BY id\";").doesNotContain("sortColumn");
     }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"Integer", "int", "java.lang.Integer"})
+    @DisplayName("A declared 32-bit version is read, incremented, bound and read back as an int, never a long")
+    void shouldKeepADeclaredIntegerVersionAnInt(String declaredType) {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .versioned(true)
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build(),
+                        FieldMetadata.builder("version", declaredType).build()))
+                .build();
+
+        String repo = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                .findFirst().orElseThrow().content();
+
+        assertThat(repo)
+                .contains("Integer currentVersion = entity.getVersion()")
+                .contains("int expectedVersion = currentVersion == null ? 0 : currentVersion")
+                .contains("entity.setVersion(expectedVersion + 1)")
+                .contains("Integer versionValue = entity.getVersion()")
+                .contains("stmt.bindInt(1, versionValue == null ? 0 : versionValue)")
+                .contains("stmt.bindInt(3, expectedVersion)")
+                .contains("entity.setVersion(row.getInt(")
+                .doesNotContain("expectedVersion + 1L")
+                .doesNotContain("bindLong(3, expectedVersion)")
+                .doesNotContain("Long currentVersion");
+    }
+
+    @Test
+    @DisplayName("A declared Long version, and an undeclared one, stay 64-bit")
+    void shouldKeepALongVersionALong() {
+        for (List<FieldMetadata> fields : List.of(
+                List.of(FieldMetadata.builder("orderNumber", "String").build(),
+                        FieldMetadata.builder("version", "Long").build()),
+                List.of(FieldMetadata.builder("orderNumber", "String").build()))) {
+            DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                    .versioned(true).fields(fields).build();
+
+            String repo = strategy.generate(metadata).stream()
+                    .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                    .findFirst().orElseThrow().content();
+
+            assertThat(repo)
+                    .contains("long expectedVersion = currentVersion == null ? 0L : currentVersion")
+                    .contains("entity.setVersion(expectedVersion + 1L)")
+                    .contains("stmt.bindLong(3, expectedVersion)")
+                    .contains("entity.setVersion(row.getLong(");
+        }
+    }
 }
