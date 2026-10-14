@@ -1,5 +1,7 @@
 package eu.exeris.tooling.codegen.java.support;
 
+import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+
 import java.util.Locale;
 
 /**
@@ -48,5 +50,25 @@ public final class ColumnNaming {
      */
     public static String foreignKeyColumn(String relationshipName) {
         return snakeCase(foreignKeyBase(relationshipName)) + "_id";
+    }
+
+    /**
+     * The table of an entity: the explicit {@code @ExerisDomain.tableName} override when present and
+     * non-blank, trimmed and lower-cased under {@link Locale#ROOT}, otherwise
+     * {@link DomainMetadata#effectiveTableName()}.
+     *
+     * <p>Every table name this returns is lower-case, so the migration filename stays predictable
+     * and the name is the same on PostgreSQL, which folds unquoted identifiers to lower-case, as on
+     * engines that do not. A mixed-case, quoted table name is not supported.
+     *
+     * @param metadata the entity
+     * @return its table name
+     */
+    public static String table(DomainMetadata metadata) {
+        String override = metadata.tableName();
+        if (override != null && !override.isBlank()) {
+            return override.trim().toLowerCase(Locale.ROOT);
+        }
+        return metadata.effectiveTableName();
     }
 }

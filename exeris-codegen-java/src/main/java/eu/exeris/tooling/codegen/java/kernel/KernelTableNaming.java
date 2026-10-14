@@ -32,11 +32,7 @@ final class KernelTableNaming {
      * lower-case, as on engines that do not. A mixed-case, quoted table name is not supported.
      */
     static String effectiveTable(DomainMetadata metadata) {
-        String override = metadata.tableName();
-        if (override != null && !override.isBlank()) {
-            return override.trim().toLowerCase(Locale.ROOT);
-        }
-        return metadata.effectiveTableName();
+        return ColumnNaming.table(metadata);
     }
 
     /**

@@ -3,6 +3,7 @@ package eu.exeris.tooling.codegen.java.openapi;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.tooling.codegen.java.support.ForeignKeys;
 import eu.exeris.tooling.codegen.java.support.KernelStreamScaffold;
 import eu.exeris.tooling.codegen.java.support.ListQuerySupport;
 import eu.exeris.tooling.codegen.java.support.NameCasing;
@@ -36,25 +37,42 @@ public final class OpenApiPathsBuilder {
     private OpenApiPathsBuilder() {}
 
     /**
-     * Builds the path items one entity exposes, rooted at its effective REST path.
+     * Builds the path items one entity exposes, rooted at its effective REST path, taking the entity
+     * as a build of its own: only a reference to itself is a foreign key.
      *
      * @param metadata the entity to describe
      * @return the entity's paths and their operations
      */
     public static Paths buildPaths(DomainMetadata metadata) {
+        return buildPaths(metadata, List.of(metadata));
+    }
+
+    /**
+     * Builds the path items one entity of a build exposes, rooted at its effective REST path. The
+     * build decides which foreign keys the entity's writes and delete can violate: a write that
+     * references an entity of the build declares {@code 422}, and the delete of an entity another
+     * references declares {@code 409} (ADR-076 Amendment 1).
+     *
+     * @param metadata the entity to describe
+     * @param build    every entity of the build, {@code metadata} included
+     * @return the entity's paths and their operations
+     */
+    public static Paths buildPaths(DomainMetadata metadata, List<DomainMetadata> build) {
         Paths paths = new Paths();
+        boolean missingReference = ForeignKeys.refusesMissingReference(metadata, build);
+        boolean referencedDelete = ForeignKeys.refusesReferencedDelete(metadata, build);
         String basePath = metadata.effectivePath();
         String entityName = metadata.entityName();
 
         PathItem collectionPath = new PathItem();
         collectionPath.setGet(buildListOperation(metadata));
-        collectionPath.setPost(buildCreateOperation(entityName));
+        collectionPath.setPost(buildCreateOperation(entityName, missingReference));
         paths.addPathItem(basePath, collectionPath);
 
         PathItem itemPath = new PathItem();
         itemPath.setGet(buildGetOperation(entityName));
-        itemPath.setPut(buildUpdateOperation(entityName, metadata.versioned()));
-        itemPath.setDelete(buildDeleteOperation(entityName));
+        itemPath.setPut(buildUpdateOperation(entityName, metadata.versioned(), missingReference));
+        itemPath.setDelete(buildDeleteOperation(entityName, referencedDelete));
         paths.addPathItem(basePath + "/{id}", itemPath);
 
         if (metadata.realTimeApi()) {
@@ -72,8 +90,8 @@ public final class OpenApiPathsBuilder {
                 String actionPath = basePath + "/{id}/actions/" + NameCasing.kebab(action.name());
                 PathItem actionPathItem = new PathItem();
                 actionPathItem.setPost(action.streaming()
-                        ? buildActionStreamOperation(metadata, action)
-                        : buildActionOperation(entityName, action, metadata.versioned()));
+                        ? buildActionStreamOperation(metadata, action, missingReference)
+                        : buildActionOperation(entityName, action, metadata.versioned(), missingReference));
                 paths.addPathItem(actionPath, actionPathItem);
             }
         }
@@ -152,17 +170,18 @@ public final class OpenApiPathsBuilder {
         return op;
     }
 
-    private static Operation buildCreateOperation(String entity) {
+    private static Operation buildCreateOperation(String entity, boolean missingReference) {
         Operation op = new Operation();
         op.setOperationId("create" + entity);
         op.setSummary("Create new " + entity);
         op.setTags(List.of(entity));
         op.setRequestBody(RequestBodyFactory.buildCreateRequestBody(entity));
-        op.setResponses(Responses.of("201", "Created " + entity).badRequest().serverError());
+        op.setResponses(Responses.of("201", "Created " + entity).badRequest()
+                .unprocessable(missingReference).serverError());
         return op;
     }
 
-    private static Operation buildUpdateOperation(String entity, boolean versioned) {
+    private static Operation buildUpdateOperation(String entity, boolean versioned, boolean missingReference) {
         Operation op = new Operation();
         op.setOperationId("update" + entity);
         op.setSummary("Update " + entity);
@@ -170,23 +189,24 @@ public final class OpenApiPathsBuilder {
         op.addParametersItem(buildIdParam());
         op.setRequestBody(RequestBodyFactory.buildUpdateRequestBody(entity));
         Responses responses = Responses.of(OK, "Updated " + entity).badRequest();
-        op.setResponses(versioned
-                ? responses.conflict().serverError()
-                : responses.notFound().serverError());
+        op.setResponses((versioned ? responses.conflict() : responses.notFound())
+                .unprocessable(missingReference).serverError());
         return op;
     }
 
-    private static Operation buildDeleteOperation(String entity) {
+    private static Operation buildDeleteOperation(String entity, boolean referencedDelete) {
         Operation op = new Operation();
         op.setOperationId("delete" + entity);
         op.setSummary("Delete " + entity);
         op.setTags(List.of(entity));
         op.addParametersItem(buildIdParam());
-        op.setResponses(Responses.of("204", entity + " deleted").badRequest().notFound().serverError());
+        Responses responses = Responses.of("204", entity + " deleted").badRequest().notFound();
+        op.setResponses((referencedDelete ? responses.stillReferenced() : responses).serverError());
         return op;
     }
 
-    private static Operation buildActionOperation(String entity, ActionMetadata action, boolean versioned) {
+    private static Operation buildActionOperation(String entity, ActionMetadata action, boolean versioned,
+                                                  boolean missingReference) {
         Operation op = new Operation();
         op.setOperationId(action.name() + entity);
         op.setSummary(action.description() != null ? action.description() : "Execute " + action.name());
@@ -196,7 +216,8 @@ public final class OpenApiPathsBuilder {
             op.setRequestBody(RequestBodyFactory.buildActionRequestBody(entity, action));
         }
         Responses responses = Responses.of(OK, "Action result").badRequest().notFound();
-        op.setResponses(versioned ? responses.conflict().serverError() : responses.serverError());
+        op.setResponses((versioned ? responses.conflict() : responses)
+                .unprocessable(missingReference).serverError());
         return op;
     }
 
@@ -207,9 +228,12 @@ public final class OpenApiPathsBuilder {
      * runs, so {@code 200} is the only status the route answers; every refusal is one
      * {@code stream-error} frame carrying the status the respond-once action route answers for the
      * same failure (ADR-079: declare what the handler can answer). The request body is the
-     * action's, as on the respond-once route.
+     * action's, as on the respond-once route. A write naming a missing row through a relationship
+     * is one of those frames, with status {@code 422}, only when a foreign key of the build can
+     * refuse it (ADR-076 Amendment 1); the operation itself gains no {@code 422}.
      */
-    private static Operation buildActionStreamOperation(DomainMetadata metadata, ActionMetadata action) {
+    private static Operation buildActionStreamOperation(DomainMetadata metadata, ActionMetadata action,
+                                                        boolean missingReference) {
         String entity = metadata.entityName();
         List<String> events = new ArrayList<>();
         for (DomainEventMetadata event : metadata.events()) {
@@ -237,9 +261,10 @@ public final class OpenApiPathsBuilder {
                 + (action.hasParams() ? "a request body that does not decode, " : "")
                 + "an absent or invisible row, "
                 + (metadata.versioned() ? "a version conflict, " : "")
+                + (missingReference ? "a relationship naming a row that does not exist, " : "")
                 + "or a server failure is one " + KernelStreamScaffold.STREAM_ERROR_FRAME
                 + " frame, whose data is a problem object (RFC 9457) with status "
-                + (metadata.versioned() ? "400, 404, 409 or 500" : "400, 404 or 500")
+                + frameStatuses(metadata.versioned(), missingReference)
                 + ", after which the stream closes.";
         op.setDescription("A server-sent event stream: the request runs the action. " + frames + refusals);
         op.setResponses(eventStream("The event stream of the " + action.name() + " action"));
@@ -304,6 +329,18 @@ public final class OpenApiPathsBuilder {
         return names;
     }
 
+    /** The statuses a streaming action's {@code stream-error} frame can carry, as prose. */
+    private static String frameStatuses(boolean versioned, boolean missingReference) {
+        List<String> statuses = new ArrayList<>(List.of("400", "404"));
+        if (versioned) {
+            statuses.add("409");
+        }
+        if (missingReference) {
+            statuses.add("422");
+        }
+        return String.join(", ", statuses) + " or 500";
+    }
+
     /** The sentence naming an open-ended stream's event frames and its keep-alive. */
     private static String eventFrames(String subject, List<String> events) {
         return "Each event published for " + subject + " is one frame named by its @DomainEvent name ("
@@ -344,7 +381,9 @@ public final class OpenApiPathsBuilder {
      * parse or a body to decode, {@code 404} needs an id to miss, and {@code 409} is raised only by
      * the write path of a versioned entity — where it replaces {@code 404} rather than joining it,
      * because that update matches on {@code id} and version together and reports the pair.
-     * ADR-076 fixes the status for an absent row, and ADR-079 the per-operation sets.
+     * ADR-076 fixes the status for an absent row, and ADR-079 the per-operation sets. A foreign key
+     * adds {@code 422} to a write that references an entity of the build and {@code 409} to the
+     * delete of an entity another references (ADR-076 Amendment 1).
      */
     private static final class Responses {
 
@@ -366,6 +405,18 @@ public final class OpenApiPathsBuilder {
 
         Responses conflict() {
             return add("409", "Version conflict — re-read and retry");
+        }
+
+        Responses stillReferenced() {
+            return add("409", "Still referenced by other rows — remove or repoint them first");
+        }
+
+        /** {@code 422} when {@code declared}: the write can name a missing row through a relationship. */
+        Responses unprocessable(boolean declared) {
+            return declared
+                    ? add("422", "A relationship names a row that does not exist; the problem body's "
+                            + "field member names the relationship")
+                    : this;
         }
 
         /** Terminal, because every emitted handler can answer it. */

@@ -1,6 +1,7 @@
 # ADR-076 — A write against a row that is not there answers 404, not 500
 
-- **Status:** ACCEPTED (2026-08-27)
+- **Status:** ACCEPTED (2026-08-27) · amended 2026-10-14 (Amendment 1 — a write naming a missing row
+  through a relationship answers 422, and a delete of a still-referenced row answers 409)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / codegen pipeline
 - **Visibility:** public
@@ -176,3 +177,110 @@ The first perturbation also found a weakness in the new assertions themselves: a
 `containsSubsequence` over the whole emitted file matched clauses belonging to a *different* handler
 method, so a deleted catch still passed. The assertions were rewritten as contiguous
 indentation-normalised blocks before the perturbation was repeated.
+
+## Amendment 1 — a foreign-key violation answers 422 or 409 (2026-10-14)
+
+**Status:** Accepted *(adds two refusals to the Decision's pattern — a type the repository raises,
+a status the handler answers, a status the spec declares; §1 to §5 are otherwise unchanged)*
+
+**Deciders:** the founder (ruling 2026-10-14, `exeris-tooling#398`).
+
+A foreign-key violation fell into the handler's `RuntimeException` tail and answered `500`: a create
+or update whose `MANY_TO_ONE` field names a row that does not exist, a dangling self reference, and a
+delete of a row other rows still reference. The client caused each of them.
+
+### The decision of the amendment
+
+1. **The repository recognises a foreign-key violation.** The kernel's persistence SPI reports a
+   refused statement as `PersistenceProviderException` with code `EX-PERS-5003` and raw arguments
+   `[sqlState, detail]` (`PersistenceErrorTranslator`, kernel core). A foreign-key violation is
+   SQLState `23503` on PostgreSQL in both directions; H2 reports `23503` for a referenced row being
+   deleted and `23506` for a written row naming a missing one (measured on the booted H2 test: with
+   `23506` removed from the set, the three `422` cases answer `500`). The emitted
+   `foreignKeyViolation` walks the cause chain, bounded, for that exception.
+2. **Two types**, emitted by `KernelErrorGenerator` into the repository package beside the others,
+   for the reasons §1 gives:
+   - `<Entity>ReferenceNotFoundException(String relation, Throwable cause)` with `relation()`,
+     raised by `save`, `update` and `updateFromRequest`;
+   - `<Entity>StillReferencedException(UUID id, Throwable cause)` with `id()`, raised by
+     `deleteById`.
+3. **Which relationship refused the write is read from the constraint name.** The foreign-key
+   migration names each constraint `fk_<table>_<column>`, and both engines put that name in their
+   message (PostgreSQL in lower case, H2 in upper case). The repository tests the names it knows,
+   longest first, so a name that is a prefix of another cannot claim its violation. A violation of a
+   constraint the build did not declare is not attributed and propagates unchanged — still `500`.
+   A delete violates a foreign key only as the referenced side, so any foreign-key violation of a
+   delete is the still-referenced refusal.
+4. **The handler maps them**, ahead of the `500` tail, without a log:
+
+   | Route | Catches | Answers |
+   |---|---|---|
+   | `POST`, `PUT /{id}`, `POST /{id}/actions/{name}` | `<Entity>ReferenceNotFoundException` | `422`, problem body |
+   | `DELETE /{id}` | `<Entity>StillReferencedException` | `409` |
+   | streaming action | `<Entity>ReferenceNotFoundException` | `stream-error` frame, status `422` |
+
+   The `422` body is an RFC 9457 problem object — `type` `about:blank`, `title`
+   `Unprocessable Content`, `status` `422`, `detail` — whose `field` member names the relationship.
+   It is encoded by the exchange's typed-response encoder, so its media type is the encoder's
+   (`application/json`); the encoder appends its own `Content-Type`, and a second one from the handler
+   would be a duplicate header. The kernel names no `422` constant, so the handler holds
+   `new HttpStatus(422, "Unprocessable Content")`. The stream frame carries status and title only, as
+   every other `stream-error` frame does.
+5. **Why 422 and 409.** `422`: the body is well formed and decodes, and the row it points at is the
+   caller's to correct; `400` is the answer for a body the handler cannot use at all, and `404` would
+   say the addressed resource is missing. `409`: the row exists and the delete can succeed once the
+   rows that reference it are removed or repointed — a conflict with the current state, not a missing
+   row. A `409` on `DELETE` is never a version conflict: §3's versioned clause is on the update path
+   only, and `deleteById` matches on `id` alone.
+6. **Emitted only where a foreign key of the build can produce it** (`ForeignKeys`, the same source
+   the foreign-key migration now reads):
+   - the reference refusal for an entity with a `MANY_TO_ONE` relationship whose target is an entity
+     of the build — a target outside the build gets no constraint;
+   - the still-referenced refusal for an entity some entity of the build references — itself
+     included — and whose delete removes the row; a soft delete keeps the row, so no constraint sees
+     it.
+7. **The spec declares them** on the same condition: `422` on the create, the update and every
+   action of a referencing entity, and `409` on the delete of a referenced one.
+8. **The generated tests** (ADR-058) cover both: the repository test stages the SPI exception in
+   PostgreSQL's shape and, wrapped once, in H2's, and a unique violation that stays as it is; the
+   handler test pins `422` with the problem body on both writes, past every guard, and `409` on the
+   delete. `RecordingPersistence` gains `writeFailure`, which its next write throws.
+
+### How the generators see the build
+
+A per-entity generator saw one `DomainMetadata`, and whether an entity is referenced is a fact about
+the others. `KernelArtifactGenerator` gains
+`generateMultiple(DomainMetadata metadata, List<DomainMetadata> build)`, defaulting to
+`generateMultiple(metadata)`; `CodegenPipeline` calls it with every entity of the run, and the
+repository, error, handler, action-stream and OpenAPI generators override it. Called without a
+build, they take the entity as a build of its own, where only a reference to itself is a foreign key.
+`OpenApiGenerator#generateAggregated` passes the entities it describes; the generated-test
+generators take the build the same way. No metadata field is added: the contract stays
+`DomainMetadata`, read whole.
+
+### Consequences of the amendment
+
+- **Breaking for a client that branched on the `500`.** The regeneration note is
+  `docs/migration/0.10.0/java-15-foreign-key-violation-answers-422-or-409.md`.
+- **A `409` now has two meanings, one per route.** On `PUT` and an action it is §3's version
+  conflict; on `DELETE` it is a still-referenced row. The TypeScript `httpErrorMessage` tells them
+  apart by the action it is given (`docs/migration/0.10.0/ts-14-referenced-delete-and-missing-reference-messages.md`).
+- **A foreign key the consumer declared outside the generated migration** is not attributed on a
+  write and still answers `500` there; on a delete it answers `409`, which is true of it.
+- **The engines' messages are read.** The constraint name is the only place either engine says which
+  constraint failed, so the attribution depends on the driver keeping it in its message. Both
+  measured drivers do; a driver that dropped it would turn the `422` back into a `500`, never into a
+  wrong field.
+
+### Verification of the amendment
+
+- `ForeignKeysTest`, `ForeignKeyRefusalGeneratorsTest`, `OpenApiForeignKeyStatusesTest` — which
+  entities get which type, catch and status; the constraint order; the build of one.
+- `ForeignKeyGeneratedTestsE2ETest` — the generated cases compile against the ADR-058 classpath
+  and pass, run by name.
+- `ForeignKeyRefusalBootE2ETest` boots the emitted application on H2: a create, an update and an
+  action naming a missing row answer `422` with `"field"` naming the relationship, a dangling self
+  reference names the self relationship, and a delete of a row another entity's rows or its own rows
+  reference answers `409`, then `204` once they are gone.
+- `KernelCodegenCompileTest` compiles the renamed-key corpus, whose `Payment` references `Invoice`,
+  with every lint category.

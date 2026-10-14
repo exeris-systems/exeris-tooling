@@ -13,6 +13,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.Artifact
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.driver.RequiredSubsystems;
 import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
+import eu.exeris.tooling.codegen.java.support.ForeignKeys;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.tooling.codegen.java.support.KernelStreamScaffold;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
@@ -322,9 +323,8 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
      * @return the FK migration file, or {@code null} when there is nothing to constrain
      */
     public GeneratedFile generateForeignKeys(List<DomainMetadata> domains) {
-        // Target-table resolution: entityName → effective SQL table. Only
-        // generated entities are referenceable; an external target is absent
-        // here and therefore skipped below.
+        // Target-table resolution: entityName → effective SQL table. ForeignKeys keeps only the
+        // relationships whose target is an entity of the build, so every lookup below resolves.
         Map<String, String> tableByEntity = new HashMap<>();
         Map<String, String> keyColumnByEntity = new HashMap<>();
         for (DomainMetadata domain : domains) {
@@ -334,24 +334,10 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
         List<ForeignKey> foreignKeys = new ArrayList<>();
         for (DomainMetadata domain : domains) {
-            if (!domain.hasRelationships()) {
-                continue;
-            }
-            String table = KernelTableNaming.effectiveTable(domain);
-            for (RelationshipMetadata rel : domain.relationships()) {
-                if (rel.type() != RelationshipMetadata.RelationType.MANY_TO_ONE) {
-                    continue;
-                }
-                String targetTable = tableByEntity.get(rel.targetEntity());
-                if (targetTable == null) {
-                    // External / non-generated target — never reference a table
-                    // this build did not create.
-                    continue;
-                }
-                String column = KernelTableNaming.foreignKeyColumn(rel.name());
-                String constraint = "fk_" + table + "_" + column;
-                foreignKeys.add(new ForeignKey(table, constraint, column, targetTable,
-                        keyColumnByEntity.get(rel.targetEntity()), deletePolicy(rel)));
+            for (ForeignKeys.Reference reference : ForeignKeys.outgoing(domain, domains)) {
+                foreignKeys.add(new ForeignKey(reference.table(), reference.constraint(), reference.column(),
+                        tableByEntity.get(reference.targetEntity()),
+                        keyColumnByEntity.get(reference.targetEntity()), deletePolicy(reference.relationship())));
             }
         }
 

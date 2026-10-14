@@ -65,7 +65,7 @@ public class OpenApiGenerator {
         validateMetadata(metadata);
         Files.createDirectories(outputDirectory);
 
-        OpenAPI openAPI = buildOpenAPI(metadata);
+        OpenAPI openAPI = buildOpenAPI(metadata, List.of(metadata));
 
         Path outputFile = outputDirectory
             .resolve(metadata.entityName().toLowerCase(Locale.ROOT) + "-api.yaml");
@@ -85,7 +85,23 @@ public class OpenApiGenerator {
      */
     public String generateYaml(DomainMetadata metadata) throws IOException {
         validateMetadata(metadata);
-        OpenAPI openAPI = buildOpenAPI(metadata);
+        return generateYaml(metadata, List.of(metadata));
+    }
+
+    /**
+     * Builds the OpenAPI 3.1 specification for one entity of a build and returns it as YAML,
+     * without touching the file system. The build decides which statuses a foreign key adds to the
+     * entity's operations (ADR-076 Amendment 1).
+     *
+     * @param metadata the entity to describe
+     * @param build    every entity of the build, {@code metadata} included
+     * @return the specification as YAML text
+     * @throws IOException if serialization fails
+     * @throws IllegalArgumentException if {@code metadata} is {@code null} or has no entity name
+     */
+    public String generateYaml(DomainMetadata metadata, List<DomainMetadata> build) throws IOException {
+        validateMetadata(metadata);
+        OpenAPI openAPI = buildOpenAPI(metadata, build);
         return yamlMapper.writeValueAsString(openAPI);
     }
 
@@ -120,7 +136,7 @@ public class OpenApiGenerator {
 
         for (DomainMetadata metadata : metadataList) {
             allTags.addAll(OpenApiTagsBuilder.buildTags(metadata));
-            io.swagger.v3.oas.models.Paths entityPaths = OpenApiPathsBuilder.buildPaths(metadata);
+            io.swagger.v3.oas.models.Paths entityPaths = OpenApiPathsBuilder.buildPaths(metadata, metadataList);
             entityPaths.forEach(allPaths::addPathItem);
             Components entityComponents = OpenApiComponentsBuilder.buildComponents(metadata);
             if (entityComponents.getSchemas() != null) {
@@ -139,13 +155,13 @@ public class OpenApiGenerator {
         return openAPI;
     }
 
-    private OpenAPI buildOpenAPI(DomainMetadata metadata) {
+    private OpenAPI buildOpenAPI(DomainMetadata metadata, List<DomainMetadata> build) {
         OpenAPI openAPI = new OpenAPI();
         openAPI.setOpenapi(OPENAPI_VERSION);
         openAPI.setInfo(buildInfo(metadata));
         openAPI.setServers(buildServers());
         openAPI.setTags(OpenApiTagsBuilder.buildTags(metadata));
-        openAPI.setPaths(OpenApiPathsBuilder.buildPaths(metadata));
+        openAPI.setPaths(OpenApiPathsBuilder.buildPaths(metadata, build));
         openAPI.setComponents(OpenApiComponentsBuilder.buildComponents(metadata));
         return openAPI;
     }

@@ -205,7 +205,7 @@ class GeneratorCatalogueConformanceE2ETest {
         Map<String, String> writers = new TreeMap<>();
         for (KernelArtifactGenerator generator : new KernelGeneratorStrategy().getRegistry().getGenerators()) {
             for (DomainMetadata domain : domains) {
-                for (GeneratedFile file : generator.generateMultiple(domain)) {
+                for (GeneratedFile file : generator.generateMultiple(domain, domains)) {
                     if (file != null) {
                         attribute(writers, file, generator.getClass().getSimpleName());
                     }
@@ -237,10 +237,10 @@ class GeneratorCatalogueConformanceE2ETest {
         KernelRepositoryTestGenerator repositoryTests = new KernelRepositoryTestGenerator();
         KernelSagaTestGenerator sagaTests = new KernelSagaTestGenerator();
         for (DomainMetadata domain : domains) {
-            attribute(writers, handlerTests.generate(domain, BASE_PACKAGE),
+            attribute(writers, handlerTests.generate(domain, BASE_PACKAGE, domains),
                     KernelHandlerTestGenerator.class.getSimpleName());
             attribute(writers, serviceTests.generate(domain), KernelServiceTestGenerator.class.getSimpleName());
-            attribute(writers, repositoryTests.generate(domain, BASE_PACKAGE),
+            attribute(writers, repositoryTests.generate(domain, BASE_PACKAGE, domains),
                     KernelRepositoryTestGenerator.class.getSimpleName());
             GeneratedFile sagaTest = sagaTests.generate(domain, BASE_PACKAGE);
             if (sagaTest != null) {

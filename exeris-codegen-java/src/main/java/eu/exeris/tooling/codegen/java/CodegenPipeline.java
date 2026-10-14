@@ -296,7 +296,7 @@ public final class CodegenPipeline {
                     // metadata collection (e.g. one stream handler per
                     // @Action(streaming); ADR-044 Slice 2); its default wraps the
                     // single generate(...) result for every other generator.
-                    for (GeneratedFile file : generator.generateMultiple(domain)) {
+                    for (GeneratedFile file : generator.generateMultiple(domain, domains)) {
                         if (file != null) {
                             writeFile(writer, file);
                             LOG.log(Level.DEBUG, () -> "wrote " + file.className()
@@ -581,9 +581,9 @@ public final class CodegenPipeline {
         }
 
         for (DomainMetadata domain : domains) {
-            writeFile(writer, handlerTestGenerator.generate(domain, basePackage));
+            writeFile(writer, handlerTestGenerator.generate(domain, basePackage, domains));
             writeFile(writer, serviceTestGenerator.generate(domain));
-            writeFile(writer, repositoryTestGenerator.generate(domain, basePackage));
+            writeFile(writer, repositoryTestGenerator.generate(domain, basePackage, domains));
             filesGenerated += 3;
             // Saga tests exist only where a saga does — same guard as the saga emitter itself.
             GeneratedFile sagaTest = sagaTestGenerator.generate(domain, basePackage);

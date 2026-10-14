@@ -71,7 +71,8 @@ import java.util.stream.Collectors;
  * (ADR-076, ADR-079): {@code 500} for the tenant guard and for a server-side fault, {@code 400}
  * for a malformed {@code id}, a body the caller got wrong, or a write naming another tenant,
  * {@code 404} for a row that is absent or invisible, {@code 409} for a version conflict on a
- * versioned entity. The handler emits no result frame: {@code @Action.streamEventType} names it,
+ * versioned entity, {@code 422} for a write that names a missing row through a relationship
+ * (ADR-076 Amendment 1). The handler emits no result frame: {@code @Action.streamEventType} names it,
  * and the generators do not know the action's return type (the {@code STREAM_EVENT_TYPE} constant
  * carries the name).
  *
@@ -202,8 +203,14 @@ public class KernelActionStreamHandlerGenerator implements KernelArtifactGenerat
         return files.isEmpty() ? null : files.get(0);
     }
 
+    /** The entity as a build of its own: only a reference to itself is a foreign key. */
     @Override
     public List<GeneratedFile> generateMultiple(DomainMetadata metadata) {
+        return generateMultiple(metadata, metadata == null ? List.of() : List.of(metadata));
+    }
+
+    @Override
+    public List<GeneratedFile> generateMultiple(DomainMetadata metadata, List<DomainMetadata> build) {
         List<GeneratedFile> files = new ArrayList<>();
         if (metadata == null) {
             return files;
@@ -211,7 +218,8 @@ public class KernelActionStreamHandlerGenerator implements KernelArtifactGenerat
         // Declared action order: deterministic output (constraint #3).
         for (ActionMetadata action : metadata.actions()) {
             if (action.streaming()) {
-                files.add(buildActionStreamHandler(metadata, action));
+                files.add(buildActionStreamHandler(metadata, action,
+                        KernelErrorGenerator.referenceNotFoundType(metadata, build)));
             }
         }
         return files;
@@ -220,7 +228,8 @@ public class KernelActionStreamHandlerGenerator implements KernelArtifactGenerat
     /** The names, types and readers one handler is generated from. */
     private record Plan(DomainMetadata metadata, ActionMetadata action, ClassName selfType,
                         ClassName entityType, ClassName serviceType, ClassName requestType,
-                        List<StreamEventBinding> bindings, boolean tenantPartitioned) {
+                        List<StreamEventBinding> bindings, boolean tenantPartitioned,
+                        ClassName referenceNotFound) {
 
         String entity() {
             return metadata.entityName();
@@ -241,7 +250,8 @@ public class KernelActionStreamHandlerGenerator implements KernelArtifactGenerat
         }
     }
 
-    private GeneratedFile buildActionStreamHandler(DomainMetadata metadata, ActionMetadata action) {
+    private GeneratedFile buildActionStreamHandler(DomainMetadata metadata, ActionMetadata action,
+                                                   ClassName referenceNotFound) {
         String basePackage = metadata.packageName().replace(".domain", "");
         String packageName = basePackage + ".handler";
         String entity = metadata.entityName();
@@ -259,7 +269,7 @@ public class KernelActionStreamHandlerGenerator implements KernelArtifactGenerat
                 ClassName.get(metadata.packageName(), entity),
                 ClassName.get(basePackage + ".service", entity + "Service"),
                 requestType, bindings(metadata, action),
-                DataScopeSupport.isTenantPartitioned(metadata));
+                DataScopeSupport.isTenantPartitioned(metadata), referenceNotFound);
 
         TypeSpec.Builder handler = KernelScaffold.publicClass(className)
                 .addSuperinterface(HTTP_STREAM_HANDLER)
@@ -549,6 +559,13 @@ public class KernelActionStreamHandlerGenerator implements KernelArtifactGenerat
                 method.nextControlFlow("catch ($T | $T e)", tenantMismatch, sharedScopeMismatch);
             }
             method.addStatement(REFUSE_STATEMENT, BAD_REQUEST, BAD_REQUEST_TITLE);
+        }
+        if (plan.referenceNotFound() != null) {
+            // The entity method pointed a relationship at a row that does not exist (ADR-076
+            // Amendment 1).
+            method.nextControlFlow(CATCH, plan.referenceNotFound())
+                    .addStatement(REFUSE_STATEMENT, KernelHandlerGenerator.UNPROCESSABLE_CONTENT_CODE,
+                            KernelHandlerGenerator.UNPROCESSABLE_CONTENT_REASON);
         }
         return method.nextControlFlow(CATCH, RUNTIME_EXCEPTION)
                 .addStatement(LOG_ERROR_CAUSE, KernelScaffold.LOGGER_LEVEL,

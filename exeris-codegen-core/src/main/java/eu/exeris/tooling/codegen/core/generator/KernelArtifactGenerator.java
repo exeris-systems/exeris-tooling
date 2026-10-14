@@ -62,6 +62,22 @@ public interface KernelArtifactGenerator {
     }
 
     /**
+     * Generates the files for one entity of a build, given every entity of that build.
+     *
+     * <p>The build-time pipeline calls this form. A generator whose output depends on how the
+     * entity relates to the others — a status that only a reference from another entity's table
+     * can produce — overrides it; every other generator inherits the delegation to
+     * {@link #generateMultiple(DomainMetadata)}, which sees the entity alone.
+     *
+     * @param metadata the domain metadata to generate from
+     * @param build    every entity of the build, {@code metadata} included, in the pipeline's order
+     * @return the emitted files; never {@code null}, possibly empty
+     */
+    default List<GeneratedFile> generateMultiple(DomainMetadata metadata, List<DomainMetadata> build) {
+        return generateMultiple(metadata);
+    }
+
+    /**
      * The type of artifact this generator produces.
      *
      * @return artifact type (e.g., CONTROLLER, SERVICE, REPOSITORY)

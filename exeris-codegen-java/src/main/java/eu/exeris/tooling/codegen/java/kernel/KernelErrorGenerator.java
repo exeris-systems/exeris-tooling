@@ -9,6 +9,7 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
+import eu.exeris.tooling.codegen.java.support.ForeignKeys;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 
 import javax.lang.model.element.Modifier;
@@ -28,11 +29,17 @@ import java.util.List;
  *   <li>{@code <Entity>SharedScopeMismatchException} — only for a {@code UNIVERSE} entity with a
  *       {@code @SharedScope} field: the row is tagged with a shared scope other than the bound one
  *      .</li>
+ *   <li>{@code <Entity>ReferenceNotFoundException} — only for an entity that references an entity
+ *       of the build: the written row names, through a relationship, a row that does not exist
+ *       (ADR-076 Amendment 1).</li>
+ *   <li>{@code <Entity>StillReferencedException} — only for an entity some entity of the build
+ *       references and whose delete removes the row: other rows still reference the one being
+ *       deleted (ADR-076 Amendment 1).</li>
  * </ul>
  *
- * <p>The last two are <em>caller</em> faults, the first two facts about the addressed row; all four
- * carry a type so the handler can answer each with its own status instead of the {@code 500} a bare
- * {@code RuntimeException} gets.
+ * <p>The mismatches and the missing reference are <em>caller</em> faults, the rest facts about the
+ * addressed row; each carries a type so the handler can answer it with its own status instead of the
+ * {@code 500} a bare {@code RuntimeException} gets.
  *
  * <p>A message is not enough: a bare {@code RuntimeException} saying "no row matched" is
  * indistinguishable, to the emitted handler, from an infrastructure failure, so a {@code PUT} or
@@ -114,6 +121,26 @@ public class KernelErrorGenerator implements KernelArtifactGenerator {
     }
 
     /**
+     * {@code <Entity>ReferenceNotFoundException}, or {@code null} for an entity that references no
+     * entity of the build — whose writes no foreign key checks.
+     */
+    static ClassName referenceNotFoundType(DomainMetadata metadata, List<DomainMetadata> build) {
+        return ForeignKeys.refusesMissingReference(metadata, build)
+                ? ClassName.get(errorPackage(metadata), metadata.entityName() + "ReferenceNotFoundException")
+                : null;
+    }
+
+    /**
+     * {@code <Entity>StillReferencedException}, or {@code null} for an entity no entity of the build
+     * references, or whose delete keeps the row.
+     */
+    static ClassName stillReferencedType(DomainMetadata metadata, List<DomainMetadata> build) {
+        return ForeignKeys.refusesReferencedDelete(metadata, build)
+                ? ClassName.get(errorPackage(metadata), metadata.entityName() + "StillReferencedException")
+                : null;
+    }
+
+    /**
      * The registry's single-file entry point. {@link #generateMultiple} is the real one: a
      * versioned entity gets two types, and two public top-level classes cannot share a file.
      */
@@ -122,8 +149,14 @@ public class KernelErrorGenerator implements KernelArtifactGenerator {
         return notFound(metadata);
     }
 
+    /** The entity as a build of its own: only a reference to itself is a foreign key. */
     @Override
     public List<GeneratedFile> generateMultiple(DomainMetadata metadata) {
+        return generateMultiple(metadata, List.of(metadata));
+    }
+
+    @Override
+    public List<GeneratedFile> generateMultiple(DomainMetadata metadata, List<DomainMetadata> build) {
         List<GeneratedFile> files = new ArrayList<>();
         files.add(notFound(metadata));
         if (metadata.versioned()) {
@@ -134,6 +167,14 @@ public class KernelErrorGenerator implements KernelArtifactGenerator {
         }
         if (sharedScopeMismatchType(metadata) != null) {
             files.add(sharedScopeMismatch(metadata));
+        }
+        ClassName referenceNotFound = referenceNotFoundType(metadata, build);
+        if (referenceNotFound != null) {
+            files.add(referenceNotFound(metadata, referenceNotFound));
+        }
+        ClassName stillReferenced = stillReferencedType(metadata, build);
+        if (stillReferenced != null) {
+            files.add(stillReferenced(metadata, stillReferenced));
         }
         return List.copyOf(files);
     }
@@ -229,6 +270,56 @@ public class KernelErrorGenerator implements KernelArtifactGenerator {
                         .addJavadoc("The shared scope the rejected write was tagged with.\n")
                         .addStatement("return sharedScope")
                         .build())
+                .build();
+        return emit(self, type);
+    }
+
+    private GeneratedFile referenceNotFound(DomainMetadata metadata, ClassName self) {
+        TypeSpec type = exception(self)
+                .addField(FieldSpec.builder(String.class, "relation", Modifier.PRIVATE, Modifier.FINAL).build())
+                .addJavadoc("Raised when a written $L names, through a relationship, a row that does\n",
+                        metadata.entityName())
+                .addJavadoc("not exist: the database refused the write on the relationship's foreign key.\n")
+                .addJavadoc("\n<p>The generated handler answers {@code 422 Unprocessable Content} for this,\n")
+                .addJavadoc("with a problem body naming the relationship (ADR-076 Amendment 1): the body\n")
+                .addJavadoc("is well formed, and the row it points at is the caller's to correct.\n")
+                .addJavadoc("\n<p>Generated by Exeris Codegen. DO NOT EDIT.\n")
+                .addMethod(MethodSpec.constructorBuilder()
+                        .addModifiers(Modifier.PUBLIC)
+                        .addParameter(String.class, "relation")
+                        .addParameter(Throwable.class, "cause")
+                        .addStatement("super($S + relation + $S, cause)", metadata.entityName() + " names through ",
+                                " a row that does not exist")
+                        .addStatement("this.relation = relation")
+                        .build())
+                .addMethod(MethodSpec.methodBuilder("relation")
+                        .addModifiers(Modifier.PUBLIC)
+                        .returns(String.class)
+                        .addJavadoc("The relationship whose foreign key refused the write: the field the\n")
+                        .addJavadoc("request body named the missing row through.\n")
+                        .addStatement("return relation")
+                        .build())
+                .build();
+        return emit(self, type);
+    }
+
+    private GeneratedFile stillReferenced(DomainMetadata metadata, ClassName self) {
+        TypeSpec type = rowException(self)
+                .addJavadoc("Raised when a delete of a $L is refused because other rows still reference\n",
+                        metadata.entityName())
+                .addJavadoc("it through a foreign key.\n")
+                .addJavadoc("\n<p>The generated handler answers {@code 409 Conflict} for this (ADR-076\n")
+                .addJavadoc("Amendment 1): the row exists, and the delete can succeed once the rows that\n")
+                .addJavadoc("reference it are removed or point elsewhere.\n")
+                .addJavadoc("\n<p>Generated by Exeris Codegen. DO NOT EDIT.\n")
+                .addMethod(MethodSpec.constructorBuilder()
+                        .addModifiers(Modifier.PUBLIC)
+                        .addParameter(UUID, "id")
+                        .addParameter(Throwable.class, "cause")
+                        .addStatement("super($S + id, cause)", metadata.entityName() + " is still referenced: ")
+                        .addStatement("this.id = id")
+                        .build())
+                .addMethod(idAccessor())
                 .build();
         return emit(self, type);
     }
