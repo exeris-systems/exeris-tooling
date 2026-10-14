@@ -4,7 +4,7 @@ type: roadmap
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-13
+last-verified: 2026-10-14
 ---
 
 # Exeris Tooling — Roadmap to 1.0.0 GA
@@ -4047,6 +4047,11 @@ enters only if its upstream half is final first.
       compared with CRLF folded to LF, and a replaced file that is CRLF on disk (a line ending, every LF
       preceded by CR) is written as CRLF; a mixed file is written as LF.
 - [x] The removals below.
+- [ ] **Pre-cut end-to-end matrix** (#371): the generated sample app's `ng build` and `ng test` now
+      also cover a UNIVERSE entity (`Listing`, with its `@SharedScope` field `scopeId` and a foreign
+      key into `Product`), a `readOnly` field (`Product.sku`) and a `required` + `readOnly` field
+      (`Product.catalogCode`). Open: the booted Java matrix in `exeris-e2e-tests` and the Java-side
+      parity fixtures.
 - [ ] **`exeris-initializr`** (ADR-091 Amendment 5; does not hold the cut): a launchable jar that writes
       a new project on `exeris-app-parent` and `exeris-app-starter`, backend-only or e2e, PostgreSQL by
       default, with the two-pass first build scripted, and two invoker fixtures that build what it
