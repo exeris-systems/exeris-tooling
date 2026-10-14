@@ -201,4 +201,25 @@ class ServerOwnedFieldsTest {
                 .systemFields(SystemFieldsMetadata.builder().versionField("rev").build()).build()))
                 .isEqualTo("rev");
     }
+
+    @Test
+    @DisplayName("a version is 32-bit only when the entity declares its version field as int or Integer")
+    void integerVersionIsOnlyADeclaredOne() {
+        assertThat(ServerOwnedFields.hasIntegerVersion(versionOf("Integer"))).isTrue();
+        assertThat(ServerOwnedFields.hasIntegerVersion(versionOf("int"))).isTrue();
+        assertThat(ServerOwnedFields.hasIntegerVersion(versionOf("java.lang.Integer"))).isTrue();
+        assertThat(ServerOwnedFields.hasIntegerVersion(versionOf("Long"))).isFalse();
+        assertThat(ServerOwnedFields.hasIntegerVersion(versionOf("String"))).isFalse();
+        assertThat(ServerOwnedFields.hasIntegerVersion(DomainMetadata.builder("Order", "com.example.domain")
+                .versioned(true).build())).isFalse();
+        assertThat(ServerOwnedFields.hasIntegerVersion(DomainMetadata.builder("Order", "com.example.domain")
+                .versioned(true)
+                .systemFields(SystemFieldsMetadata.builder().versionField("rev").build())
+                .fields(List.of(FieldMetadata.builder("rev", "Integer").build())).build())).isTrue();
+    }
+
+    private static DomainMetadata versionOf(String type) {
+        return DomainMetadata.builder("Order", "com.example.domain").versioned(true)
+                .fields(List.of(FieldMetadata.builder("version", type).build())).build();
+    }
 }

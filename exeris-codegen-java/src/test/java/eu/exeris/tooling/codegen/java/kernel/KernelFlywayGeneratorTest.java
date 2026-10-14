@@ -563,4 +563,23 @@ class KernelFlywayGeneratorTest {
     private static long versionNumber(String className) {
         return Long.parseLong(className.substring(1, className.indexOf("__")));
     }
+
+    @Test
+    @DisplayName("The version column is INTEGER for a declared 32-bit version field and BIGINT otherwise")
+    void versionColumnFollowsTheDeclaredWidth() {
+        FieldMetadata title = FieldMetadata.builder("title", "String").build();
+
+        assertThat(sqlOfVersioned(title, FieldMetadata.builder("version", "Integer").build()))
+                .contains("    version INTEGER DEFAULT 0").doesNotContain("BIGINT");
+        assertThat(sqlOfVersioned(title, FieldMetadata.builder("version", "int").build()))
+                .contains("    version INTEGER DEFAULT 0");
+        assertThat(sqlOfVersioned(title, FieldMetadata.builder("version", "Long").build()))
+                .contains("    version BIGINT DEFAULT 0");
+        assertThat(sqlOfVersioned(title)).contains("    version BIGINT DEFAULT 0");
+    }
+
+    private String sqlOfVersioned(FieldMetadata... fields) {
+        return generator.generate(DomainMetadata.builder("Order", "eu.exeris.app.domain")
+                .versioned(true).fields(List.of(fields)).build()).content();
+    }
 }

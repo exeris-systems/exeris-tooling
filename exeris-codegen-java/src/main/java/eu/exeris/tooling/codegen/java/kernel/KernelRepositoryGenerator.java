@@ -131,6 +131,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      * autoboxes, a wrapper does not) while a primitive local would NPE on a null wrapper.
      */
     private static final ClassName BOXED_LONG = ClassName.get("java.lang", "Long");
+    private static final ClassName BOXED_INT = ClassName.get("java.lang", "Integer");
 
     private static final String SPI_PERSISTENCE_PKG = "eu.exeris.kernel.spi.persistence";
     private static final ClassName TRANSACTIONAL_EXECUTOR =
@@ -584,7 +585,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             cols.add(new Column(toSnakeCase(sys.deleted()), sys.deleted(), "boolean", ColumnKind.DELETED));
         }
         if (metadata.versioned()) {
-            cols.add(new Column(toSnakeCase(sys.version()), sys.version(), "Long", ColumnKind.VERSION));
+            cols.add(new Column(toSnakeCase(sys.version()), sys.version(),
+                    ServerOwnedFields.hasIntegerVersion(metadata) ? "Integer" : "Long", ColumnKind.VERSION));
         }
         return cols;
     }
@@ -1476,9 +1478,13 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             // `Long`; assigning straight into a `long` NPEs on a null wrapper, and a null guard is
             // not expressible on a primitive. Boxing accepts both, and treating a null as 0 makes
             // a wrapper-typed field behave exactly like the primitive it shadows.
-            update.addStatement("$T currentVersion = entity.$L()", BOXED_LONG, getterFor(versionColumn));
-            update.addStatement("long expectedVersion = currentVersion == null ? 0L : currentVersion");
-            update.addStatement("entity.$L(expectedVersion + 1L)", setterFor(versionColumn));
+            // The width is the declared field's: a 32-bit field takes an int, so no long is
+            // ever assigned to it.
+            boolean narrow = ServerOwnedFields.hasIntegerVersion(ctx.metadata());
+            update.addStatement("$T currentVersion = entity.$L()", boxedVersion(narrow), getterFor(versionColumn));
+            update.addStatement("$L expectedVersion = currentVersion == null ? $L : currentVersion",
+                    narrow ? "int" : "long", narrow ? "0" : "0L");
+            update.addStatement("entity.$L(expectedVersion + $L)", setterFor(versionColumn), narrow ? "1" : "1L");
         } else if (isTenantPartitioned(ctx.metadata()) || !stored.isEmpty() || ctx.metadata().softDelete()
                 || twoPaths) {
             // A summary sentence, so the <p> paragraphs below do not open the doc comment.
@@ -1669,7 +1675,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             // text rendering of timestamptz.
             case CREATED_AT, UPDATED_AT -> map.addStatement("$L(row.getInstant($L))", setter, idx);
             case DELETED -> map.addStatement("$L(row.getBoolean($L))", setter, idx);
-            case VERSION -> map.addStatement("$L(row.getLong($L))", setter, idx);
+            case VERSION -> map.addStatement(ServerOwnedFields.hasIntegerVersion(ctx.metadata())
+                    ? "$L(row.getInt($L))" : "$L(row.getLong($L))", setter, idx);
             case DOMAIN -> emitReadDomain(map, col, idx, ctx);
         }
     }
@@ -1782,7 +1789,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         body.addStatement("stmt.bindUuid($L, id)", idx);
         idx++;
         if (versioned) {
-            body.addStatement("stmt.bindLong($L, expectedVersion)", idx);
+            body.addStatement(ServerOwnedFields.hasIntegerVersion(metadata)
+                    ? "stmt.bindInt($L, expectedVersion)" : "stmt.bindLong($L, expectedVersion)", idx);
         }
     }
 
@@ -1805,11 +1813,18 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             // primitive, so unboxing it would throw before the row is written.
             case VERSION -> {
                 String local = col.javaName() + "Value";
-                body.addStatement("$T $L = $L.$L()", BOXED_LONG, local, src, accessor);
-                body.addStatement("stmt.bindLong($L, $L == null ? 0L : $L)", idx, local, local);
+                boolean narrow = ServerOwnedFields.hasIntegerVersion(metadata);
+                body.addStatement("$T $L = $L.$L()", boxedVersion(narrow), local, src, accessor);
+                body.addStatement("stmt.$L($L, $L == null ? $L : $L)", narrow ? "bindInt" : "bindLong", idx,
+                        local, narrow ? "0" : "0L", local);
             }
             case DOMAIN -> emitBindDomain(body, col, idx, src, metadata);
         }
+    }
+
+    /** The wrapper a version is read into: {@code Integer} for a 32-bit field, else {@code Long}. */
+    private static ClassName boxedVersion(boolean narrow) {
+        return narrow ? BOXED_INT : BOXED_LONG;
     }
 
     private void emitBindDomain(CodeBlock.Builder body, Column col, int idx, String src, DomainMetadata metadata) {

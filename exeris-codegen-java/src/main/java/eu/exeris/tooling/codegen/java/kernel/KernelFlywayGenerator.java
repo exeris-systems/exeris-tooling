@@ -5,6 +5,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.Artifact
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
+import eu.exeris.tooling.codegen.java.support.ServerOwnedFields;
 import eu.exeris.tooling.codegen.java.support.SqlColumnTypes;
 import static eu.exeris.tooling.codegen.java.support.DataScopeSupport.isTenantPartitioned;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
@@ -250,7 +251,8 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
             columns.add("    " + sysCol(metadata, "deletedBy") + " VARCHAR(255)");
         }
         if (metadata.versioned()) {
-            columns.add("    " + sysCol(metadata, "version") + " BIGINT DEFAULT 0");
+            columns.add("    " + sysCol(metadata, "version")
+                    + (ServerOwnedFields.hasIntegerVersion(metadata) ? " INTEGER" : " BIGINT") + " DEFAULT 0");
         }
         return columns;
     }
