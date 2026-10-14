@@ -170,14 +170,25 @@ const domains = [
   // Its required foreign key to `Component` is picked from that entity's records: the form imports
   // the target's service beside the framework's `Component`, and a required picker offers no empty
   // choice.
+  // Its fields typed by other entities, as the processor writes them, carry the nested records the
+  // server sends: a required `Component`, whose type the module names `ComponentModel`, and a list
+  // of `Tag`, which references Address back. `geo` is a value type the metadata does not describe,
+  // `unknown` in the DTO. None of them has a form control; the list and detail show them as text.
+  // The action takes a `Component`, so the service imports its type.
   d({
     entityName: 'Address',
     fields: [
       { name: 'id', type: 'java.util.UUID' },
       { name: 'city', type: 'String' },
       { name: 'componentId', type: 'java.util.UUID', required: true },
+      { name: 'component', type: 'com.shop.Component', required: true },
+      { name: 'tags', type: 'java.util.List<com.shop.Tag>' },
+      { name: 'geo', type: 'com.shop.GeoPoint' },
     ],
     relationships: [{ name: 'componentId', targetEntity: 'Component', type: 'MANY_TO_ONE', displayField: 'name' }],
+    actions: [{ name: 'reassign', methodName: 'reassign', params: [{ name: 'component', type: 'com.shop.Component' }] }],
+    // Its event payload names the same types, and the event handler imports them.
+    events: [{ name: 'AddressMoved', payloadFields: ['id', 'component', 'geo'] }],
   }),
   // Named for the overrides, not for the shop: the fixture entity whose systemFields block renames
   // the soft-delete trio and the primary key.
@@ -242,6 +253,8 @@ const domains = [
       { name: 'label', type: 'String', searchable: true },
       { name: 'pinned', type: 'Boolean', filterable: true },
       { name: 'parentId', type: 'java.util.UUID' },
+      // The other half of Address's list of tags: the two schemas reference each other.
+      { name: 'address', type: 'com.shop.Address' },
     ],
     relationships: [{ name: 'parentId', targetEntity: 'Tag', type: 'MANY_TO_ONE' }],
     uiMetadata: { listView: true, detailView: false, createForm: false, editForm: true, searchable: false, filterable: false },

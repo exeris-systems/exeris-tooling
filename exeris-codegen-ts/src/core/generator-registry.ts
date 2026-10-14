@@ -81,6 +81,11 @@ export interface GeneratorContext {
   allDomains: DomainMetadata[];
   /** Enum metadata */
   enums: EnumMetadata[];
+  /**
+   * Whether `enums` is every enum the app's enum module declares, so that a type none of them
+   * names is not an enum. Without it a type is taken for an enum by its name (`TypeScope.enums`).
+   */
+  enumsComplete?: boolean;
 }
 
 export interface GeneratorConfig {

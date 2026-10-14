@@ -110,7 +110,10 @@ export function buildGeneratedFiles(
   // Hoisted above the per-entity loop: the event generator needs a context for BOTH its
   // per-entity handler and its app-wide bus, and building one per entity would be wasteful
   // and would give the two halves different views of the domain set.
-  const ctx = createGeneratorContext(config, domains);
+  // `enums` is every enum the emitted enum module declares, so a field type none of them names is
+  // not resolved to an enum (`TypeScope`).
+  const ctx = { ...createGeneratorContext(config, domains, enums), enumsComplete: true };
+  const typeScope = { domains, enums };
   const eventGenerator = new EventHandlerGenerator();
   const streamClientGenerator = new StreamClientGenerator();
   const actionStreamClientGenerator = new ActionStreamClientGenerator();
@@ -127,9 +130,9 @@ export function buildGeneratedFiles(
   }
 
   for (const domain of domains) {
-    appTree.push(...generateTypes(domain, config));
+    appTree.push(...generateTypes(domain, config, typeScope));
     if (config.generateServices) {
-      const service = generateService(domain, config);
+      const service = generateService(domain, config, typeScope);
       if (service) appTree.push(service);
       // SSE clients, one per stream route the kernel application serves: the live view at
       // GET {base}/stream for a realTimeApi entity, and POST {base}/{id}/actions/{kebab} for each

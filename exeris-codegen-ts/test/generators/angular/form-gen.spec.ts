@@ -584,7 +584,7 @@ describe('FormGenerator field rendering', () => {
     expect(content).toContain("import { TenantPlan, TenantPlanDisplayNames } from '../types/enums';");
   });
 
-  it('a qualified type the enum module does not declare is a text input with no enum import', () => {
+  it('a qualified type the enum module does not declare has no control and no enum import', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [
@@ -594,8 +594,9 @@ describe('FormGenerator field rendering', () => {
       ],
     }), ENUM_CTX)!.content;
 
+    // The DTO carries each as `unknown` (or as the entity it names), which no control holds.
     for (const name of ['address', 'ref', 'payment']) {
-      expect(content).toContain(`type="text" [formField]="form.${name}"`);
+      expect(content).not.toContain(`form.${name}`);
     }
     expect(content).not.toContain('<select');
     expect(content).not.toContain("from '../types/enums'");

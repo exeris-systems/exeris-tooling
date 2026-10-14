@@ -17,6 +17,7 @@ import type { BackendType } from '../../core/backend-strategy.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import { tsSingleQuoted } from './ts-literal.js';
 import { fileHeader } from '../file-header.js';
+import { mapScopedType, typeOnlyImports, typeScopeOf, type TypeScope } from '../../core/type-references.js';
 
 
 /**
@@ -68,11 +69,14 @@ export class EventHandlerGenerator implements CodeGenerator {
     ];
   }
 
-  private generateEventHandlerContent(domain: DomainMetadata, _context: GeneratorContext): string {
+  private generateEventHandlerContent(domain: DomainMetadata, context: GeneratorContext): string {
     const { entityName, events = [] } = domain;
+    const scope = typeScopeOf(context);
 
     const eventTypes = events.map(e => `'${e.name}'`).join(' | ');
-    const eventInterfaces = this.generateEventInterfaces(events, domain);
+    const eventInterfaces = this.generateEventInterfaces(events, domain, scope);
+    // The enums and entities the payload interfaces name.
+    const payloadImports = typeOnlyImports(payloadFieldTypes(domain), scope, '../types');
     const eventHandlers = this.generateEventHandlers(events, entityName);
 
     return `${fileHeader({
@@ -92,7 +96,7 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { Subject, Observable, filter, map } from 'rxjs';
-import { EventBusService, DomainEvent } from './event-bus.service';
+import { EventBusService, DomainEvent } from './event-bus.service';${payloadImports.map((line) => `\n${line}`).join('')}
 
 // ============================================================================
 // Event Types
@@ -252,7 +256,7 @@ ${events.map(e => `      case '${e.name}':
 `;
   }
 
-  private generateEventInterfaces(events: DomainEventMetadata[], domain: DomainMetadata): string {
+  private generateEventInterfaces(events: DomainEventMetadata[], domain: DomainMetadata, scope: TypeScope): string {
     const entityName = domain.entityName;
     // The event carries the RESOLVED payload field NAMES (event.payloadFields, entity-declaration
     // order). Resolve each name's type against domain.fields so the emitted <Entity><Event>Payload
@@ -278,7 +282,7 @@ ${events.map(e => `      case '${e.name}':
           // include of a system/derived field not in domain.fields)
           // falls back to `unknown` rather than emitting a dangling
           // reference — keeps the interface tsc-clean.
-          const tsType = field ? DslMapper.mapType(field.type).tsType : 'unknown';
+          const tsType = field ? mapScopedType(field.type, scope).tsType : 'unknown';
           // Sensitive fields are redacted before publish; mark them so
           // consumers know the value may be masked.
           const suffix = sensitive.has(name) ? ' // sensitive: redacted before publish' : '';
@@ -654,3 +658,11 @@ export function generateEventHandler(
   return generator.generate(domain, context);
 }
 
+
+/** The types of the entity fields its events' payloads name, in declaration order. */
+function payloadFieldTypes(domain: DomainMetadata): string[] {
+  const fieldByName = new Map(domain.fields.map((f) => [f.name, f] as const));
+  return (domain.events ?? []).flatMap((event) => (event.payloadFields ?? [])
+    .map((name) => fieldByName.get(name)?.type)
+    .filter((type): type is string => type !== undefined));
+}
