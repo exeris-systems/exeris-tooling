@@ -11,10 +11,10 @@
 import { describe, expect, it } from 'vitest';
 import { generatePeerTypes, peerRoot } from '../../../src/generators/api/peer-type-gen.js';
 import { DEFAULT_CONFIG } from '../../../src/config.js';
-import { DomainMetadataSchema } from '../../../src/models/domain-model.js';
 import type { PeerContract } from '../../../src/peers/peer-contract.js';
+import { parseOffered } from '../../support/offered.js';
 
-const order = DomainMetadataSchema.parse({
+const order = parseOffered({
   packageName: 'com.billing',
   entityName: 'Order',
   displayName: 'Billing Order',
@@ -75,7 +75,7 @@ describe('generatePeerTypes', () => {
   // A peer is a generated app too: its server owns the owner exactly as ours does, so the
   // peer's Create shape and create schema omit it, like the local DTO.
   it('omits a tenant-partitioned peer\'s owner from the Create shape and create schema', () => {
-    const fleet = DomainMetadataSchema.parse({
+    const fleet = parseOffered({
       packageName: 'com.billing',
       entityName: 'Fleet',
       dataScope: 'TENANT',
@@ -99,7 +99,7 @@ describe('generatePeerTypes', () => {
   // The name a systemFields block gives a role is a role name whatever the data scope, so the
   // create body of a GLOBAL peer entity leaves it out, and keeps a tenantId no block names.
   it('leaves out the tenantId a GLOBAL peer entity\'s block names, and keeps one it does not', () => {
-    const fleet = DomainMetadataSchema.parse({
+    const fleet = parseOffered({
       packageName: 'com.billing',
       entityName: 'Fleet',
       dataScope: 'GLOBAL',
@@ -115,7 +115,7 @@ describe('generatePeerTypes', () => {
     expect(types.slice(types.indexOf('export interface FleetCreate'))).not.toContain('tenantId?: string;');
     expect(schema.slice(schema.indexOf('FleetCreateSchema'), schema.indexOf('FleetUpdateSchema'))).toContain('tenantId: true');
 
-    const unnamed = DomainMetadataSchema.parse({ ...fleet, systemFields: undefined });
+    const unnamed = parseOffered({ ...fleet, systemFields: undefined });
     const kept = generatePeerTypes({ ...billing, domains: [unnamed] }, { ...DEFAULT_CONFIG, generateZod: true });
     expect(byPath(kept, 'types/fleet.types.ts').slice(byPath(kept, 'types/fleet.types.ts').indexOf('export interface FleetCreate')))
       .toContain('tenantId?: string;');
@@ -165,7 +165,7 @@ describe('generatePeerTypes', () => {
   it('renames an entity that collides with what an emitted module already binds (T40)', () => {
     const peer: PeerContract = {
       name: 'shipping',
-      domains: [DomainMetadataSchema.parse({ packageName: 'com.shipping', entityName: 'Component', fields: [{ name: 'id', type: 'java.util.UUID' }] })],
+      domains: [parseOffered({ packageName: 'com.shipping', entityName: 'Component', fields: [{ name: 'id', type: 'java.util.UUID' }] })],
       enums: [],
     };
     const types = byPath(generatePeerTypes(peer, DEFAULT_CONFIG), 'types/component.types.ts');
@@ -185,7 +185,7 @@ describe('peerRoot', () => {
 });
 
 describe('generatePeerTypes — versioned peer entity', () => {
-  const versioned: PeerContract = { ...billing, domains: [DomainMetadataSchema.parse({ ...order, versioned: true })] };
+  const versioned: PeerContract = { ...billing, domains: [parseOffered({ ...order, versioned: true })] };
 
   it('the peer Update type and schema carry the version, as the local emitter does', () => {
     const files = generatePeerTypes(versioned, { ...DEFAULT_CONFIG, generateZod: true });

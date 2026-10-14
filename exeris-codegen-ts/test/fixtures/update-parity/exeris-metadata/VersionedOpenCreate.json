@@ -5,16 +5,22 @@
   "fields": [
     {
       "name": "id",
-      "type": "java.util.UUID"
+      "type": "java.util.UUID",
+      "inCreate": true,
+      "inUpdate": true
     },
     {
       "name": "title",
-      "type": "java.lang.String"
+      "type": "java.lang.String",
+      "inCreate": true,
+      "inUpdate": true
     },
     {
       "name": "version",
       "type": "java.lang.Long",
-      "required": true
+      "required": true,
+      "inCreate": true,
+      "inUpdate": true
     }
   ]
 }

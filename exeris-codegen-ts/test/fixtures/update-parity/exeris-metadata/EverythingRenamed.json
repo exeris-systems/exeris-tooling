@@ -20,47 +20,69 @@
   "fields": [
     {
       "name": "pk",
-      "type": "java.util.UUID"
+      "type": "java.util.UUID",
+      "inCreate": true,
+      "inUpdate": true
     },
     {
       "name": "title",
-      "type": "java.lang.String"
+      "type": "java.lang.String",
+      "inCreate": true,
+      "inUpdate": true
     },
     {
       "name": "org",
-      "type": "java.util.UUID"
+      "type": "java.util.UUID",
+      "inCreate": true,
+      "inUpdate": true
     },
     {
       "name": "c1",
-      "type": "java.time.Instant"
+      "type": "java.time.Instant",
+      "inCreate": true,
+      "inUpdate": true
     },
     {
       "name": "c2",
-      "type": "java.lang.String"
+      "type": "java.lang.String",
+      "inCreate": true,
+      "inUpdate": true
     },
     {
       "name": "u1",
-      "type": "java.time.Instant"
+      "type": "java.time.Instant",
+      "inCreate": true,
+      "inUpdate": true
     },
     {
       "name": "u2",
-      "type": "java.lang.String"
+      "type": "java.lang.String",
+      "inCreate": true,
+      "inUpdate": true
     },
     {
       "name": "rev",
-      "type": "java.lang.Long"
+      "type": "java.lang.Long",
+      "inCreate": true,
+      "inUpdate": true
     },
     {
       "name": "d0",
-      "type": "boolean"
+      "type": "boolean",
+      "inCreate": true,
+      "inUpdate": true
     },
     {
       "name": "d1",
-      "type": "java.time.Instant"
+      "type": "java.time.Instant",
+      "inCreate": true,
+      "inUpdate": true
     },
     {
       "name": "d2",
-      "type": "java.lang.String"
+      "type": "java.lang.String",
+      "inCreate": true,
+      "inUpdate": true
     }
   ]
 }

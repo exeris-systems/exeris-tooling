@@ -52,7 +52,7 @@ function domain(overrides: Partial<DomainMetadata> & { entityName: string }): Do
 }
 
 function field(overrides: Partial<FieldMetadata> & { name: string; type: string }): FieldMetadata {
-  return FieldMetadataSchema.parse(overrides);
+  return FieldMetadataSchema.parse({ inCreate: true, inUpdate: true, ...overrides });
 }
 
 // ---------- CodeGenerator metadata ----------

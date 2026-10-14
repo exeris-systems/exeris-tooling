@@ -82,7 +82,7 @@ export function notInUpdateBody(metadata: DomainMetadata): string[] {
 export function fixedOnRequestUpdate(metadata: DomainMetadata): string[] {
   const roles = new Set(systemRoleFieldNames(metadata));
   return metadata.fields
-    .filter((f) => (f.readOnly || f.inUpdate === false) && !roles.has(f.name))
+    .filter((f) => (f.readOnly || !f.inUpdate) && !roles.has(f.name))
     .map((f) => f.name)
     .sort();
 }
@@ -108,7 +108,7 @@ export function omittedFromUpdate(metadata: DomainMetadata): string[] {
 export function omittedFromCreate(metadata: DomainMetadata): string[] {
   const names = new Set<string>(systemRoleFieldNames(metadata));
   for (const field of metadata.fields) {
-    if (field.readOnly || field.inCreate === false) names.add(field.name);
+    if (field.readOnly || !field.inCreate) names.add(field.name);
   }
   return [...names].sort();
 }

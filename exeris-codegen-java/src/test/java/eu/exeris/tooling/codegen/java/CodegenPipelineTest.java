@@ -7,6 +7,7 @@ import eu.exeris.sdk.sourcemodel.ast.EnumMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ProvidesMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RequiresMetadata;
+import eu.exeris.tooling.codegen.core.MetadataLoader;
 import eu.exeris.tooling.codegen.core.capability.CapTierWallException;
 import eu.exeris.tooling.codegen.core.capability.CapabilityGraphException;
 import eu.exeris.tooling.codegen.core.capability.CapabilityModuleDescriptor;
@@ -40,6 +41,7 @@ import java.util.logging.Logger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 /**
  * Covers {@link CodegenPipeline} — the production pipeline split out of the
@@ -630,6 +632,27 @@ class CodegenPipelineTest {
     @Nested
     @DisplayName("metadata loader filters")
     class LoaderFilters {
+
+        @Test
+        @DisplayName("a field without inCreate and inUpdate keys is left out of both bodies, as MetadataLoader reads it")
+        void absentLifecycleFlagsReadAsFalse() throws IOException {
+            Files.writeString(metadataDir.resolve("Product.json"), """
+                    {"entityName":"Product","packageName":"com.shop.domain","module":"catalog","path":"/products",
+                     "fields":[{"name":"title","type":"String"},
+                               {"name":"sku","type":"String","inCreate":true,"inUpdate":true}]}
+                    """);
+
+            List<FieldMetadata> viaPipeline = pipeline.loadMetadata(metadataDir).getFirst().fields();
+            Path classes = Files.createDirectories(outputDir.resolve("classes"));
+            Files.copy(metadataDir.resolve("Product.json"),
+                    Files.createDirectories(classes.resolve(MetadataLoader.METADATA_DIR)).resolve("Product.json"));
+            List<FieldMetadata> viaLoader = new MetadataLoader(classes)
+                    .loadAll(DomainMetadata.class).getFirst().fields();
+
+            assertThat(viaPipeline).extracting(FieldMetadata::name, FieldMetadata::inCreate, FieldMetadata::inUpdate)
+                    .containsExactly(tuple("title", false, false), tuple("sku", true, true));
+            assertThat(viaLoader).isEqualTo(viaPipeline);
+        }
 
         @Test
         @DisplayName("files prefixed with enum_ are skipped (enum metadata, not domain)")
