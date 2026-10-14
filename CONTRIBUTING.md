@@ -54,8 +54,10 @@ mvn -pl exeris-e2e-tests -am verify -Pe2e-postgres \
 docker stop exeris-e2e-pg
 ```
 
-The login must be allowed to create schemas and roles. Each class creates its own schema and a
-`NOSUPERUSER NOBYPASSRLS` role to act as, and drops both afterwards.
+The login must be allowed to create schemas and roles. Each class creates its own schema and drops
+it afterwards. `SharedScopePostgresE2ETest` and `TenantIsolationPostgresBootE2ETest` also create a
+`NOSUPERUSER NOBYPASSRLS` role to act as and drop it afterwards; `PostgresTypeMatrixE2ETest`
+creates no role.
 
 ### Javadoc gate
 
