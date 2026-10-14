@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -98,6 +99,17 @@ class ProjectWriterTest {
 
         ProjectWriter.writeArchive(TREE, "demo", archive, true);
         assertThat(entries(archive)).hasSize(3);
+    }
+
+    @Test
+    @DisplayName("a write that fails leaves neither an archive nor a staging file")
+    void failedWriteLeavesNothing() throws IOException {
+        Path archive = tmp.resolve("broken.zip");
+        assertThatThrownBy(() -> ProjectWriter.writeArchive(TREE, "a/b", archive, false))
+                .isInstanceOf(IllegalArgumentException.class);
+        try (Stream<Path> left = Files.list(tmp)) {
+            assertThat(left).isEmpty();
+        }
     }
 
     private static List<String> entries(Path archive) throws IOException {

@@ -8,6 +8,7 @@ import java.io.OutputStream;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.EnumSet;
@@ -72,7 +73,8 @@ public final class ProjectWriter {
 
     /**
      * Writes the tree as a ZIP archive whose entries sit under one root directory, creating the
-     * archive's parent directories as needed.
+     * archive's parent directories as needed. The archive is written to a staging file beside it
+     * and moved into place, so a failed write leaves no archive behind.
      *
      * @param tree    the files to archive
      * @param root    the directory every entry is placed under, a single path segment
@@ -89,12 +91,25 @@ public final class ProjectWriter {
         if (parent != null) {
             Files.createDirectories(parent);
         }
-        StandardOpenOption create = force ? StandardOpenOption.CREATE : StandardOpenOption.CREATE_NEW;
-        try (OutputStream out = Files.newOutputStream(archive, create, StandardOpenOption.TRUNCATE_EXISTING,
-                StandardOpenOption.WRITE)) {
-            ZipArchiveGenerator.write(tree, root, out);
+        if (!force && Files.exists(archive)) {
+            throw new TargetExistsException(archive, "exists");
+        }
+        Path staging = Files.createTempFile(parent != null ? parent : Path.of("."),
+                "." + archive.getFileName(), ".partial");
+        try {
+            try (OutputStream out = Files.newOutputStream(staging, StandardOpenOption.TRUNCATE_EXISTING,
+                    StandardOpenOption.WRITE)) {
+                ZipArchiveGenerator.write(tree, root, out);
+            }
+            if (force) {
+                Files.move(staging, archive, StandardCopyOption.REPLACE_EXISTING);
+            } else {
+                Files.move(staging, archive);
+            }
         } catch (FileAlreadyExistsException e) {
             throw new TargetExistsException(archive, "exists", e);
+        } finally {
+            Files.deleteIfExists(staging);
         }
     }
 
