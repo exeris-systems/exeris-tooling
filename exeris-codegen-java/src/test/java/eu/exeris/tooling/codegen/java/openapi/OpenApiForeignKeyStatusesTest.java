@@ -33,7 +33,8 @@ class OpenApiForeignKeyStatusesTest {
             .versioned(true)
             .relationships(List.of(RelationshipMetadata.builder("customer", "Customer")
                     .type(RelationshipMetadata.RelationType.MANY_TO_ONE).build()))
-            .actions(List.of(ActionMetadata.builder("approve").methodName("approve").build()))
+            .actions(List.of(ActionMetadata.builder("approve").methodName("approve").build(),
+                    ActionMetadata.builder("ship").methodName("ship").streaming(true).build()))
             .build();
 
     private static final DomainMetadata ARCHIVE = DomainMetadata.builder("Archive", PACKAGE)
@@ -106,5 +107,19 @@ class OpenApiForeignKeyStatusesTest {
 
         assertThat(spec.getPaths().get("/customers/{id}").getDelete().getResponses()).containsKey("409");
         assertThat(spec.getPaths().get("/orders").getPost().getResponses()).containsKey("422");
+    }
+
+    @Test
+    @DisplayName("a streaming action declares no 422: the missing reference is a stream-error frame status")
+    void streamingActionNamesTheFrameStatus() {
+        var ship = OpenApiPathsBuilder.buildPaths(ORDER, BUILD).get("/orders/{id}/actions/ship").getPost();
+
+        assertThat(ship.getResponses()).containsOnlyKeys("200");
+        assertThat(ship.getDescription())
+                .contains("a relationship naming a row that does not exist, ")
+                .contains("with status 400, 404, 409, 422 or 500,");
+        assertThat(OpenApiPathsBuilder.buildPaths(ORDER).get("/orders/{id}/actions/ship").getPost().getDescription())
+                .contains("with status 400, 404, 409 or 500,")
+                .doesNotContain("422");
     }
 }
