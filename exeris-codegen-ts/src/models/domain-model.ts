@@ -40,8 +40,10 @@ export const FieldMetadataSchema = z.object({
   // generators; the default render path is unchanged when dataType is absent.
   dataType: z.string().optional(),
   enumType: z.string().optional(),
-  inCreate: z.boolean().default(true),
-  inUpdate: z.boolean().default(true),
+  // The processor's wire form omits a `false` (class-level NON_DEFAULT on a primitive), so an
+  // absent key is `false`; a hand-written file names `true` for a field the bodies offer.
+  inCreate: z.boolean().default(false),
+  inUpdate: z.boolean().default(false),
   computed: z.boolean().default(false),
   // The names of the fields a computed field is derived from.
   computedFrom: z.array(z.string()).optional(),

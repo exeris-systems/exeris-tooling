@@ -10,7 +10,8 @@ import ts from 'typescript';
 import { describe, it, expect } from 'vitest';
 import { TypeGenerator } from '../../../src/generators/api/type-gen.js';
 import { createGeneratorContext } from '../../../src/core/generator-registry.js';
-import { DomainMetadataSchema, type DomainMetadata } from '../../../src/models/domain-model.js';
+import { type DomainMetadata } from '../../../src/models/domain-model.js';
+import { parseOffered } from '../../support/offered.js';
 
 const ctx = createGeneratorContext({ generateZod: false });
 
@@ -37,7 +38,7 @@ function diagnostics(types: string, usage: string): string[] {
     .map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n'));
 }
 
-const ledger = DomainMetadataSchema.parse({
+const ledger = parseOffered({
   packageName: 'com.shop',
   entityName: 'Ledger',
   versioned: true,

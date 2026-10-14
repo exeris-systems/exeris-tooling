@@ -33,7 +33,8 @@ import {
   listQuerySystemFieldNames,
   sortableProperties,
 } from '../../../src/generators/angular/list-query.js';
-import { DomainMetadataSchema, type DomainMetadata } from '../../../src/models/domain-model.js';
+import { type DomainMetadata } from '../../../src/models/domain-model.js';
+import { parseOffered } from '../../support/offered.js';
 
 interface ListQueryContract {
   route: { operation: string; method: string; path: string };
@@ -70,7 +71,7 @@ const ENUMS = [{
  * declared names, a List field, the temporal kinds, an enum, the reserved names, a field the
  * metadata marks neither sortable nor filterable, and two MANY_TO_ONE keys, one carried by a field.
  */
-const order: DomainMetadata = DomainMetadataSchema.parse({
+const order: DomainMetadata = parseOffered({
   packageName: 'com.shop',
   entityName: 'Order',
   dataScope: 'TENANT',
@@ -164,13 +165,13 @@ describe('contract/list-query.json — the query the front sends', () => {
   });
 
   it('the picker and the related-records panels ask for a size within the bounds', () => {
-    const product = DomainMetadataSchema.parse({
+    const product = parseOffered({
       packageName: 'com.shop',
       entityName: 'Product',
       fields: [{ name: 'id', type: 'java.util.UUID' }],
       relationships: [{ name: 'lines', targetEntity: 'Line', type: 'ONE_TO_MANY' }],
     });
-    const line = DomainMetadataSchema.parse({
+    const line = parseOffered({
       packageName: 'com.shop',
       entityName: 'Line',
       fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'productId', type: 'java.util.UUID', required: true }],
@@ -237,7 +238,7 @@ describe('contract/list-query.json — which properties sort and filter', () => 
     expect([...SORTABLE_SCALAR_TYPES]).toEqual(contract.sortableScalarTypes);
     expect([...FILTERABLE_SCALAR_TYPES]).toEqual(contract.filterableScalarTypes);
     for (const type of contract.filterableScalarTypes) {
-      const d = DomainMetadataSchema.parse({
+      const d = parseOffered({
         packageName: 'com.shop',
         entityName: 'Probe',
         fields: [{ name: 'value', type, filterable: true }],
@@ -262,7 +263,7 @@ describe('contract/list-query.json — which properties sort and filter', () => 
 
   it('names a MANY_TO_ONE filter <base>Id whether or not the relationship name ends in Id', () => {
     for (const name of ['customer', 'customerId']) {
-      const d = DomainMetadataSchema.parse({
+      const d = parseOffered({
         packageName: 'com.shop',
         entityName: 'Invoice',
         relationships: [{ name, targetEntity: 'Customer', type: 'MANY_TO_ONE' }],
@@ -277,7 +278,7 @@ describe('contract/list-query.json — which properties sort and filter', () => 
       'version',
     ]);
     // A UNIVERSE entity's shared-scope field is server-owned too.
-    const universe = DomainMetadataSchema.parse({
+    const universe = parseOffered({
       packageName: 'com.shop',
       entityName: 'Doc',
       dataScope: 'UNIVERSE',
@@ -318,7 +319,7 @@ describe('contract/list-query.json — which properties sort and filter', () => 
 
 describe('contract/list-query.json — the kind of each listed type', () => {
   const field = (name: string, type: string) => ({ name, type, sortable: true, filterable: true });
-  const entity = (fields: ReturnType<typeof field>[]) => DomainMetadataSchema.parse({
+  const entity = (fields: ReturnType<typeof field>[]) => parseOffered({
     entityName: 'Probe', packageName: 'com.shop', fields: [{ name: 'id', type: 'java.util.UUID' }, ...fields],
   });
 

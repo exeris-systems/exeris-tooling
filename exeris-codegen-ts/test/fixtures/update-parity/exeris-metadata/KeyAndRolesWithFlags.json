@@ -13,22 +13,27 @@
     },
     {
       "name": "title",
-      "type": "java.lang.String"
+      "type": "java.lang.String",
+      "inCreate": true,
+      "inUpdate": true
     },
     {
       "name": "tenantId",
       "type": "java.util.UUID",
-      "inCreate": false
+      "inCreate": false,
+      "inUpdate": true
     },
     {
       "name": "version",
       "type": "java.lang.Long",
-      "inUpdate": false
+      "inUpdate": false,
+      "inCreate": true
     },
     {
       "name": "createdAt",
       "type": "java.time.Instant",
-      "inCreate": false
+      "inCreate": false,
+      "inUpdate": true
     }
   ]
 }

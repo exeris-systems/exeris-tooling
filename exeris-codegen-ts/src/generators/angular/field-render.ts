@@ -526,7 +526,7 @@ function isObjectValued(field: FieldMetadata, enums: readonly KnownEnum[]): bool
  */
 function formPlacement(field: FieldMetadata, system: boolean, enums: readonly KnownEnum[]): FormPlacement {
   if (LIFECYCLE_FIELDS.has(field.name) || system) return 'none';
-  if (field.inCreate === false && (field.inUpdate === false || field.computed)) return 'none';
+  if (!field.inCreate && (!field.inUpdate || field.computed)) return 'none';
   if (isCollectionType(field.type) || isObjectValued(field, enums)) return 'none';
   if (field.computed) return 'computed';
   if (field.hidden === true || field.readOnly === true) return 'none';
@@ -556,8 +556,8 @@ function formRender(
     ...(picker ? { picker } : {}),
     required: Boolean(field.required),
     readOnly: Boolean(field.readOnly),
-    inCreate: field.inCreate !== false,
-    inUpdate: field.inUpdate !== false,
+    inCreate: field.inCreate === true,
+    inUpdate: field.inUpdate === true,
     value,
     initialValue: formInitialValue(field, value),
     modelType: FORM_MODEL_TYPES[value],
