@@ -154,3 +154,17 @@ the platform now ships.
 2. **`VerifyCapabilitiesMojoTest.CapTierWallGuard`** pins the mojo control flow: run order versus graph validation, both skip toggles, the failure-type mapping, and the two readings of a gated-nothing outcome (a cap that was never scanned warns; a non-cap module stays silent).
 3. **GC3 (the 0.7.0 e2e composition proof)** adds the end-to-end half: a Wall-violating sample cap that must fail a real build. Predicate 4's negative path is not considered fully covered until that lands.
 4. **Migration:** nothing to migrate. No `exeris-caps-*` repository exists yet — this guard ships *before* the first cap, which is the only moment it can be introduced without a grandfathering window.
+
+## Amendments
+
+### 2026-10-15 — the `eu.exeris.kernel.core.*` open point is settled
+
+*What is NOT in scope* leaves open whether caps may use `eu.exeris.kernel.core.*`. The ADR-024
+amendment of 2026-10-15 ([exeris-docs#195](https://github.com/exeris-systems/exeris-docs/pull/195))
+settles it: the public, non-`internal` API of `exeris-kernel-core` is cap-facing beside the SPI, and
+`eu.exeris.kernel.**.internal.**` is not. That is the reading `CapTierWall` already enforces, so the
+guard's behaviour is unchanged.
+
+The same amendment forbids a cap's dependency on a kernel driver outside test scope. `CapTierWall`
+scans class references and does not check dependency declarations, so that clause is stated and not
+machine-enforced.
