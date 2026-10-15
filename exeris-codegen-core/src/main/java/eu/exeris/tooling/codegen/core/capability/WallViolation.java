@@ -26,10 +26,12 @@ public record WallViolation(String violatingClass, String forbiddenType, Rule ru
         HOST_RUNTIME("host-runtime package (host selection belongs to the SKU, not a cap)"),
 
         /**
-         * A kernel private package. Only the SPI surface is a supported cap-facing
-         * contract; reaching into internals couples the cap to a kernel patch release.
+         * A kernel private package, one with an {@code internal} segment. The SPI and the
+         * public API of {@code exeris-kernel-core} are the cap-facing contract; reaching into
+         * internals couples the cap to a kernel patch release.
          */
-        KERNEL_INTERNAL("kernel private package (only the kernel SPI surface is cap-facing)"),
+        KERNEL_INTERNAL(
+                "kernel private package (internal packages are not cap-facing; the SPI and the public Core API are)"),
 
         /**
          * Another cap's {@code internal} package. Cross-cap visibility runs through
