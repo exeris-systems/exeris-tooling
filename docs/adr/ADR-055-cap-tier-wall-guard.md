@@ -133,7 +133,7 @@ the platform now ships.
 
 ### 📋 What is NOT in scope
 
-- **Whether caps may use `eu.exeris.kernel.core.*` at all.** ADR-024 line 77 is internally ambiguous: its heading forbids "kernel private packages" (internals only), while its closing clause says "only the SPI surface (`eu.exeris.kernel.spi.*`) is callable from cap code" — which would ban all of `core.*`, including the tier-neutral `KernelWebClient` facade that ADR-034 deliberately placed there for generated code to bind. This ADR implements the **unambiguous intersection** (internals are forbidden) and leaves the stricter reading open, to be settled against the first real cap in Phase 2 rather than guessed at now. Choosing the strict reading today risks false-failing the first cap that touches `KernelWebClient`. *(Settled by the ADR-024 amendment of 2026-10-15, exeris-docs#195: the public, non-`internal` API of `exeris-kernel-core` is cap-facing beside the SPI, and `eu.exeris.kernel.**.internal.**` is not, which is the reading this ADR implements. The same amendment forbids a cap's dependency on a kernel driver outside test scope; `CapTierWall` scans class references and does not check dependency declarations, so that clause is stated and not machine-enforced.)*
+- **Whether caps may use `eu.exeris.kernel.core.*` at all.** ADR-024 line 77 is internally ambiguous: its heading forbids "kernel private packages" (internals only), while its closing clause says "only the SPI surface (`eu.exeris.kernel.spi.*`) is callable from cap code" — which would ban all of `core.*`, including the tier-neutral `KernelWebClient` facade that ADR-034 deliberately placed there for generated code to bind. This ADR implements the **unambiguous intersection** (internals are forbidden) and leaves the stricter reading open, to be settled against the first real cap in Phase 2 rather than guessed at now. Choosing the strict reading today risks false-failing the first cap that touches `KernelWebClient`.
 - **Enforcing the Wall across a cap's *dependencies*.** The scan covers the cap's own compiled output. Auditing a dependency's bytecode is a supply-chain concern with a different failure model.
 - **The per-repo ArchUnit guard set** shipped by the `exeris-caps-*` scaffold (ADR-024 obligation 3). It survives as defence-in-depth; this ADR only demotes it from primary gate.
 - **Boot-time enforcement.** ADR-024's body says "an SKU manifest that contains a cap with disabled or stale Wall guards is rejected by the kernel at boot". That clause is **stale** after the 2026-06-17 "Validation Stamp Lifecycle" amendment made the kernel cap-blind. The correct split — build-time Wall gate here, boot-time stamp assertion in the platform composition runtime — is what this ADR implements; it does not reopen that amendment.
@@ -154,3 +154,17 @@ the platform now ships.
 2. **`VerifyCapabilitiesMojoTest.CapTierWallGuard`** pins the mojo control flow: run order versus graph validation, both skip toggles, the failure-type mapping, and the two readings of a gated-nothing outcome (a cap that was never scanned warns; a non-cap module stays silent).
 3. **GC3 (the 0.7.0 e2e composition proof)** adds the end-to-end half: a Wall-violating sample cap that must fail a real build. Predicate 4's negative path is not considered fully covered until that lands.
 4. **Migration:** nothing to migrate. No `exeris-caps-*` repository exists yet — this guard ships *before* the first cap, which is the only moment it can be introduced without a grandfathering window.
+
+## Amendments
+
+### 2026-10-15 — the `eu.exeris.kernel.core.*` open point is settled
+
+*What is NOT in scope* leaves open whether caps may use `eu.exeris.kernel.core.*`. The ADR-024
+amendment of 2026-10-15 ([exeris-docs#195](https://github.com/exeris-systems/exeris-docs/pull/195))
+settles it: the public, non-`internal` API of `exeris-kernel-core` is cap-facing beside the SPI, and
+`eu.exeris.kernel.**.internal.**` is not. That is the reading `CapTierWall` already enforces, so the
+guard's behaviour is unchanged.
+
+The same amendment forbids a cap's dependency on a kernel driver outside test scope. `CapTierWall`
+scans class references and does not check dependency declarations, so that clause is stated and not
+machine-enforced.
