@@ -640,7 +640,7 @@ export class DslMapper {
    *
    * - ends in `s`, `x`, `z`, `ch` or `sh` → `+es` (`Status` → `Statuses`, `Box` → `Boxes`);
    * - ends in a consonant followed by `y` → `ies` (`Colony` → `Colonies`); a vowel before
-   *   the `y` takes a plain `s` (`Key` → `Keys`);
+   *   the `y`, in either case, takes a plain `s` (`Key` → `Keys`, `Ay` → `Ays`);
    * - anything else → `+s`.
    *
    * Nothing else is known: an irregular noun gets the regular ending (`Person` → `Persons`)
@@ -656,7 +656,7 @@ export class DslMapper {
       return `${entityName}es`;
     }
     if (entityName.endsWith('y') && entityName.length > 1
-        && !'aeiou'.includes(entityName.charAt(entityName.length - 2))) {
+        && !'aeiou'.includes(entityName.charAt(entityName.length - 2).toLowerCase())) {
       return `${entityName.slice(0, -1)}ies`;
     }
     return `${entityName}s`;
