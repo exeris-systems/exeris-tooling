@@ -22,26 +22,37 @@ on:
   pull_request:
     # labeled/unlabeled matter: a review is asked for by applying `needs-review`, and a person's
     # review is recorded by applying `human-reviewed`.
-    types: [opened, edited, synchronize, ready_for_review, labeled, unlabeled]
+    #
+    # `closed` is not a gate event and is here for one job: the judgement of ADR-087 §C.16, which
+    # reads what the human did with the review once there is a history to read. Every other job
+    # skips it explicitly — a gate on a pull request that can no longer merge decides nothing.
+    types: [opened, edited, synchronize, ready_for_review, labeled, unlabeled, closed]
 concurrency:
   group: guardrails-${{ github.event.pull_request.number }}
   # Not `true`. Publication removes the review label, and that removal is an `unlabeled` event whose
   # run would cancel the run still publishing. Bot-triggered runs queue instead of cancelling; human
   # pushes still collapse.
-  cancel-in-progress: ${{ !endsWith(github.actor, '[bot]') }}
+  # The close is kept out of the collapse by its own clause: the human who merges is no `[bot]`, so
+  # without it the merge cancels the run still publishing the verdict and the judgement after it.
+  cancel-in-progress: ${{ github.event.action != 'closed' && !endsWith(github.actor, '[bot]') }}
 # A called workflow can only NARROW what the caller grants, never raise it, so this block is the
 # union of what every called workflow declares. Omitting one does not run that job with less: it
 # makes the whole file an invalid workflow, rejected before any gate runs. The last two are
-# docs-review's: `id-token: write` for the OIDC exchange the review action performs, `issues: read`
+# review's: `id-token: write` for the OIDC exchange the review action performs, `issues: read`
 # for the debt issues a review finding becomes.
 permissions:
   contents: read
   pull-requests: read
   issues: read
   id-token: write
+  # `actions: read` belongs to `judge` alone: the judgement compares the commit a review READ with
+  # the head the pull request ended at, and the first is the reviewing run's own `head_sha`, which
+  # the platform states on the Actions API and nowhere else independent of the record being judged.
+  actions: read
 
 jobs:
   docs:
+    if: ${{ github.event.action != 'closed' }}
     uses: exeris-systems/.github/.github/workflows/docs-lint.yml@bfb55570c910290c92e1c537aab785a725997fa0 # exeris-systems/.github@main
     with:
       # ramp, not strict: in ramp the gate fails only on files the pull request touches. Measured on
@@ -51,8 +62,10 @@ jobs:
       # Off: docs/ holds no page typed `subsystem` or `module`, which is what the check reads.
       section-check: false
   commits:
+    if: ${{ github.event.action != 'closed' }}
     uses: exeris-systems/.github/.github/workflows/commit-lint.yml@bfb55570c910290c92e1c537aab785a725997fa0 # exeris-systems/.github@main
   pr-body:
+    if: ${{ github.event.action != 'closed' }}
     uses: exeris-systems/.github/.github/workflows/pr-body-check.yml@bfb55570c910290c92e1c537aab785a725997fa0 # exeris-systems/.github@main
   # The review of ADR-085 §J.33, published under the organisation's identity by ADR-087 §B.
   #
@@ -66,15 +79,31 @@ jobs:
   # marked ready for review, or labelled `needs-review` by a person. A push afterwards leaves the
   # standing verdict covering an older commit, and the check says so until a review is asked for
   # again.
-  docs-review:
+  review:
     needs: [docs, commits, pr-body]
-    if: ${{ always() }}
-    uses: exeris-systems/.github/.github/workflows/docs-review.yml@bfb55570c910290c92e1c537aab785a725997fa0 # exeris-systems/.github@main
+    if: ${{ always() && github.event.action != 'closed' }}
+    uses: exeris-systems/.github/.github/workflows/review.yml@210e9a398349e89729fe06a16b5d89461f18e533 # exeris-systems/.github@main
     with:
-      # `docs-review / publish / verdict` is the check this adds, red when the verdict is BLOCKED,
+      # `review / verdict` is the check this adds, red when the verdict is BLOCKED,
       # absent, invalid, or resting on a mandatory gate that did not run. It is not a required
       # context here; making it one is a branch-protection change, not a change to this file.
       publish: true
+      # CAPTURE IS THE SECOND OPT-IN, and a separate decision from the first. With it on, the run
+      # becomes a row in the organisation's execution dataset (ADR-087 §C.13-§C.17): the runner's
+      # execution log is committed to the streams repository as content, a run record is assembled
+      # from what the producing job exported about itself, and the day's rows reach the inbox as
+      # one pull request per repository per day.
+      #
+      # IT RUNS INSIDE THE PUBLISHING HALF, so it needs `publish: true` as well: with publication
+      # off there is no job for it to be a part of, and `capture: true` alone runs nothing and
+      # says nothing about having run nothing.
+      #
+      # It needs the two EXERIS_INBOX_* secrets below and NO new permission: the capture job reads
+      # the repository and the pull request, both of which the block at the top already grants, and
+      # every write goes through the App's installation token. Without the secrets the job reports
+      # that it has no identity to write under and writes nothing; the review and its gate are
+      # unaffected either way.
+      capture: true
       l1-results: >-
         {"docs-lint": "${{ needs.docs.result }}",
          "commit-lint": "${{ needs.commits.result }}",
@@ -99,9 +128,33 @@ jobs:
       # every pull request; `docs`, `records`, `code-docs` and `code` where the diff has their
       # files. A part that leaves no verdict makes the check red.
       review-in-parts: true
-    # Named, not `secrets: inherit`: the job needs three, and inherit would hand it every secret this
+    # Named, not `secrets: inherit`: the job needs five, and inherit would hand it every secret this
     # repository has.
     secrets:
       claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
       exeris_bot_app_id: ${{ secrets.EXERIS_BOT_APP_ID }}
       exeris_bot_private_key: ${{ secrets.EXERIS_BOT_PRIVATE_KEY }}
+      # THE PEN, which `capture: true` above writes with. A caller may pass only a secret the called
+      # workflow DECLARES: one it does not declare is not ignored, it makes the whole file an
+      # invalid workflow in the adopting repository, on the first push, with no logs — taking every
+      # gate in this file down with it, not only this job.
+      #
+      # They are optional exactly as the two lines above are: an organisation secret that is not set
+      # arrives as an empty string, and the capture job then says so and writes nothing. They are
+      # named rather than inherited for the reason the others are.
+      exeris_inbox_app_id: ${{ secrets.EXERIS_INBOX_APP_ID }}
+      exeris_inbox_private_key: ${{ secrets.EXERIS_INBOX_PRIVATE_KEY }}
+  # The other half of the record, and the only job here that runs on `closed`. A review-domain run
+  # record is complete when the review ends and its outcome is `UNKNOWN`: the oracle has not judged
+  # yet. `review-disposition` judges when the pull request closes — per finding, from what the human
+  # did with it — and its verdict is appended as its own record keyed by the run's id (ADR-087
+  # §C.16). It is not a gate: the pull request is closed, it publishes no check a branch protection
+  # rule can name, and it posts nothing to the pull request.
+  judge:
+    if: ${{ github.event.action == 'closed' }}
+    uses: exeris-systems/.github/.github/workflows/judge-review.yml@bfb55570c910290c92e1c537aab785a725997fa0 # exeris-systems/.github@main
+    secrets:
+      exeris_bot_app_id: ${{ secrets.EXERIS_BOT_APP_ID }}
+      exeris_bot_private_key: ${{ secrets.EXERIS_BOT_PRIVATE_KEY }}
+      exeris_inbox_app_id: ${{ secrets.EXERIS_INBOX_APP_ID }}
+      exeris_inbox_private_key: ${{ secrets.EXERIS_INBOX_PRIVATE_KEY }}
