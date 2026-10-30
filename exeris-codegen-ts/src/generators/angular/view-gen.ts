@@ -659,11 +659,12 @@ export function generateView(
     lines.push(`  protected readonly ${storeFieldName(ref)} = inject(${simple}Store);`);
   }
   // CUSTOM block props, parsed from the IR's JSON and bound as each block's `props` input.
+  // Emitted `as const` so literal types are preserved and union-typed inputs type-check.
   if (entityRefs.length > 0 && ctx.blockProps.length > 0) {
     lines.push('');
   }
   for (const field of ctx.blockProps) {
-    lines.push(`  protected readonly ${field.name} = ${field.literal};`);
+    lines.push(`  protected readonly ${field.name} = ${field.literal} as const;`);
   }
   // A store starts empty, so the page has to ask for its data. Without this the template renders a
   // correct, permanently blank screen — the failure mode that is hardest to tell from a backend that

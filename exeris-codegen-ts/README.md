@@ -163,8 +163,9 @@ so a relative specifier resolves from there. The component's selector must be th
 `customType`.
 
 A block's `@Block(props)` is JSON. It becomes a field of the page (`blockProps1`, `blockProps2`, …
-in template order) bound as `[props]="blockProps<N>"`, so the component declares an input named
-`props`. A block without props gets no binding.
+in template order) holding the JSON literal `as const`, bound as `[props]="blockProps<N>"`, so the
+component declares an input named `props`. Emitting `as const` preserves literal types so
+union-typed inputs type-check under strict templates. A block without props gets no binding.
 
 Generation fails when a view uses a CUSTOM block that declares no `customType`, whose `customType`
 has no entry, or whose props are not valid JSON; the message names the view and the block's place

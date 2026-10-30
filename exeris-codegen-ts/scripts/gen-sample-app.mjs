@@ -447,7 +447,7 @@ const statTile = {
 export interface StatTileProps {
   label?: string;
   value?: number;
-  tags?: string[];
+  tags?: readonly string[];
 }
 
 @Component({

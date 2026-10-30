@@ -280,5 +280,11 @@
     "since": "0.11",
     "adr": "ADR-015",
     "justification": "The generated handler binds only @ActionParam parameters from the request body, so an unannotated parameter was dropped and the generated call compiled against the wrong arity or another overload. The processor refuses it, naming the entity, the method and the parameter. An entity whose action parameters all carry @ActionParam generates as before, Java and TypeScript alike. docs/migration/0.11.0/java-04-action-param-required.md carries the step."
+  },
+  {
+    "signature": "pages/<view>.component.ts: CUSTOM block props field emits as const (protected readonly blockProps<N> = <JSON> as const)",
+    "since": "0.11",
+    "adr": "ADR-092",
+    "justification": "The emitted field keeps literal types so a custom component whose props input declares a literal union type (e.g. variant: 'primary' | 'secondary') type-checks under Angular strict templates instead of failing on a widened string. Arrays in the props become readonly, so a component input typed as a mutable array declares it readonly. A view without CUSTOM blocks, or a CUSTOM block with no props, is unchanged. docs/migration/0.11.0/ts-06-custom-block-props-as-const.md carries the step."
   }
 ]
