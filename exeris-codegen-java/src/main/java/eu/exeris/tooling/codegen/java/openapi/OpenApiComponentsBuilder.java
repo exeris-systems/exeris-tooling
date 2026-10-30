@@ -209,6 +209,9 @@ public final class OpenApiComponentsBuilder {
 
     /**
      * Whether an action declares any parameters bound from the request body.
+     *
+     * @param action the action to inspect
+     * @return {@code true} when at least one parameter is not bound from the query string
      */
     public static boolean hasBodyParams(ActionMetadata action) {
         if (!action.hasParams()) {
