@@ -1,0 +1,5 @@
+# Generated code and the expected outputs the tests compare it against are LF byte for byte on
+# every platform; a CRLF checkout of them would fail those comparisons.
+exeris-codegen-java/src/test/resources/** text eol=lf
+exeris-codegen-ts/test/**                 text eol=lf
+exeris-e2e-tests/src/test/resources/**    text eol=lf
