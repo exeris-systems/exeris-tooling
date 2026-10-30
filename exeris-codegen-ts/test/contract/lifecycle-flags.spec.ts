@@ -2,7 +2,7 @@
  * The TypeScript `Create` and `Update` types of an entity written by the real processor, against the
  * Java bodies. `exeris-e2e-tests/src/test/resources/contract/lifecycle-flags/` holds the fields the
  * processor writes for a `@Field(inCreate = false)` and a `@Field(inUpdate = false)` field (a false
- * flag is an absent key on the wire) and the property names of the Java create and update bodies;
+ * flag is written as an explicit `false`) and the property names of the Java create and update bodies;
  * `LifecycleFlagsContractE2ETest` holds the Java side to the same files.
  */
 

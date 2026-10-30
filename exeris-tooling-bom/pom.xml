@@ -18,12 +18,12 @@
 
     <properties>
         <!--
-          SDK 0.12.0, the final release on Maven Central (tag `v0.12.0`), the
-          line that pairs with kernel 0.12.0. Both Exeris pins are releases, as
+          SDK 0.13.0, the final release on Maven Central (tag `v0.13.0`), the
+          line that pairs with kernel 0.13.0. Both Exeris pins are releases, as
           the released-pins rule requires of a tooling cut (ROADMAP "Versioning
           policy"), and both resolve from Central with no settings file.
 
-          How this repo reads SDK 0.12's records: a record grows by a trailing
+          How this repo reads SDK 0.13's records: a record grows by a trailing
           component, and builders are the stable path. `DomainMetadata`,
           `ActionMetadata` and `SystemFieldsMetadata` are built through their
           builders. `SystemFieldsMetadata.sharedScopeField` (the `@SharedScope`
@@ -33,10 +33,12 @@
           `SchemaVersion.CURRENT`. `@Channel` and `@RouteAccess` are read by
           nothing yet.
         -->
-        <exeris.sdk.version>0.12.0</exeris.sdk.version>
+        <exeris.sdk.version>0.13.0</exeris.sdk.version>
         <!--
-          Kernel 0.12.0 — the line SDK 0.12 pairs with, and the floor for three
-          things the emitters name:
+          Kernel 0.13.0 — the line SDK 0.13 pairs with. Its HTTP dispatcher asks
+          an `HttpRoutePolicy` about the path without its query string, and about
+          a `HEAD` as the `GET` that serves it. Kernel 0.12.0 is the floor for
+          three things the emitters name:
 
           - `FlowDefinitionBuilder.version(int)` (a `default` method, ADR-064
             amendment), which the generated `*SagaFlow` calls for a declared
@@ -61,7 +63,7 @@
           `EventBus` (Javadoc) and `MemoryStats` (the `value` modifier) differ,
           and neither difference reaches a consumer.
         -->
-        <exeris.kernel.version>0.12.0</exeris.kernel.version>
+        <exeris.kernel.version>0.13.0</exeris.kernel.version>
 
         <auto-service.version>1.1.1</auto-service.version>
         <palantir.javapoet.version>0.15.0</palantir.javapoet.version>

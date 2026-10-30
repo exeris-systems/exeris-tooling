@@ -454,6 +454,9 @@ class TenantIsolationPostgresBootE2ETest {
                 package eu.exeris.e2e.tenancy;
 
                 import eu.exeris.kernel.core.http.routing.HttpRouter;
+                import eu.exeris.kernel.spi.context.KernelProviders;
+                import eu.exeris.kernel.spi.events.IsolationKeySpec;
+                import eu.exeris.kernel.spi.events.IsolationKeyRegistry;
                 import eu.exeris.kernel.spi.http.HttpHandler;
                 import eu.exeris.kernel.spi.http.HttpMethod;
                 import eu.exeris.kernel.spi.http.HttpStatus;
@@ -470,12 +473,19 @@ class TenantIsolationPostgresBootE2ETest {
                         routes.route(HttpMethod.GET, "/probe", exchange -> exchange.respond(HttpStatus.OK));
                     }
 
+                    /**
+                     * Registers both tenants' isolation keys while the engine is in scope: the event bus
+                     * refuses a publish under a bound key it does not hold.
+                     */
                     @Override
                     public HttpHandler decorate(HttpRouter router) {
+                        IsolationKeyRegistry isolation = KernelProviders.eventEngine().isolationRegistry();
+                        isolation.register(IsolationKeySpec.of("%s", 1));
+                        isolation.register(IsolationKeySpec.of("%s", 2));
                         return new TenantHeaderBinding(router);
                     }
                 }
-                """);
+                """.formatted(TENANT_A, TENANT_B));
         sources.put("eu/exeris/e2e/tenancy/TenantHeaderBinding.java",
                 """
                 package eu.exeris.e2e.tenancy;

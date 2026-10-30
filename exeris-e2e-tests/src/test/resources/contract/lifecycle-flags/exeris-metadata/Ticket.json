@@ -24,18 +24,22 @@
       "name": "code",
       "type": "java.lang.String",
       "displayName": "Code",
-      "inCreate": true
+      "inCreate": true,
+      "inUpdate": false
     },
     {
       "name": "slug",
       "type": "java.lang.String",
       "displayName": "Slug",
+      "inCreate": false,
       "inUpdate": true
     },
     {
       "name": "fixed",
       "type": "java.lang.String",
-      "displayName": "Fixed"
+      "displayName": "Fixed",
+      "inCreate": false,
+      "inUpdate": false
     }
   ]
 }

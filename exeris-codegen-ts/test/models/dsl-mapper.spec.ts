@@ -416,6 +416,7 @@ describe('DslMapper.pluralName — the SDK DomainMetadata.pluralName() rule', ()
     ['News', 'Newses'],
     ['Person', 'Persons'],
     ['Y', 'Ys'],
+    ['Ay', 'Ays'],
   ])('%s → %s', (entityName, plural) => {
     expect(DslMapper.pluralName(entityName)).toBe(plural);
   });

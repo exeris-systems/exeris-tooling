@@ -999,7 +999,7 @@ class ExerisDomainProcessorTest {
                     @ExerisDomain(module = "sales", path = "/orders")
                     public class Order { private java.util.UUID id;
                         
-                        @Action(name = "cancel", label = "Cancel Order", path = "/{id}/cancel", roles = {"order:cancel"})
+                        @Action(name = "cancel", label = "Cancel Order", path = "/{id}/cancel")
                         public void cancel(@ActionParam(label = "Reason", required = true) String reason) {}
                         
                         @Action(name = "ship", label = "Ship Order", path = "/{id}/ship", async = true)

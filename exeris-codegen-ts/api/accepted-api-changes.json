@@ -250,5 +250,11 @@
     "since": "0.10",
     "adr": "ADR-076",
     "justification": "A foreign-key violation is the caller's to correct, so the generated handler answers it with 422 (naming the relationship in the problem body's field member) or, on a delete, 409, where it answered 500 (ADR-076 Amendment 1). Each is emitted only where a foreign key of the build can produce it, and the OpenAPI document declares it there. The TypeScript error helper words both statuses and still reads no body. docs/migration/0.10.0/java-15 and ts-14 carry the steps."
+  },
+  {
+    "signature": "DslMapper.pluralName: an uppercase vowel before a trailing y takes a plain s (Ay -> Ays, was Aies); the route path, store and list labels of such an entity follow",
+    "since": "0.11",
+    "adr": "ADR-092",
+    "justification": "The emitted frontend uses the plural the SDK's pluralName() writes from 0.13.0, so an entity whose name ends in an uppercase vowel and y and sets no explicit path is routed under the same plural the generated backend serves. Every other name is unchanged. docs/migration/0.11.0/ts-01-plural-name-uppercase-vowel.md carries the step."
   }
 ]

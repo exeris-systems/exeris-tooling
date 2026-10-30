@@ -80,7 +80,7 @@ class LifecycleFlagsContractE2ETest {
     }
 
     @Test
-    @DisplayName("the processor writes the fields of the contract file, a false flag as an absent key")
+    @DisplayName("the processor writes the fields of the contract file, both flags written for every field")
     void processorWritesTheContractFields() throws IOException {
         assertThat(written.get("fields")).isEqualTo(resource("exeris-metadata/Ticket.json").get("fields"));
     }
