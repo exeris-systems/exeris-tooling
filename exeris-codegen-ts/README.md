@@ -180,6 +180,17 @@ headline, such as a HERO with one; the rest of the page is unchanged. Either way
 keeps the view's `title`, which sets the document title, and the navigation label stays the same.
 The option applies to every `@View` page of the run. It is file-only; it has no CLI flag.
 
+`viewHeadings` sets it for one view, keyed by the view's name; a view without an entry takes
+`viewHeading`. A landing page whose HERO block carries the headline goes without the `<h1>` while
+the other pages keep it:
+
+```json
+{
+  "viewHeading": "title",
+  "viewHeadings": { "Landing": "none" }
+}
+```
+
 ### `eventBusEndpoint`: the feed behind `EventBusService`
 
 `EventBusService` opens one `EventSource` on the URL `eventBusEndpoint` names and hands every

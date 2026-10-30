@@ -616,6 +616,23 @@ describe('generateView — viewHeading', () => {
     expect(bare).toBe(titled.replace(heading, ''));
   });
 
+  it('viewHeadings sets the heading of the views it names and leaves the others on viewHeading', () => {
+    const shop = ViewMetadataSchema.parse({ name: 'Shop', route: '/shop', title: 'Shop' });
+    const config = { ...DEFAULT_CONFIG, viewHeadings: { ProductLanding: 'none' as const } };
+    expect(generateView(productLanding(), config).content).not.toContain('<h1');
+    expect(generateView(shop, config).content).toContain('<h1 class="text-2xl font-bold font-exeris mb-6">Shop</h1>');
+
+    const bareRun = { ...DEFAULT_CONFIG, viewHeading: 'none' as const, viewHeadings: { Shop: 'title' as const } };
+    expect(generateView(productLanding(), bareRun).content).not.toContain('<h1');
+    expect(generateView(shop, bareRun).content).toContain('<h1 class="text-2xl font-bold font-exeris mb-6">Shop</h1>');
+  });
+
+  it('a view named like an Object.prototype member takes viewHeading', () => {
+    const view = ViewMetadataSchema.parse({ name: 'constructor', route: '/c', title: 'C' });
+    const config = { ...DEFAULT_CONFIG, viewHeading: 'none' as const, viewHeadings: {} };
+    expect(generateView(view, config).content).not.toContain('<h1');
+  });
+
   it("'none' keeps the route title, which sets the document title", () => {
     const route = generateViewRoute(productLanding(), { ...DEFAULT_CONFIG, viewHeading: 'none' });
     expect(route.content).toContain("title: 'Products',");

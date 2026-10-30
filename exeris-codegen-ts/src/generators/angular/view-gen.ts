@@ -641,7 +641,10 @@ export function generateView(
   lines.push('  changeDetection: ChangeDetectionStrategy.OnPush,');
   lines.push('  template: `');
   lines.push(`    <main class="exeris-page" data-view="${escapeAttr(view.name)}">`);
-  if (config.viewHeading !== 'none') {
+  // Own keys only: a view named like an Object.prototype member must not read it as an entry.
+  const viewHeadings = config.viewHeadings ?? {};
+  const heading = Object.hasOwn(viewHeadings, view.name) ? viewHeadings[view.name] : config.viewHeading;
+  if (heading !== 'none') {
     lines.push(`      <h1 class="text-2xl font-bold font-exeris mb-6">${escapeText(title)}</h1>`);
   }
   lines.push(...templateLines);
