@@ -3930,3 +3930,10 @@ text for these statuses needs the new one.
 - [ADR-079 — The emitted OpenAPI describes no authentication](adr/ADR-079-emitted-openapi-authentication-claim.md)
 - [ADR-091 — Publish an opt-in application starter, so a consumer does not hand-write its build](adr/ADR-091-opt-in-application-starter.md)
 - [ADR-093 — Emitted forms are Angular Signal Forms](adr/ADR-093-emitted-forms-are-signal-forms.md)
+
+## 0.11.0 train — regeneration deltas
+
+<!-- BEGIN migration-fragments 0.11.0 -->
+Until 0.11.0 is cut, each step of this train is a file of its own under `docs/migration/0.11.0/`,
+and the release assembles them here ([how a step is written](migration/README.md)).
+<!-- END migration-fragments 0.11.0 -->
