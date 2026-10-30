@@ -272,6 +272,17 @@ class OutputWriterTest {
     // --- path containment and name boundary validation ---
 
     @Test
+    @DisplayName("writeJavaSource writes a default-package source, an empty package name, at the output root")
+    void writeJavaSourceWritesDefaultPackageAtRoot() throws IOException {
+        Path outputRoot = tempDir.resolve("out");
+        OutputWriter writer = new OutputWriter(outputRoot, false);
+
+        writer.writeJavaSource("", "Foo", "class Foo {}", "Foo.java");
+
+        assertThat(outputRoot.resolve("Foo.java")).hasContent("class Foo {}");
+    }
+
+    @Test
     @DisplayName("writeJavaSource rejects empty or navigating package segments and writes nothing")
     void writeJavaSourceRejectsInvalidPackageSegments() {
         Path outputRoot = tempDir.resolve("out");

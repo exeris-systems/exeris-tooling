@@ -347,13 +347,15 @@ export type InternalApiMetadata = z.infer<typeof InternalApiMetadataSchema>;
 // ============================================================================
 
 // Entity and package names become output path segments, so they are held to the Java identifier
-// grammar, letters of any script included: no separator, dot segment or other path syntax gets through.
-const JAVA_IDENTIFIER_PATTERN = /^[\p{L}_$][\p{L}\p{N}_$]*$/u;
-const DOTTED_IDENTIFIER_PATTERN = /^[\p{L}_$][\p{L}\p{N}_$]*(\.[\p{L}_$][\p{L}\p{N}_$]*)*$/u;
+// grammar (Character.isJavaIdentifierStart / isJavaIdentifierPart): no separator, dot segment or other
+// path syntax gets through. An empty package is the default package.
+const IDENTIFIER = '[\\p{L}\\p{Nl}\\p{Sc}\\p{Pc}][\\p{L}\\p{Nl}\\p{Sc}\\p{Pc}\\p{Mn}\\p{Mc}\\p{Nd}]*';
+const JAVA_IDENTIFIER_PATTERN = new RegExp(`^${IDENTIFIER}$`, 'u');
+const PACKAGE_NAME_PATTERN = new RegExp(`^(${IDENTIFIER}(\\.${IDENTIFIER})*)?$`, 'u');
 
 export const DomainMetadataSchema = z.object({
   entityName: z.string().regex(JAVA_IDENTIFIER_PATTERN),
-  packageName: z.string().regex(DOTTED_IDENTIFIER_PATTERN),
+  packageName: z.string().regex(PACKAGE_NAME_PATTERN),
   tableName: z.string().optional(),
   displayName: z.string().optional(),
   pluralName: z.string().optional(),

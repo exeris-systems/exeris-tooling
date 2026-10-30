@@ -84,11 +84,15 @@ public final class OutputWriter {
     /**
      * Writes a Java source file.
      *
-     * @param packageName Package name (e.g., "eu.exeris.domain.order")
+     * @param packageName Package name (e.g., "eu.exeris.domain.order"); empty for the default
+     *                    package, whose sources are written at the output root
      * @param className   Simple class name (e.g., "OrderController")
      * @param source      Java source code
      * @param sourceInfo  Source entity info for header (e.g., "Order.java")
-     * @throws IOException if writing fails
+     * @throws IOException if writing fails, or, before anything is written, if a package segment is
+     *                     empty, {@code .} or {@code ..} or holds a path separator, if the class name
+     *                     holds a path separator, or if the target resolves outside the output
+     *                     directory
      */
     public void writeJavaSource(String packageName, String className, String source, String sourceInfo)
             throws IOException {
@@ -116,7 +120,8 @@ public final class OutputWriter {
      *
      * @param relativePath Relative path within output directory
      * @param content      File content
-     * @throws IOException if writing fails
+     * @throws IOException if writing fails, or, before anything is written, if the path resolves
+     *                     outside the output directory
      */
     public void writeResource(String relativePath, String content) throws IOException {
         Objects.requireNonNull(relativePath, "relativePath must not be null");
@@ -132,7 +137,8 @@ public final class OutputWriter {
      *
      * @param relativePath Relative path within output directory
      * @param content      Binary content
-     * @throws IOException if writing fails
+     * @throws IOException if writing fails, or, before anything is written, if the path resolves
+     *                     outside the output directory
      */
     public void writeResourceBytes(String relativePath, byte[] content) throws IOException {
         Objects.requireNonNull(relativePath, "relativePath must not be null");
@@ -304,13 +310,18 @@ public final class OutputWriter {
     }
 
     /**
-     * Converts a package name to a file path after validating package segments.
+     * Converts a package name to a file path after validating package segments; the default
+     * package, an empty name, is the output root.
      *
      * @param packageName Java package name
      * @return Relative path
      * @throws IOException if a package segment is empty, invalid, or contains path separators
      */
     private Path packageToPath(String packageName) throws IOException {
+        Objects.requireNonNull(packageName, "packageName must not be null");
+        if (packageName.isEmpty()) {
+            return Path.of("");
+        }
         validatePackage(packageName);
         return Path.of(packageName.replace('.', '/'));
     }
