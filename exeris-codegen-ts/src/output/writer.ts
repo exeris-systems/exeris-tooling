@@ -32,7 +32,7 @@
  */
 
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { carriesGeneratorMarker } from '../generators/file-header.js';
 import {
   canonicalManifestPath,
@@ -170,9 +170,14 @@ export function writeGeneratedFiles(
   const written: string[] = [];
 
   try {
+    const root = resolve(outputPath);
     plan.forEach((entry, i) => {
       if (entry.action !== 'create' && entry.action !== 'rewrite') return;
-      const full = join(outputPath, entry.path);
+      const full = resolve(outputPath, entry.path);
+      const rel = relative(root, full);
+      if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+        throw new Error(`Target path escapes output directory: ${entry.path}`);
+      }
       // A link at the path is replaced, never written through (planWrites rewrites one only under
       // --overwrite).
       const stat = lstatOrNull(full);

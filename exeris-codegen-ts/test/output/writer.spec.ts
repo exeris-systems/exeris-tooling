@@ -122,6 +122,46 @@ describe('writeGeneratedFiles', () => {
     expect(read('pages/a.ts')).toBe('A2');
   });
 
+  // The output directory is nested in the temporary one, so an escaping path lands where afterEach removes it.
+  it('refuses writing outside the output directory and writes nothing', () => {
+    const gen = join(out, 'gen');
+    expect(() => writeGeneratedFiles(gen, [{ path: '../escaped.ts', content: 'evil' }], keep))
+      .toThrowError(/escaped\.ts/);
+
+    expect(existsSync(join(out, 'escaped.ts'))).toBe(false);
+  });
+
+  it('refuses writing outside the output directory under overwrite and replaces nothing', () => {
+    const gen = join(out, 'gen');
+    onDisk('escaped-overwrite.ts', 'outside');
+    expect(() => writeGeneratedFiles(gen, [{ path: '../escaped-overwrite.ts', content: 'evil' }], { overwrite: true }))
+      .toThrowError(/escaped-overwrite\.ts/);
+
+    expect(read('escaped-overwrite.ts')).toBe('outside');
+  });
+
+  it('refuses an absolute output path and writes nothing', () => {
+    const gen = join(out, 'gen');
+    const absolutePath = join(out, 'absolute-escape.ts');
+    expect(() => writeGeneratedFiles(gen, [{ path: absolutePath, content: 'evil' }], keep))
+      .toThrowError();
+
+    expect(existsSync(absolutePath)).toBe(false);
+  });
+
+  it('writes a file whose name starts with two dots inside the output directory', () => {
+    writeGeneratedFiles(out, [{ path: 'pages/..draft.ts', content: 'D' }], keep);
+    expect(read('pages/..draft.ts')).toBe('D');
+  });
+
+  it('refuses an absolute output path and writes nothing', () => {
+    const absolutePath = join(dirname(out), 'absolute-escape.ts');
+    expect(() => writeGeneratedFiles(out, [{ path: absolutePath, content: 'evil' }], keep))
+      .toThrowError();
+
+    expect(existsSync(absolutePath)).toBe(false);
+  });
+
   it('prunes an owned file the run no longer produces, and never an unowned one', () => {
     writeGeneratedFiles(out, [{ path: 'pages/a.ts', content: 'A' }, { path: 'pages/b.ts', content: 'B' }], keep);
     onDisk('pages/mine.ts', 'hand-written');

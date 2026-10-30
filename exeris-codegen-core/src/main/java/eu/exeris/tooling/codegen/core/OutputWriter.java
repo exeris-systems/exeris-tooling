@@ -84,26 +84,35 @@ public final class OutputWriter {
     /**
      * Writes a Java source file.
      *
-     * @param packageName Package name (e.g., "eu.exeris.domain.order")
+     * @param packageName Package name (e.g., "eu.exeris.domain.order"); empty for the default
+     *                    package, whose sources are written at the output root
      * @param className   Simple class name (e.g., "OrderController")
      * @param source      Java source code
      * @param sourceInfo  Source entity info for header (e.g., "Order.java")
-     * @throws IOException if writing fails
+     * @throws IOException if writing fails, or, before anything is written, if a package segment is
+     *                     empty, {@code .} or {@code ..} or holds a path separator, if the class name
+     *                     holds a path separator, or if the target resolves outside the output
+     *                     directory
      */
     public void writeJavaSource(String packageName, String className, String source, String sourceInfo)
             throws IOException {
+        Objects.requireNonNull(className, "className must not be null");
+        if (className.contains("/") || className.contains("\\")) {
+            throw new IOException("Class name must not contain path separators: " + className);
+        }
         Path packageDir = packageToPath(packageName);
         Path targetDir = outputDir.resolve(packageDir);
-        Files.createDirectories(targetDir);
-
         Path targetFile = targetDir.resolve(className + ".java");
+        Path contained = assertContained(targetFile);
+
+        Files.createDirectories(contained.getParent());
 
         String content = addHeader
                 ? GENERATED_HEADER.formatted(sourceInfo) + "\n" + source
                 : source;
 
-        Files.writeString(targetFile, content, StandardCharsets.UTF_8);
-        track(targetFile);
+        Files.writeString(contained, content, StandardCharsets.UTF_8);
+        track(contained);
     }
 
     /**
@@ -111,13 +120,16 @@ public final class OutputWriter {
      *
      * @param relativePath Relative path within output directory
      * @param content      File content
-     * @throws IOException if writing fails
+     * @throws IOException if writing fails, or, before anything is written, if the path resolves
+     *                     outside the output directory
      */
     public void writeResource(String relativePath, String content) throws IOException {
+        Objects.requireNonNull(relativePath, "relativePath must not be null");
         Path targetFile = outputDir.resolve(relativePath);
-        Files.createDirectories(targetFile.getParent());
-        Files.writeString(targetFile, content, StandardCharsets.UTF_8);
-        track(targetFile);
+        Path contained = assertContained(targetFile);
+        Files.createDirectories(contained.getParent());
+        Files.writeString(contained, content, StandardCharsets.UTF_8);
+        track(contained);
     }
 
     /**
@@ -125,13 +137,16 @@ public final class OutputWriter {
      *
      * @param relativePath Relative path within output directory
      * @param content      Binary content
-     * @throws IOException if writing fails
+     * @throws IOException if writing fails, or, before anything is written, if the path resolves
+     *                     outside the output directory
      */
     public void writeResourceBytes(String relativePath, byte[] content) throws IOException {
+        Objects.requireNonNull(relativePath, "relativePath must not be null");
         Path targetFile = outputDir.resolve(relativePath);
-        Files.createDirectories(targetFile.getParent());
-        Files.write(targetFile, content);
-        track(targetFile);
+        Path contained = assertContained(targetFile);
+        Files.createDirectories(contained.getParent());
+        Files.write(contained, content);
+        track(contained);
     }
 
     /**
@@ -182,9 +197,10 @@ public final class OutputWriter {
         if (!readManifest().contains(normalized)) {
             return false;
         }
-        Path file = outputDir.resolve(normalized).normalize();
+        Path root = outputDir.toAbsolutePath().normalize();
+        Path file = outputDir.resolve(normalized).toAbsolutePath().normalize();
         // Defence in depth: never claim (or later prune) outside the output tree.
-        if (!file.startsWith(outputDir) || !Files.isRegularFile(file)) {
+        if (!file.startsWith(root) || file.equals(root) || !Files.isRegularFile(file)) {
             return false;
         }
         writtenPaths.add(normalized);
@@ -207,14 +223,15 @@ public final class OutputWriter {
         Set<String> previous = readManifest();
         int pruned = 0;
         Set<Path> touchedDirs = new LinkedHashSet<>();
+        Path root = outputDir.toAbsolutePath().normalize();
 
         for (String rel : previous) {
             if (writtenPaths.contains(rel) || MANIFEST_NAME.equals(rel)) {
                 continue;
             }
-            Path orphan = outputDir.resolve(rel).normalize();
+            Path orphan = outputDir.resolve(rel).toAbsolutePath().normalize();
             // Defence in depth: never delete outside the output tree.
-            if (!orphan.startsWith(outputDir)) {
+            if (!orphan.startsWith(root) || orphan.equals(root)) {
                 continue;
             }
             if (Files.deleteIfExists(orphan)) {
@@ -242,7 +259,8 @@ public final class OutputWriter {
     }
 
     private String relativize(Path targetFile) {
-        return outputDir.relativize(targetFile.normalize()).toString().replace('\\', '/');
+        Path root = outputDir.toAbsolutePath().normalize();
+        return root.relativize(targetFile.toAbsolutePath().normalize()).toString().replace('\\', '/');
     }
 
     private Set<String> readManifest() throws IOException {
@@ -264,16 +282,18 @@ public final class OutputWriter {
         List<String> lines = new ArrayList<>();
         lines.add(MANIFEST_HEADER);
         lines.addAll(new TreeSet<>(writtenPaths));
-        Files.createDirectories(outputDir);
-        Files.writeString(outputDir.resolve(MANIFEST_NAME),
+        Path root = outputDir.toAbsolutePath().normalize();
+        Files.createDirectories(root);
+        Files.writeString(root.resolve(MANIFEST_NAME),
                 String.join("\n", lines) + "\n", StandardCharsets.UTF_8);
     }
 
     /** Deletes the given directories (and their now-empty parents) up to, but not including, the output dir. */
     private void pruneEmptyDirs(Set<Path> dirs) throws IOException {
+        Path root = outputDir.toAbsolutePath().normalize();
         for (Path start : dirs) {
-            Path dir = start;
-            while (dir != null && !dir.equals(outputDir) && dir.startsWith(outputDir) && isEmptyDir(dir)) {
+            Path dir = start != null ? start.toAbsolutePath().normalize() : null;
+            while (dir != null && !dir.equals(root) && dir.startsWith(root) && isEmptyDir(dir)) {
                 Files.deleteIfExists(dir);
                 dir = dir.getParent();
             }
@@ -290,13 +310,42 @@ public final class OutputWriter {
     }
 
     /**
-     * Converts a package name to a file path.
+     * Converts a package name to a file path after validating package segments; the default
+     * package, an empty name, is the output root.
      *
      * @param packageName Java package name
      * @return Relative path
+     * @throws IOException if a package segment is empty, invalid, or contains path separators
      */
-    private Path packageToPath(String packageName) {
+    private Path packageToPath(String packageName) throws IOException {
+        Objects.requireNonNull(packageName, "packageName must not be null");
+        if (packageName.isEmpty()) {
+            return Path.of("");
+        }
+        validatePackage(packageName);
         return Path.of(packageName.replace('.', '/'));
+    }
+
+    private static void validatePackage(String packageName) throws IOException {
+        Objects.requireNonNull(packageName, "packageName must not be null");
+        if (packageName.contains("/") || packageName.contains("\\")) {
+            throw new IOException("Package name must not contain path separators: " + packageName);
+        }
+        String[] segments = packageName.split("\\.", -1);
+        for (String segment : segments) {
+            if (segment.isEmpty() || ".".equals(segment) || "..".equals(segment)) {
+                throw new IOException("Invalid package segment '" + segment + "' in package: " + packageName);
+            }
+        }
+    }
+
+    private Path assertContained(Path target) throws IOException {
+        Path root = outputDir.toAbsolutePath().normalize();
+        Path normalized = target.toAbsolutePath().normalize();
+        if (!normalized.startsWith(root) || normalized.equals(root)) {
+            throw new IOException("Target path escapes output directory: " + target);
+        }
+        return normalized;
     }
 
     /**

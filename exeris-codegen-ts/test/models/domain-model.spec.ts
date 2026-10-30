@@ -489,6 +489,34 @@ describe('DomainMetadataSchema — top-level entity record', () => {
     expect(() => DomainMetadataSchema.parse({ entityName: 'Order' })).toThrow(z.ZodError);
     expect(() => DomainMetadataSchema.parse({ packageName: 'com.shop' })).toThrow(z.ZodError);
   });
+
+  it('rejects an entityName that does not match the Java identifier pattern', () => {
+    for (const bad of ['../Order', 'Order/Sub', 'Order-Line', '1Order', 'Order.Line', '']) {
+      expect(() => DomainMetadataSchema.parse({ entityName: bad, packageName: 'com.shop' }))
+        .toThrow(z.ZodError);
+    }
+  });
+
+  it('accepts an empty packageName, the default package', () => {
+    expect(DomainMetadataSchema.parse({ entityName: 'Order', packageName: '' }).packageName).toBe('');
+  });
+
+  it('accepts a combining mark after the first character, as Java identifiers allow', () => {
+    expect(DomainMetadataSchema.parse({ entityName: 'Cafe\u0301', packageName: 'com.shop' }).entityName)
+      .toBe('Cafe\u0301');
+  });
+
+  it('accepts entity and package names in any script, as Java identifiers allow', () => {
+    expect(DomainMetadataSchema.parse({ entityName: 'Zamówienie', packageName: 'pl.sklep.zamówienia' }).entityName)
+      .toBe('Zamówienie');
+  });
+
+  it('rejects a packageName that does not match dotted Java identifiers', () => {
+    for (const bad of ['com..shop', 'com/shop', '../com.shop', '1com.shop', 'com.shop.', '.com.shop', '.']) {
+      expect(() => DomainMetadataSchema.parse({ entityName: 'Order', packageName: bad }))
+        .toThrow(z.ZodError);
+    }
+  });
 });
 
 describe('ExerisMetadataSchema — multi-domain root', () => {
