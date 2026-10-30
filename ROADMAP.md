@@ -4150,31 +4150,48 @@ keeps compiling where it still uses one. 0.10.0 removes them.
 
 ## 0.11.0 — SDK annotations to emitted output, scope set 2026-10-07
 
-Pairs with SDK 0.13, which 0.10.0 does not wait for. Order, gates and the Java/TS pairing are in
-[`docs/0.11.0-release-plan.md`](docs/0.11.0-release-plan.md). Every row but S6 needs an SDK 0.13 half: the
-`-io` reader half under ADR-042 (exeris-sdk#187) or a carrier (exeris-sdk#186). In S6 only the SEO
-fields (#412) need the SDK.
+Pins SDK 0.13.0 and kernel 0.13.0, both final on Maven Central. Order, gates and the Java/TS
+pairing are in [`docs/0.11.0-release-plan.md`](docs/0.11.0-release-plan.md). Every extraction row
+reads an SDK 0.13 half: the `-io` reader half under ADR-042 (exeris-sdk#187, exeris-sdk#161) or a
+carrier (exeris-sdk#186).
 
-- [ ] **Wave 0, decisions** (may start during 0.10.0): RFC/ADR for the `@Blob` routes and the
-      `@Channel` message shape; the graph-property payload encoding (kernel ask); the `@GraphQuery`
-      decision between the kernel and the SDK.
-- [ ] **J1 `@PrimaryKey`**: the field marker, read into `primaryKeyField` (ADR-104 J5b), unless 0.10.0
-      shipped it. The rename is 0.10.0 wave J5.
-- [ ] **J2 + S1 `@GraphProperty`, `@UIGroup`**: graph node properties in the graph-sync upsert;
-      grouped sections in the generated forms and detail views.
-- [ ] **J3 + S2 `@Blob`**, **J4 + S3 `@Channel`**: each after its wave 0 ADR.
-- [ ] **J5 + S4 `@QueryParam`, `@NavMenu`, `@Tab`**: after exeris-sdk#186.
-- [ ] **J6 + S5 T53 route policy, the data half**: processor extraction of `permissions` and
+- [x] **A1 pins** (#447): SDK 0.13.0 and kernel 0.13.0 in both BOMs, and the 0.13 shapes that need no
+      extraction (both lifecycle flags written, `SchemaVersion` 0.13.0, `pluralName`, #431).
+- [ ] **Wave 0, decisions**: RFC/ADR for the `@Blob` routes; ADR-058 amendment for the generated
+      integration tests (#408); ADR-096 amendment for list route search (#365); the `@ActionParam`
+      refusal (#422); the graph-property payload encoding (kernel ask); `customBlocks` (#417,
+      stretch); the `@GraphQuery` decision between the kernel and the SDK.
+- [ ] **T4 TCK binding**: `exeris-sdk-tck` bound to the processor, every extraction removing its
+      facet; at the cut `unsupportedFacets()` is empty. Gate: exeris-sdk#249 (the corpus declares
+      no primary key) in a final 0.13.x.
+- [ ] **JB1–JB4 correctness**: writer path traversal (#430), static fields (#421, done in #451),
+      the `@Action` parameter refusal (#422), the generated tenant policy (#429, #428).
+- [ ] **J1 `@PrimaryKey`**: the field marker, read into `primaryKeyField` (ADR-104).
+- [ ] **J2 + S1 `@GraphProperty`, `@UIGroup`**: graph node properties in the graph-sync upsert and
+      the 0.13 `GraphEdgeMetadata` (#444, #437, #438); grouped sections in the generated forms and
+      detail views.
+- [ ] **J7, J8, J9**: saga trigger, compensation and retry (#432, #434, #433, #446);
+      `ActionMetadata.resultType` (#436); the strict audit against SDK 0.13 (#435, #442).
+- [ ] **J3 + S2 `@Blob`**: after its wave 0 ADR.
+- [ ] **J5 + S4 `@QueryParam`, `@NavMenu`, `@Tab`** (#440).
+- [ ] **J6 + S5 T53 route policy, the data half** (#439): processor extraction of `permissions` and
       `routeAccess`, the obligation-12 table, `route-policy.json` with its conformance test, the
       OpenAPI security block (ADR-079), and the TS guards that read the declared names
-      (ADR-105 J3-3, J3-4 and S3). Gate: exeris-sdk#161 in a final SDK 0.13.
-- [ ] **S6 `@View` page gaps** left open by 0.10.0 wave S6: SEO fields (#412, upstream: SDK
-      presentation IR), the view's name in its route (#413), the prerender list under `scaffold: false`
-      (#414), `viewHeading` per view (#415), typed CUSTOM block props (#416), no hand-maintained
+      (ADR-105 J3-3, J3-4 and S3).
+- [ ] **J10 + S8 list route search** (#365), after its ADR-096 amendment.
+- [ ] **S6 `@View` page gaps** left open by 0.10.0 wave S6: the view's name in its route (#413), the
+      prerender list under `scaffold: false` (#414), `viewHeading` per view (#415), typed CUSTOM block
+      props (#416); stretch: SEO fields (#412, upstream: SDK presentation IR), no hand-maintained
       `customBlocks` map (#417).
+- [ ] **T1–T3, T5, T6 coverage**: generated Java and TS tests (#407); the first slice of opt-in
+      generated integration tests on H2 (#408); per-file vitest thresholds; processor-compiled e2e
+      fixtures for `@UI`, `@View`, `@GraphEdge`, `@RouteAccess`.
+- [ ] **Hygiene**: #405 (done, #450); #406; #314, LF line endings for the committed generated tree;
+      `fe-app-build` a required check.
 
-Not in 0.11.0: `@Encrypted` / `@RowLevelSecurity` (C2) and `@GraphQuery`, with the reasons in the
-plan.
+Not in 0.11.0: `@Channel` (J4, S3 — SDK 0.13 has no reader half for it; 0.12.0, with its RFC/ADR),
+generated integration tests on PostgreSQL and tenant scopes (0.12.0), `@Encrypted` /
+`@RowLevelSecurity` (C2) and `@GraphQuery`, with the reasons in the plan.
 
 ## Versioning policy
 
