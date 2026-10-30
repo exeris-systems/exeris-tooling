@@ -80,6 +80,7 @@ Printed by `javac` while it compiles your sources. `-Aexeris.strict=true` enable
 | `EXT-PROC-1103` | `@Validation.validateOn` holds a value other than `CREATE` or `UPDATE`, which is dropped. | Use `@Field.inCreate` / `@Field.inUpdate` instead. |
 | `EXT-PROC-1105` | `@SharedScope` is on an entity that is not `DataScope.UNIVERSE`, so it has no effect. | Declare `dataScope = DataScope.UNIVERSE`, or remove the marker. |
 | `EXT-PROC-1106` | `@Bind` with `source = STATIC` or `NONE` carries attributes that are ignored. | Put authored content in `@Block(props)`, or bind with `source = ENTITY`, `PROJECTION` or `ACTION`. |
+| `EXT-PROC-1108` | `@Field` is on a static or transient field, which is not persisted. | Remove `@Field` if the field is a constant or an in-memory helper, or make it an instance field if it should be persisted. |
 
 ### 12xx — the `-Aexeris.strict` audit (warning)
 

@@ -72,6 +72,7 @@ class DiagnosticIdTest {
         m.put(DiagnosticId.VALIDATE_ON_UNRECOGNISED, "EXT-PROC-1103");
         m.put(DiagnosticId.SHARED_SCOPE_OUTSIDE_UNIVERSE, "EXT-PROC-1105");
         m.put(DiagnosticId.BIND_WITHOUT_SOURCE_IGNORED, "EXT-PROC-1106");
+        m.put(DiagnosticId.FIELD_ON_STATIC_OR_TRANSIENT, "EXT-PROC-1108");
         m.put(DiagnosticId.STRICT_INERT_ATTRIBUTE, "EXT-PROC-1201");
         m.put(DiagnosticId.STRICT_INERT_ANNOTATION, "EXT-PROC-1202");
         m.put(DiagnosticId.STRICT_UNREAD_ANNOTATION, "EXT-PROC-1203");
