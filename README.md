@@ -300,6 +300,22 @@ To own the code outright, run `mvn exeris:detach`. It moves the generated source
 `src/main/java` and leaves any file that already exists there untouched. Then remove the
 `exeris:generate` execution from your build.
 
+### Check the generated tree out with LF line endings
+
+Both generators write every file with LF line endings on every platform, so the same metadata yields
+the same bytes everywhere. A checkout that converts to CRLF (`core.autocrlf=true` on Windows) shows
+every regenerated file as changed, by line endings alone. Pin the generated roots to LF in the
+application's `.gitattributes`:
+
+```
+src/main/generated/** text eol=lf
+src/test/generated/** text eol=lf
+src/app/generated/**  text eol=lf
+```
+
+The last line is the TypeScript generator's default output directory; use the directory your
+`exeris-codegen.json` or `--output` names.
+
 ### Generated tests
 
 Set `<exeris.tests>true</exeris.tests>` to emit tests for the generated code under
