@@ -24,3 +24,23 @@ generated frontend follows it.
 Kernel 0.13.0 asks an `HttpRoutePolicy` about a request's path without its query string, and about
 a `HEAD` request as the `GET` route that serves it. An application that binds its own policy and
 matched on a query string, or on `HEAD`, adjusts that policy.
+
+Kernel 0.13.0 refuses an event published under a tenant's bound storage context unless that tenant's
+isolation key is registered with the event engine (`EX-EVENT-6009`, reason
+`unregistered-isolation-key`). The generated publishers publish under the request's context, so an
+application with a `TENANT` entity that publishes events registers every tenant key before the first
+request is served, with an ordinal it keeps for the life of the deployment, for example in its
+`RuntimeComponents` subclass, which runs inside the boot scope:
+
+```java
+@Override
+public HttpHandler decorate(HttpRouter router) {
+    IsolationKeyRegistry isolation = KernelProviders.eventEngine().isolationRegistry();
+    isolation.register(IsolationKeySpec.of(tenantKey, ordinal));
+    return super.decorate(router);
+}
+```
+
+Without it, a generated `@Action` that publishes answers 500 for every tenant-bound request, and a
+streaming one sends a `stream-error` frame. The kernel's `MIGRATION.md` (0.12.x → 0.13) has the full
+step.
