@@ -18,8 +18,8 @@
 
     <properties>
         <!--
-          SDK 0.13.0, the final release on Maven Central (tag `v0.13.0`), the
-          line that pairs with kernel 0.13.0. Both Exeris pins are releases, as
+          SDK 0.13.1, the final release on Maven Central (tag `v0.13.1`), the
+          line that pairs with kernel 0.13.1. Both Exeris pins are releases, as
           the released-pins rule requires of a tooling cut (ROADMAP "Versioning
           policy"), and both resolve from Central with no settings file.
 
@@ -33,9 +33,9 @@
           `SchemaVersion.CURRENT`. `@Channel` and `@RouteAccess` are read by
           nothing yet.
         -->
-        <exeris.sdk.version>0.13.0</exeris.sdk.version>
+        <exeris.sdk.version>0.13.1</exeris.sdk.version>
         <!--
-          Kernel 0.13.0 — the line SDK 0.13 pairs with. Its HTTP dispatcher asks
+          Kernel 0.13.1 — the line SDK 0.13 pairs with. Its HTTP dispatcher asks
           an `HttpRoutePolicy` about the path without its query string, and about
           a `HEAD` as the `GET` that serves it. Kernel 0.12.0 is the floor for
           three things the emitters name:
@@ -63,7 +63,7 @@
           `EventBus` (Javadoc) and `MemoryStats` (the `value` modifier) differ,
           and neither difference reaches a consumer.
         -->
-        <exeris.kernel.version>0.13.0</exeris.kernel.version>
+        <exeris.kernel.version>0.13.1</exeris.kernel.version>
 
         <auto-service.version>1.1.1</auto-service.version>
         <palantir.javapoet.version>0.15.0</palantir.javapoet.version>
@@ -127,6 +127,18 @@
             <dependency>
                 <groupId>eu.exeris</groupId>
                 <artifactId>exeris-sdk-composition-spec</artifactId>
+                <version>${exeris.sdk.version}</version>
+            </dependency>
+            <!-- The SDK's conformance kit and the -io reader it checks parity against; test scope
+                 in exeris-processor, which binds the kit. -->
+            <dependency>
+                <groupId>eu.exeris</groupId>
+                <artifactId>exeris-sdk-tck</artifactId>
+                <version>${exeris.sdk.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>eu.exeris</groupId>
+                <artifactId>exeris-sdk-source-model-io</artifactId>
                 <version>${exeris.sdk.version}</version>
             </dependency>
             <!-- SDK boot conductor — not a codegen dependency (the emitter only
