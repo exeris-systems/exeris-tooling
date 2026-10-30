@@ -132,14 +132,15 @@ export const GeneratorConfigSchema = z.object({
     )
     .default({}),
 
-  /** What heads every `@View` page component. `'title'` emits the view's title (else its name) as
-   *  the page's `<h1>`; `'none'` emits no heading, for pages whose own blocks carry the headline.
+  /** What heads a `@View` page component unless `viewHeadings` has an entry for the view.
+   *  `'title'` emits the view's title (else its name) as the page's `<h1>`; `'none'` emits no
+   *  heading, for pages whose own blocks carry the headline.
    *  The route `title`, which sets the document title, and the navigation label read the view's
    *  title either way. */
   viewHeading: z.enum(['title', 'none']).default('title'),
 
-  /** `viewHeading` for one view, keyed by the view's name; a view without an entry takes
-   *  `viewHeading`. */
+  /** The heading of one view, keyed by the view's name. A view's entry wins over `viewHeading`;
+   *  a view without one takes `viewHeading`. */
   viewHeadings: z.record(z.string(), z.enum(['title', 'none'])).default({}),
 
   /** Emit the Angular project and app shell around the generated tree.
