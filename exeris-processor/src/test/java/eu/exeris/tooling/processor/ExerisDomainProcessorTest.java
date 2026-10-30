@@ -106,6 +106,97 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
+        @DisplayName("Static and transient fields do not reach metadata")
+        void staticAndTransientFieldsDoNotReachMetadata() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+
+                    import java.util.UUID;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    public class Order {
+                        public static final String STATUS_ACTIVE = "ACTIVE";
+                        public static final String STATUS_CANCELLED = "CANCELLED";
+                        private static String defaultTag = "standard";
+                        private transient String sessionToken;
+
+                        private UUID id;
+
+                        @Field(label = "Customer")
+                        private String customer;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeededWithoutWarnings();
+
+            JsonNode fields = readMetadataRoot(compilation, "Order").path("fields");
+            List<String> fieldNames = new java.util.ArrayList<>();
+            for (JsonNode field : fields) {
+                fieldNames.add(field.path("name").asText());
+            }
+
+            assertThat(fieldNames).containsExactly("id", "customer");
+        }
+
+        @Test
+        @DisplayName("@Field on static or transient field emits a warning and is not persisted")
+        void fieldOnStaticOrTransientEmitsWarning() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+
+                    import java.util.UUID;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    public class Order {
+                        @Field(label = "Default Prefix")
+                        public static final String DEFAULT_PREFIX = "ORD-";
+
+                        @Field(label = "Active Flag")
+                        private static boolean active;
+
+                        @Field(label = "Cached Total")
+                        private transient Long cachedTotal;
+
+                        private UUID id;
+
+                        @Field(label = "Customer")
+                        private String customer;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+            assertThat(compilation).hadWarningCount(3);
+            assertThat(compilation).hadWarningContaining(
+                    "[Exeris] EXT-PROC-1108: @Field is on static field 'DEFAULT_PREFIX', which is not persisted.");
+            assertThat(compilation).hadWarningContaining(
+                    "[Exeris] EXT-PROC-1108: @Field is on static field 'active', which is not persisted.");
+            assertThat(compilation).hadWarningContaining(
+                    "[Exeris] EXT-PROC-1108: @Field is on transient field 'cachedTotal', which is not persisted.");
+
+            JsonNode fields = readMetadataRoot(compilation, "Order").path("fields");
+            List<String> fieldNames = new java.util.ArrayList<>();
+            for (JsonNode field : fields) {
+                fieldNames.add(field.path("name").asText());
+            }
+
+            assertThat(fieldNames).containsExactly("id", "customer");
+        }
+
+        @Test
         @DisplayName("Should extract field with unique and indexed attributes")
         void shouldExtractFieldWithUniqueAndIndexed() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(

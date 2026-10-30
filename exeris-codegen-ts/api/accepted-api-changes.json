@@ -256,5 +256,11 @@
     "since": "0.11",
     "adr": "ADR-092",
     "justification": "The emitted frontend uses the plural the SDK's pluralName() writes from 0.13.0, so an entity whose name ends in an uppercase vowel and y and sets no explicit path is routed under the same plural the generated backend serves. Every other name is unchanged. docs/migration/0.11.0/ts-01-plural-name-uppercase-vowel.md carries the step."
+  },
+  {
+    "signature": "<Entity> model, <Entity>Create / <Entity>Update, schemas and views: - every static or transient field of the @ExerisDomain class",
+    "since": "0.11",
+    "adr": "ADR-015",
+    "justification": "The processor writes only an entity's instance fields to its metadata, so a static constant or a transient field is no longer a column, a DTO or model member, or a rendered control. Before, such a field reached every emitted surface and the generated repository did not compile. An entity without one is unchanged. docs/migration/0.11.0/java-02-static-and-transient-fields.md carries the step."
   }
 ]

@@ -187,6 +187,10 @@ public enum DiagnosticId {
 
     // EXT-PROC-1107 is retired (docs/diagnostics.md, "Retired identifiers") and is never allocated again.
 
+    /** {@code @Field} is on a static or transient field, which is not persisted. */
+    FIELD_ON_STATIC_OR_TRANSIENT("EXT-PROC-1108",
+            "@Field is on a static or transient field, which is not persisted."),
+
     // -----------------------------------------------------------------------
     // EXT-PROC-12xx — the -Aexeris.strict audit (javac WARNING, opt-in)
     // -----------------------------------------------------------------------

@@ -1767,11 +1767,15 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         }
     }
 
-    /** The non-static field named {@code name} declared directly on {@code element}, or null. */
+    /**
+     * The non-static, non-transient field named {@code name} declared directly on {@code element},
+     * or null.
+     */
     private static VariableElement instanceField(TypeElement element, String name) {
         for (Element enclosed : element.getEnclosedElements()) {
             if (enclosed.getKind() == ElementKind.FIELD
                     && !enclosed.getModifiers().contains(Modifier.STATIC)
+                    && !enclosed.getModifiers().contains(Modifier.TRANSIENT)
                     && enclosed.getSimpleName().contentEquals(name)) {
                 return (VariableElement) enclosed;
             }
@@ -1779,11 +1783,17 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         return null;
     }
 
-    /** The fields of {@code element} carrying the annotation {@code fqn}, in declaration order. */
+    /**
+     * The non-static, non-transient fields of {@code element} carrying the annotation {@code fqn},
+     * in declaration order.
+     */
     private List<VariableElement> fieldsCarrying(TypeElement element, String fqn) {
         List<VariableElement> carriers = new ArrayList<>();
         for (Element enclosed : element.getEnclosedElements()) {
-            if (enclosed.getKind() == ElementKind.FIELD && findAnnotation(enclosed, fqn) != null) {
+            if (enclosed.getKind() == ElementKind.FIELD
+                    && !enclosed.getModifiers().contains(Modifier.STATIC)
+                    && !enclosed.getModifiers().contains(Modifier.TRANSIENT)
+                    && findAnnotation(enclosed, fqn) != null) {
                 carriers.add((VariableElement) enclosed);
             }
         }
@@ -2243,7 +2253,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         for (SystemFieldRole role : SYSTEM_FIELD_ROLES) {
             List<VariableElement> carriers = new ArrayList<>();
             for (Element enclosed : element.getEnclosedElements()) {
-                if (enclosed.getKind() != ElementKind.FIELD) {
+                if (enclosed.getKind() != ElementKind.FIELD
+                        || enclosed.getModifiers().contains(Modifier.STATIC)
+                        || enclosed.getModifiers().contains(Modifier.TRANSIENT)) {
                     continue;
                 }
                 AnnotationMirror mirror = findAnnotation(enclosed, role.fqn());
@@ -2426,6 +2438,21 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             }
 
             VariableElement field = (VariableElement) enclosed;
+
+            // Persisted fields are instance fields: static and transient fields do not reach metadata.
+            boolean isStatic = field.getModifiers().contains(Modifier.STATIC);
+            boolean isTransient = field.getModifiers().contains(Modifier.TRANSIENT);
+            if (isStatic || isTransient) {
+                AnnotationMirror fieldAnnotation = findAnnotation(field, "eu.exeris.sdk.annotation.Field");
+                if (fieldAnnotation != null) {
+                    String modifier = isStatic && isTransient ? "static transient" : isStatic ? "static" : "transient";
+                    warning(DiagnosticId.FIELD_ON_STATIC_OR_TRANSIENT,
+                            "@Field is on " + modifier + " field '" + field.getSimpleName()
+                                    + "', which is not persisted.",
+                            field, fieldAnnotation);
+                }
+                continue;
+            }
 
             // Detect and collect enum types
             collectEnumType(field.asType());
@@ -2993,15 +3020,18 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     }
 
     /**
-     * The entity's {@code @Field}-annotated field names in declaration order — the
-     * universe EV1 payload resolution selects from. Must agree byte-for-byte with
-     * {@code SourceModelReader.entityFieldNames} (ADR-042 lock-step). Fields without
-     * {@code @Field} (and {@code @Relationship} fields) are not payload fields.
+     * The entity's {@code @Field}-annotated instance field names in declaration order — the
+     * universe EV1 payload resolution selects from. {@code SourceModelReader.entityFieldNames}
+     * must yield the same list (ADR-042 lock-step), which holds only where the reader also skips
+     * static and transient fields. Fields without {@code @Field} (and {@code @Relationship}
+     * fields) are not payload fields.
      */
     private List<String> entityFieldNames(TypeElement element) {
         List<String> names = new ArrayList<>();
         for (Element enclosed : element.getEnclosedElements()) {
-            if (enclosed.getKind() != ElementKind.FIELD) {
+            if (enclosed.getKind() != ElementKind.FIELD
+                    || enclosed.getModifiers().contains(Modifier.STATIC)
+                    || enclosed.getModifiers().contains(Modifier.TRANSIENT)) {
                 continue;
             }
             if (findAnnotation(enclosed, "eu.exeris.sdk.annotation.Field") != null) {
@@ -3057,7 +3087,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         List<RelationshipMetadata> relationships = new ArrayList<>();
 
         for (Element enclosed : element.getEnclosedElements()) {
-            if (enclosed.getKind() != ElementKind.FIELD) {
+            if (enclosed.getKind() != ElementKind.FIELD
+                    || enclosed.getModifiers().contains(Modifier.STATIC)
+                    || enclosed.getModifiers().contains(Modifier.TRANSIENT)) {
                 continue;
             }
 
@@ -3210,7 +3242,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         List<GraphEdgeMetadata> edges = new ArrayList<>();
 
         for (Element enclosed : element.getEnclosedElements()) {
-            if (enclosed.getKind() != ElementKind.FIELD) {
+            if (enclosed.getKind() != ElementKind.FIELD
+                    || enclosed.getModifiers().contains(Modifier.STATIC)
+                    || enclosed.getModifiers().contains(Modifier.TRANSIENT)) {
                 continue;
             }
 

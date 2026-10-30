@@ -435,7 +435,10 @@ class KernelCodegenCompileTest {
 
         assertThat(migration(generatedMain, "create_invoices"))
                 .contains("invoice_no UUID PRIMARY KEY DEFAULT gen_random_uuid()")
-                .doesNotContain(" id UUID");
+                .doesNotContain(" id UUID")
+                .doesNotContain("default_status")
+                .doesNotContain("system_tag")
+                .doesNotContain("session_token");
         assertThat(migration(generatedMain, "foreign_keys"))
                 .contains("FOREIGN KEY (invoice_id) REFERENCES invoices(invoice_no)");
         assertThat(Files.readString(generatedMain.resolve("com/billing/repository/InvoiceRepository.java")))
@@ -481,6 +484,10 @@ class KernelCodegenCompileTest {
                 @ExerisDomain(module = "billing", path = "/invoices", primaryKeyField = "invoiceNo")
                 @DomainEvent(name = "InvoiceIssued", trigger = DomainEvent.Trigger.CREATE, topic = "invoices.issued")
                 public class Invoice {
+
+                    public static final String DEFAULT_STATUS = "ISSUED";
+                    private static final String SYSTEM_TAG = "BILLING";
+                    private transient String sessionToken;
 
                     private UUID invoiceNo;
 
