@@ -16,6 +16,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import ts from 'typescript';
 import { generateView, generateViewRoute, ViewGenerationError } from '../../../src/generators/angular/view-gen.js';
 import { DomainMetadataSchema, ViewMetadataSchema, type ViewMetadata } from '../../../src/models/domain-model.js';
 import { DEFAULT_CONFIG } from '../../../src/config.js';
@@ -506,13 +507,102 @@ describe('generateView — CUSTOM block props are a field bound as [props]', () 
     ]), config);
     expect(f.content).toContain('<stat-tile [props]="blockProps1"></stat-tile>');
     expect(f.content).toContain('<stat-tile [props]="blockProps2"></stat-tile>');
-    expect(f.content).toContain('  protected readonly blockProps1 = {"label":"Users","value":42,"tags":["a","b"]};');
-    expect(f.content).toContain('  protected readonly blockProps2 = {"label":"Teams"};');
+    expect(f.content).toContain('  protected readonly blockProps1 = {"label":"Users","value":42,"tags":["a","b"]} as const;');
+    expect(f.content).toContain('  protected readonly blockProps2 = {"label":"Teams"} as const;');
   });
 
   it('keeps the source key order of the props JSON', () => {
     const f = generateView(view([{ type: 'CUSTOM', customType: 'StatTile', props: '{"z":1,"a":2}' }]), config);
-    expect(f.content).toContain('protected readonly blockProps1 = {"z":1,"a":2};');
+    expect(f.content).toContain('protected readonly blockProps1 = {"z":1,"a":2} as const;');
+  });
+
+  it('compiles a CUSTOM block whose component declares a union-typed prop', () => {
+    const customConfig = {
+      ...DEFAULT_CONFIG,
+      customBlocks: {
+        Badge: { import: '../blocks/badge.component', symbol: 'BadgeComponent' },
+      },
+    };
+    const v = ViewMetadataSchema.parse({
+      name: 'Dashboard',
+      regions: [
+        {
+          slot: 'main',
+          components: [
+            {
+              type: 'CUSTOM',
+              customType: 'Badge',
+              props: '{"label":"Active","variant":"success"}',
+            },
+          ],
+        },
+      ],
+    });
+    const emitted = generateView(v, customConfig);
+    expect(emitted.content).toContain('protected readonly blockProps1 = {"label":"Active","variant":"success"} as const;');
+
+    const compilerOptions: ts.CompilerOptions = {
+      strict: true,
+      noEmit: true,
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.ESNext,
+      moduleResolution: ts.ModuleResolutionKind.Bundler,
+      types: [],
+      lib: ['lib.es2022.d.ts'],
+    };
+    const files: Record<string, string> = {
+      '/angular-core.d.ts': [
+        'declare module "@angular/core" {',
+        '  export function Component(options: any): ClassDecorator;',
+        '  export enum ChangeDetectionStrategy { OnPush = 0, Default = 1 }',
+        '}',
+      ].join('\n'),
+      '/angular-common.d.ts': [
+        'declare module "@angular/common" {',
+        '  export class CommonModule {}',
+        '}',
+      ].join('\n'),
+      '/blocks/badge.component.ts': [
+        'export interface BadgeProps {',
+        '  readonly label: string;',
+        '  readonly variant: "primary" | "secondary" | "success";',
+        '}',
+        'export class BadgeComponent {',
+        '  props!: BadgeProps;',
+        '}',
+      ].join('\n'),
+      '/pages/dashboard.component.ts': emitted.content,
+      '/usage.ts': [
+        'import { DashboardPageComponent } from "./pages/dashboard.component";',
+        'import { BadgeComponent } from "./blocks/badge.component";',
+        '',
+        'class TestDashboard extends DashboardPageComponent {',
+        '  bind(badge: BadgeComponent) {',
+        '    badge.props = this.blockProps1;',
+        '  }',
+        '}',
+      ].join('\n'),
+    };
+
+    const host = ts.createCompilerHost(compilerOptions);
+    const origReadFile = host.readFile.bind(host);
+    const origFileExists = host.fileExists.bind(host);
+    const origGetSourceFile = host.getSourceFile.bind(host);
+
+    host.directoryExists = () => true;
+    host.readFile = (name) => files[name] ?? origReadFile(name);
+    host.fileExists = (name) => name in files || origFileExists(name);
+    host.getSourceFile = (name, version) =>
+      name in files
+        ? ts.createSourceFile(name, files[name], ts.ScriptTarget.ES2022)
+        : origGetSourceFile(name, version);
+
+    const program = ts.createProgram(['/usage.ts', '/angular-core.d.ts', '/angular-common.d.ts'], compilerOptions, host);
+    const diags = ts.getPreEmitDiagnostics(program)
+      .filter((d) => d.file && d.file.fileName in files)
+      .map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n'));
+
+    expect(diags).toEqual([]);
   });
 
   it('a block with no props gets no binding and no field', () => {
