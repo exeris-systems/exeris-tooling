@@ -4155,7 +4155,7 @@ pairing are in [`docs/0.11.0-release-plan.md`](docs/0.11.0-release-plan.md). Eve
 reads an SDK 0.13 half: the `-io` reader half under ADR-042 (exeris-sdk#187, exeris-sdk#161) or a
 carrier (exeris-sdk#186).
 
-- [ ] **A1 pins**: SDK 0.13.0 and kernel 0.13.0 in both BOMs, and the 0.13 shapes that need no
+- [x] **A1 pins** (#447): SDK 0.13.0 and kernel 0.13.0 in both BOMs, and the 0.13 shapes that need no
       extraction (both lifecycle flags written, `SchemaVersion` 0.13.0, `pluralName`, #431).
 - [ ] **Wave 0, decisions**: RFC/ADR for the `@Blob` routes; ADR-058 amendment for the generated
       integration tests (#408); ADR-096 amendment for list route search (#365); the `@ActionParam`
@@ -4164,8 +4164,8 @@ carrier (exeris-sdk#186).
 - [ ] **T4 TCK binding**: `exeris-sdk-tck` bound to the processor, every extraction removing its
       facet; at the cut `unsupportedFacets()` is empty. Gate: exeris-sdk#249 (the corpus declares
       no primary key) in a final 0.13.x.
-- [ ] **JB1–JB4 correctness**: writer path traversal (#430), static fields (#421), the `@Action`
-      parameter refusal (#422), the generated tenant policy (#429, #428).
+- [ ] **JB1–JB4 correctness**: writer path traversal (#430), static fields (#421, done in #451),
+      the `@Action` parameter refusal (#422), the generated tenant policy (#429, #428).
 - [ ] **J1 `@PrimaryKey`**: the field marker, read into `primaryKeyField` (ADR-104).
 - [ ] **J2 + S1 `@GraphProperty`, `@UIGroup`**: graph node properties in the graph-sync upsert and
       the 0.13 `GraphEdgeMetadata` (#444, #437, #438); grouped sections in the generated forms and
@@ -4186,7 +4186,8 @@ carrier (exeris-sdk#186).
 - [ ] **T1–T3, T5, T6 coverage**: generated Java and TS tests (#407); the first slice of opt-in
       generated integration tests on H2 (#408); per-file vitest thresholds; processor-compiled e2e
       fixtures for `@UI`, `@View`, `@GraphEdge`, `@RouteAccess`.
-- [ ] **Hygiene**: #405 (before the cut), #406, #314; `fe-app-build` a required check.
+- [ ] **Hygiene**: #405 (done, #450); #406; #314, LF line endings for the committed generated tree;
+      `fe-app-build` a required check.
 
 Not in 0.11.0: `@Channel` (J4, S3 — SDK 0.13 has no reader half for it; 0.12.0, with its RFC/ADR),
 generated integration tests on PostgreSQL and tenant scopes (0.12.0), `@Encrypted` /
