@@ -43,7 +43,7 @@ class InitializrCliMainTest {
         assertThat(target.resolve("backend/pom.xml")).content()
                 .contains("<version>" + ScaffoldVersions.bundled().tooling() + "</version>");
         assertThat(target.resolve("frontend/package.json")).exists();
-        assertThat(out()).contains("Wrote the e2e project shop (7 files) to " + target.toAbsolutePath());
+        assertThat(out()).contains("Wrote the e2e project shop (8 files) to " + target.toAbsolutePath());
         assertThat(err()).isEmpty();
     }
 

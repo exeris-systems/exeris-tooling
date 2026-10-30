@@ -33,11 +33,24 @@ class ProjectGeneratorTest {
         ProjectTree tree = generate(ProjectTopology.BACKEND_ONLY, DatabaseType.H2);
         assertThat(tree.paths()).containsExactly(
                 ".gitignore",
+                ".gitattributes",
                 "README.md",
                 "pom.xml",
                 "first-build.sh",
                 "src/main/java/com/example/order/service/domain/OrderLine.java");
         assertThat(tree.find("first-build.sh")).get().extracting(ScaffoldFile::executable).isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName(".gitattributes pins every tree the generators write to LF line endings")
+    void gitattributesPinGeneratedTreesToLf() {
+        assertThat(text(generate(ProjectTopology.BACKEND_ONLY, DatabaseType.H2), ".gitattributes"))
+                .contains("src/main/generated/** text eol=lf\n", "src/test/generated/** text eol=lf\n")
+                .doesNotContain("backend/", "frontend/", "{{");
+        assertThat(text(generate(ProjectTopology.E2E, DatabaseType.POSTGRESQL), ".gitattributes"))
+                .contains("backend/src/main/generated/** text eol=lf\n",
+                        "backend/src/test/generated/** text eol=lf\n", "frontend/app/** text eol=lf\n")
+                .doesNotContain("{{");
     }
 
     @Test
@@ -141,6 +154,7 @@ class ProjectGeneratorTest {
         ProjectTree tree = generate(ProjectTopology.E2E, DatabaseType.POSTGRESQL);
         assertThat(tree.paths()).containsExactly(
                 ".gitignore",
+                ".gitattributes",
                 "README.md",
                 "backend/pom.xml",
                 "backend/first-build.sh",
