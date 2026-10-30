@@ -281,6 +281,7 @@ src/app/generated/
 │   ├── about.component.ts
 │   └── about.route.ts
 ├── view.routes.ts            # every @View route, as one array
+├── view.routes.server.ts     # prerenderable view routes, under render: 'ssg'
 └── index.ts                  # the barrel, when the metadata declares an entity or an enum
 ```
 
@@ -297,6 +298,18 @@ Each view route carries the view's name in its `data`, as `data: { view: '<ViewN
 shell, a navigation highlight or analytics can read the active view from
 `route.snapshot.data['view']` without parsing the path, which follows `@View.route` and changes with
 it.
+
+Under `render: 'ssg'`, spread `viewServerRoutes` into your `app.routes.server.ts`:
+
+```typescript
+import { RenderMode, ServerRoute } from '@angular/ssr';
+import { viewServerRoutes } from './generated/view.routes.server';
+
+export const serverRoutes: ServerRoute[] = [
+  ...viewServerRoutes,
+  { path: '**', renderMode: RenderMode.Client },
+];
+```
 
 What the scaffold would otherwise provide is then your app's to provide: `provideHttpClient()` when
 an emitted service or store calls the API, the `@exeris/ui-kit` styles and Tailwind, and the npm
@@ -349,8 +362,10 @@ is installed the build fails on the new files, and until `angular.json` names th
 prerenders nothing. A run under `ssg` that keeps an existing `angular.json`, as a seed or as a file
 no previous run generated, prints a warning naming the four files; `--dry-run` prints it too.
 
-With `scaffold: false` there is no `angular.json` or app configuration to change, so `render` has no
-effect: the server setup belongs to the app that owns them.
+With `scaffold: false` there is no `angular.json` or app configuration to change: the server entry and
+builder options belong to the app that owns them. Under `render: 'ssg'`, the generator emits
+`view.routes.server.ts` next to `view.routes.ts`, exporting `viewServerRoutes: ServerRoute[]` for your
+`app.routes.server.ts` to spread.
 
 ## Peer contracts (mesh)
 

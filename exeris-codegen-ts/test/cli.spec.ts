@@ -126,13 +126,15 @@ describe('exeris-gen generate', () => {
     expect(existsSync(join(work, 'out', 'proxy.conf.js'))).toBe(true);
   });
 
-  it('says that render ssg emits nothing without the scaffold', () => {
+  it('emits view.routes.server.ts under --render ssg without the scaffold and warns what the app has to wire', () => {
     view(join(work, 'meta'), 'About');
 
     const run = generate('-i', 'meta', '-o', 'out', '--no-scaffold', '--render', 'ssg', '--dry-run');
 
     expect(run.status).toBe(0);
-    expect(run.output).toContain('render "ssg" emits nothing without the scaffold');
+    expect(run.output).toContain('render "ssg" without the scaffold emits view.routes.server.ts');
+    expect(run.output).toContain('the server entry and builder options belong to the app that owns angular.json');
+    expect(run.output).toContain('Would create: view.routes.server.ts');
     expect(run.output).not.toContain('main.server.ts');
   });
 
@@ -142,7 +144,7 @@ describe('exeris-gen generate', () => {
     const run = generate('-i', 'meta', '-o', 'out', '--render', 'ssg', '--dry-run');
 
     expect(run.status).toBe(0);
-    expect(run.output).not.toContain('emits nothing without the scaffold');
+    expect(run.output).not.toContain('without the scaffold');
     expect(run.output).toContain('Would create: src/main.server.ts');
     expect(run.output).toContain('Would create: src/app/app.routes.server.ts');
   });

@@ -296,6 +296,18 @@ function isStaticRoutePath(path: string): boolean {
 }
 
 /**
+ * The route paths of the `@View` pages a static build prerenders, once each and in the order of
+ * `views`: a path that names one page, of a view that reads no entity data. The scaffold's server
+ * routes and the pages-only prerender list both take it, so the two cannot select differently.
+ */
+export function prerenderedViewPaths(views: ViewMetadata[]): string[] {
+  return views
+    .map(viewRoutePath)
+    .filter((path, i) => isStaticRoutePath(path) && !viewReadsEntityData(views[i]))
+    .filter((path, i, all) => all.indexOf(path) === i);
+}
+
+/**
  * The render mode of every route, for `outputMode: "static"`, where a route is either written to
  * HTML at build time or rendered in the browser.
  *
@@ -312,10 +324,7 @@ function isStaticRoutePath(path: string): boolean {
  * on a host that serves files only. Views arrive in the sorted order the app routes use.
  */
 function generateServerRoutes(domains: DomainMetadata[], views: ViewMetadata[]): string {
-  const paths = views
-    .map(viewRoutePath)
-    .filter((path, i) => isStaticRoutePath(path) && !viewReadsEntityData(views[i]))
-    .filter((path, i, all) => all.indexOf(path) === i);
+  const paths = prerenderedViewPaths(views);
   if (defaultRedirectPath(domains, views) !== '' && !paths.includes('')) paths.unshift('');
   const prerendered = paths
     .map((path) => `\n  { path: '${tsSingleQuoted(path)}', renderMode: RenderMode.Prerender },`)

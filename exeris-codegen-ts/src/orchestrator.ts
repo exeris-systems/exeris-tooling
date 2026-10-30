@@ -29,7 +29,7 @@ import { generateStore } from './generators/angular/store-gen.js';
 import { generateAppBarrel, generateAppStructure, RETIRED_SCAFFOLD_SEED_PATHS, SCAFFOLD_SEED_PATHS } from './generators/angular/app-structure-gen.js';
 import { AUTH_SERVICE_PATH, GuardGenerator } from './generators/angular/guard-gen.js';
 import { generateAuthInterceptor } from './generators/angular/auth-interceptor-gen.js';
-import { generateViewRoutesAggregate } from './generators/angular/view-routes-gen.js';
+import { generateViewRoutesAggregate, generateViewServerRoutesAggregate } from './generators/angular/view-routes-gen.js';
 import { generateView, generateViewRoute } from './generators/angular/view-gen.js';
 import { generateHttpErrorHelper, needsHttpErrorHelper } from './generators/angular/http-error-gen.js';
 import { generatePeerTypes } from './generators/api/peer-type-gen.js';
@@ -243,12 +243,17 @@ export function buildGeneratedFiles(
   // With the scaffold off (`config.scaffold`) the output directory sits inside an app the consumer
   // owns, so the tree is written at its root and nothing configures a project or an app shell. What
   // the shell would have provided for the generated code itself is emitted in its place: the
-  // barrel, and the view routes as one array for the consumer's routes file.
+  // barrel, the view routes as one array for the consumer's routes file, and under `render: 'ssg'`,
+  // the view routes' prerender list for the consumer's server routes file.
   if (!contractsOnly && !config.scaffold) {
     const barrel = generateAppBarrel(domains, enums, config);
     if (barrel) appTree.push(barrel);
     const viewRoutes = generateViewRoutesAggregate(views);
     if (viewRoutes) appTree.push(viewRoutes);
+    if (config.render === 'ssg') {
+      const viewServerRoutes = generateViewServerRoutesAggregate(views);
+      if (viewServerRoutes) appTree.push(viewServerRoutes);
+    }
   }
 
   const treeRoot = contractsOnly || !config.scaffold ? '' : 'src/app/';
