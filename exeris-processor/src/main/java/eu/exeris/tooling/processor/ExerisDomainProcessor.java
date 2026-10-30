@@ -372,6 +372,21 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             new InertAttribute("ActionParam", "required",
                     "the value reaches ActionParamMetadata in the JSON, but no emitter renders "
                             + "it — action-parameter generation reads only the parameter name and type"),
+            new InertAttribute("PrimaryKey", "generated",
+                    "the annotation's role — which field plays it — is extracted and reaches the "
+                            + "schema and the repository. This attribute is not: SystemFieldsMetadata "
+                            + "carries one field name per role and has no component for it, so setting "
+                            + "it changes no emitted output"),
+            new InertAttribute("PrimaryKey", "sequenceName",
+                    "the annotation's role — which field plays it — is extracted and reaches the "
+                            + "schema and the repository. This attribute is not: SystemFieldsMetadata "
+                            + "carries one field name per role and has no component for it, so setting "
+                            + "it changes no emitted output"),
+            new InertAttribute("PrimaryKey", "allowClientId",
+                    "the annotation's role — which field plays it — is extracted and reaches the "
+                            + "schema and the repository. This attribute is not: SystemFieldsMetadata "
+                            + "carries one field name per role and has no component for it, so setting "
+                            + "it changes no emitted output"),
             new InertAttribute("TenantId", "autoPopulate",
                     "the annotation's role — which field plays it — is extracted (C1) and "
                             + "reaches the schema and the repository. This attribute is not: "
@@ -789,9 +804,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             "Action", "ActionParam", "AuditCreatedAt", "AuditCreatedBy", "AuditUpdatedAt",
             "AuditUpdatedBy", "Bind", "Block", "CapabilityLifecycle", "CapabilityModule",
             DOMAIN_EVENT, "EventSourced", "ExerisDomain", "Field", "Graph", "GraphEdge",
-            "InternalApi", "Provides", "Region", "Relationship", "Requires", "Saga", "SagaStep",
-            "SharedScope", "SoftDelete", "SoftDeleteTimestamp", "SoftDeletedBy", "TenantId", "UI",
-            "Validation", "Version", "View");
+            "InternalApi", "PrimaryKey", "Provides", "Region", "Relationship", "Requires", "Saga",
+            "SagaStep", "SharedScope", "SoftDelete", "SoftDeleteTimestamp", "SoftDeletedBy",
+            "TenantId", "UI", "Validation", "Version", "View");
 
     /**
      * The members of {@link #EXTRACTED_ANNOTATIONS} the processor reads on a type declaration and
@@ -818,14 +833,6 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * author deserves to know which one they have hit.
      */
     private static final List<UnreadAnnotation> UNREAD_NOTES = List.of(
-            new UnreadAnnotation("PrimaryKey",
-                    "the other ten annotation.system.* annotations are extracted and their "
-                            + "field names reach the schema and the repository. This one is not "
-                            + "read yet: the SDK source-model reader does not read the marker "
-                            + "(exeris-sdk#187 item 1), and the processor and that reader must "
-                            + "agree on every component they carry (ADR-042). The key is named "
-                            + "with @ExerisDomain(primaryKeyField = ...), which every generator "
-                            + "honours"),
             new UnreadAnnotation("Derived",
                     "DerivedMetadata exists in the source model and is filled by nobody: the "
                             + "processor performs no extraction and no emitter names the type. "
@@ -905,21 +912,22 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     /** The one type a primary key may have (ADR-104), and one of the two a shared-scope key may. */
     private static final String UUID_FQN = "java.util.UUID";
 
+    /** The {@code @ExerisDomain} attribute naming the primary key field. */
+    private static final String PRIMARY_KEY_FIELD = "primaryKeyField";
+
+    /** The {@code @PrimaryKey.strategy} values the processor refuses (ADR-104). */
+    private static final Set<String> REFUSED_PRIMARY_KEY_STRATEGIES = Set.of("SEQUENCE", "IDENTITY", "NONE");
+
     /**
-     * The ten roles read from {@code annotation.system.*}. Ordered, and iterated in this order, so a
-     * diagnostic sequence is stable across runs.
+     * The eleven roles read from {@code annotation.system.*}. Ordered, and iterated in this order,
+     * so a diagnostic sequence is stable across runs.
      *
      * <p>{@code @SharedScope} has no {@code @ExerisDomain} override attribute, so its
      * {@code sharedScopeField} lookup is always empty and the override-conflict refusal never
-     * fires for it; the repeated-carrier refusal applies exactly as it does to the other nine.
-     *
-     * <p><b>{@code @PrimaryKey} is absent.</b> The key is named by
-     * {@code @ExerisDomain(primaryKeyField)}, which the generators honour (ADR-104). The marker
-     * would fill the same {@code SystemFieldsMetadata.primaryKeyField} component, and the processor
-     * may extract it only once the SDK source-model reader reads it the same way (ADR-042).
-     * Until then it is unread, and the never-read audit reports it.
+     * fires for it; the repeated-carrier refusal applies exactly as it does to the other ten.
      */
     private static final List<SystemFieldRole> SYSTEM_FIELD_ROLES = List.of(
+            new SystemFieldRole("PrimaryKey", PRIMARY_KEY_FIELD),
             new SystemFieldRole("TenantId", "tenantIdField"),
             new SystemFieldRole("Version", "versionField"),
             new SystemFieldRole("SoftDelete", "softDeleteField"),
@@ -2041,9 +2049,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                     "@ExerisDomain type '" + entity + "' names '" + key + "' as its primary key and "
                             + "also declares a field 'id'. Moving the key off an 'id' column changes "
                             + "the entity's CREATE TABLE migration, which then fails Flyway's checksum "
-                            + "on every database that applied it. Drop primaryKeyField to keep 'id' "
-                            + "as the key; if no database has applied the migration, rename or remove "
-                            + "the field 'id' instead.",
+                            + "on every database that applied it. Drop primaryKeyField, or move "
+                            + "@PrimaryKey to 'id', to keep 'id' as the key; if no database has applied "
+                            + "the migration, rename or remove the field 'id' instead.",
                     element, domainAnnotation);
         }
     }
@@ -2286,6 +2294,16 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
             VariableElement carrier = carriers.getFirst();
             String annotated = carrier.getSimpleName().toString();
+            if ("PrimaryKey".equals(role.annotation())) {
+                AnnotationMirror marker = findAnnotation(carrier, role.fqn());
+                String strategy = enumConstantName(extractAnnotationValues(marker).get("strategy"));
+                if (strategy != null && REFUSED_PRIMARY_KEY_STRATEGIES.contains(strategy)) {
+                    error(DiagnosticId.PRIMARY_KEY_STRATEGY_REFUSED,
+                            refusedPrimaryKeyStrategyMessage(element.getSimpleName().toString(), annotated, strategy),
+                            carrier, marker);
+                    continue;
+                }
+            }
             String override = blankToNull(getString(values, role.overrideAttribute(), null));
             if (override != null && !override.equals(annotated)) {
                 error(DiagnosticId.SYSTEM_FIELD_ROLE_CONFLICTS_WITH_OVERRIDE,
@@ -2341,6 +2359,13 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 .collect(Collectors.joining(", "));
     }
 
+    private static String refusedPrimaryKeyStrategyMessage(String entity, String field, String strategy) {
+        return "@PrimaryKey on field '" + field + "' of @ExerisDomain type '" + entity + "' declares strategy = "
+                + strategy + "; only UUID and UUID_DATABASE are accepted. The kernel identifies an entity's "
+                + "event stream and graph node by a UUID, and the generated repository fills a new row's key "
+                + "with UUID.randomUUID().";
+    }
+
     /**
      * Builds a {@link SystemFieldsMetadata} from the {@code @ExerisDomain} override attributes and
      * the field roles resolved above. Returns {@code null} when neither source said anything.
@@ -2353,9 +2378,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             Map<String, Object> values, Map<String, String> declared) {
         SystemFieldsMetadata d = SystemFieldsMetadata.defaults();
 
-        // The annotation default for primaryKeyField is "id"; everything else
-        // is "". A blank value is treated as "not overridden".
-        String primaryKeyField = nonBlankOr(getString(values, "primaryKeyField", null), d.primaryKeyField());
+        // The primary key resolves from the @PrimaryKey marker, else the primaryKeyField
+        // override, else the annotation default "id". Everything else is "".
+        String primaryKeyField = resolved(declared, values, PRIMARY_KEY_FIELD, d.primaryKeyField());
         String tenantIdField = resolved(declared, values, "tenantIdField", d.tenantIdField());
         String softDeleteField = resolved(declared, values, "softDeleteField", d.softDeleteField());
         String softDeleteTimestampField =
@@ -2383,8 +2408,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 || isExplicitNonBlank(values, "createdByField")
                 || isExplicitNonBlank(values, "updatedAtField")
                 || isExplicitNonBlank(values, "updatedByField")
-                || (isExplicitNonBlank(values, "primaryKeyField")
-                        && !"id".equals(getString(values, "primaryKeyField", "id")));
+                || (isExplicitNonBlank(values, PRIMARY_KEY_FIELD)
+                        && !"id".equals(getString(values, PRIMARY_KEY_FIELD, "id")));
 
         if (!anyOverride && declared.isEmpty()) {
             return null;
