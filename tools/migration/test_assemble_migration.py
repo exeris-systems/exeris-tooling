@@ -136,6 +136,49 @@ class CheckTest(unittest.TestCase):
         self.repo.fragment("java-01-a.md", "### A\n\nSee [d](diagnostics.md).\n")
         self.assertFails("does not resolve")
 
+    def test_sibling_fragment_inline_link_is_refused(self):
+        self.repo.fragment("java-02-b.md", "### B\n\nText.\n")
+        self.repo.fragment("java-01-a.md", "### A\n\nSee [b](java-02-b.md) and [b2](./java-02-b.md).\n")
+        rc, _, err = self.repo.run("--check")
+        self.assertEqual(1, rc, err)
+        self.assertIn("docs/migration/0.10.0/java-01-a.md", err)
+        self.assertIn("java-02-b.md", err)
+        self.assertIn("link to the MIGRATION guide heading anchor instead", err)
+
+    def test_sibling_fragment_reference_link_is_refused(self):
+        self.repo.fragment("java-02-b.md", "### B\n\nText.\n")
+        self.repo.fragment("java-01-a.md", "### A\n\nSee [b][sibling].\n\n[sibling]: java-02-b.md\n")
+        rc, _, err = self.repo.run("--check")
+        self.assertEqual(1, rc, err)
+        self.assertIn("docs/migration/0.10.0/java-01-a.md", err)
+        self.assertIn("java-02-b.md", err)
+        self.assertIn("link to the MIGRATION guide heading anchor instead", err)
+
+    def test_sibling_fragment_link_with_anchor_is_refused(self):
+        self.repo.fragment("java-02-b.md", "### B\n\nText.\n")
+        self.repo.fragment("java-01-a.md", "### A\n\nSee [b](java-02-b.md#section).\n")
+        rc, _, err = self.repo.run("--check")
+        self.assertEqual(1, rc, err)
+        self.assertIn("docs/migration/0.10.0/java-01-a.md", err)
+        self.assertIn("java-02-b.md#section", err)
+        self.assertIn("link to the MIGRATION guide heading anchor instead", err)
+
+    def test_sibling_fragment_traversal_link_is_refused(self):
+        self.repo.fragment("java-02-b.md", "### B\n\nText.\n")
+        self.repo.fragment("java-01-a.md", "### A\n\nSee [b](../0.10.0/java-02-b.md).\n")
+        rc, _, err = self.repo.run("--check")
+        self.assertEqual(1, rc, err)
+        self.assertIn("docs/migration/0.10.0/java-01-a.md", err)
+        self.assertIn("../0.10.0/java-02-b.md", err)
+        self.assertIn("link to the MIGRATION guide heading anchor instead", err)
+
+    def test_link_to_non_fragment_file_is_allowed(self):
+        (self.repo.root / "docs" / "migration" / "README.md").write_text("# Readme\n")
+        self.repo.fragment("java-01-a.md",
+                           "### A\n\nSee [d](../../diagnostics.md#section) and [r](../README.md).\n")
+        rc, _, err = self.repo.run("--check")
+        self.assertEqual(0, rc, err)
+
     def test_duplicate_heading(self):
         self.repo.fragment("java-01-a.md", "### Same\n")
         self.repo.fragment("java-02-b.md", "### Same\n")
@@ -201,6 +244,13 @@ class ReleaseTest(unittest.TestCase):
         self.repo.fragment("java-03-bad.md", "no heading\n")
         rc, _, _ = self.repo.run("--release", "0.10.0")
         self.assertEqual(1, rc)
+        self.assertEqual(MIGRATION, (self.repo.root / am.MIGRATION).read_text())
+
+    def test_release_refuses_fragment_linking_to_sibling(self):
+        self.repo.fragment("java-03-sibling.md", "### S\n\nSee [a](java-01-a.md).\n")
+        rc, _, err = self.repo.run("--release", "0.10.0")
+        self.assertEqual(1, rc)
+        self.assertIn("link to the MIGRATION guide heading anchor instead", err)
         self.assertEqual(MIGRATION, (self.repo.root / am.MIGRATION).read_text())
 
     def test_pending_until_assembled(self):
