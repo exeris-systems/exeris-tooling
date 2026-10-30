@@ -23,7 +23,7 @@ import { generateForm } from './generators/angular/form-gen.js';
 import { generateList } from './generators/angular/list-gen.js';
 import { generateDetail } from './generators/angular/detail-gen.js';
 import { EventHandlerGenerator } from './generators/angular/event-gen.js';
-import { generateSchemaSpec, generateServiceSpec } from './generators/angular/spec-gen.js';
+import { generateSchemaSpec, generateServiceSpec, generateStoreSpec, generateFormSpec } from './generators/angular/spec-gen.js';
 import { generateSaga } from './generators/angular/saga-gen.js';
 import { generateStore } from './generators/angular/store-gen.js';
 import { generateAppBarrel, generateAppStructure, RETIRED_SCAFFOLD_SEED_PATHS, SCAFFOLD_SEED_PATHS } from './generators/angular/app-structure-gen.js';
@@ -182,6 +182,11 @@ export function buildGeneratedFiles(
     if (config.generateTests) {
       if (config.generateZod) appTree.push(generateSchemaSpec(domain, config, enums));
       if (config.generateServices) appTree.push(generateServiceSpec(domain, config));
+      if (config.generateStores && config.generateServices) appTree.push(generateStoreSpec(domain, config));
+      if (config.generateForms && config.generateServices) {
+        const formSpec = generateFormSpec(domain, config, enums, domains);
+        if (formSpec) appTree.push(formSpec);
+      }
     }
   }
 
