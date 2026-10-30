@@ -28,6 +28,7 @@ import type { GeneratorConfig } from '../../config.js';
 import type { EnumMetadataForGen } from '../api/enum-module-gen.js';
 import { serviceApiPath } from './service-gen.js';
 import { fileHeaderLines } from '../file-header.js';
+import { tsSingleQuoted } from './ts-literal.js';
 import { fieldRenderContext, resolveFieldRenders } from './field-render.js';
 import { entityViews, hasFormPage } from './entity-views.js';
 
@@ -366,7 +367,7 @@ export function generateStoreSpec(metadata: DomainMetadata, config: GeneratorCon
   lines.push(`    }`);
   lines.push(`    expect(caught).toBeDefined();`);
   lines.push(`    expect(store.saving()).toBe(false);`);
-  lines.push(`    expect(store.error()).toBe('${Subject} was changed by someone else. Reload to see the latest version.');`);
+  lines.push(`    expect(store.error()).toBe('${tsSingleQuoted(`${Subject} was changed by someone else. Reload to see the latest version.`)}');`);
   lines.push(`  });`);
   lines.push('');
   lines.push(`  it('maps a 409 conflict on delete to the foreign-key reference message', async () => {`);
@@ -381,7 +382,7 @@ export function generateStoreSpec(metadata: DomainMetadata, config: GeneratorCon
   lines.push(`    }`);
   lines.push(`    expect(caught).toBeDefined();`);
   lines.push(`    expect(store.saving()).toBe(false);`);
-  lines.push(`    expect(store.error()).toBe('${Subject} is still referenced by other records. Remove or change them first.');`);
+  lines.push(`    expect(store.error()).toBe('${tsSingleQuoted(`${Subject} is still referenced by other records. Remove or change them first.`)}');`);
   lines.push(`  });`);
   lines.push('');
   lines.push(`  it('maps a 422 unprocessable entity on create to the related-record message', async () => {`);
@@ -396,7 +397,7 @@ export function generateStoreSpec(metadata: DomainMetadata, config: GeneratorCon
   lines.push(`    }`);
   lines.push(`    expect(caught).toBeDefined();`);
   lines.push(`    expect(store.saving()).toBe(false);`);
-  lines.push(`    expect(store.error()).toBe('${Subject} refers to a related record that does not exist.');`);
+  lines.push(`    expect(store.error()).toBe('${tsSingleQuoted(`${Subject} refers to a related record that does not exist.`)}');`);
   lines.push(`  });`);
   lines.push('');
   lines.push(`  it('maps a 422 unprocessable entity on update to the related-record message', async () => {`);
@@ -411,7 +412,7 @@ export function generateStoreSpec(metadata: DomainMetadata, config: GeneratorCon
   lines.push(`    }`);
   lines.push(`    expect(caught).toBeDefined();`);
   lines.push(`    expect(store.saving()).toBe(false);`);
-  lines.push(`    expect(store.error()).toBe('${Subject} refers to a related record that does not exist.');`);
+  lines.push(`    expect(store.error()).toBe('${tsSingleQuoted(`${Subject} refers to a related record that does not exist.`)}');`);
   lines.push(`  });`);
   lines.push(`});`);
   lines.push('');

@@ -300,6 +300,12 @@ describe('generateStoreSpec', () => {
     expect(custom).toContain('The purchase order was changed by someone else.');
   });
 
+  it('escapes a display name holding a quote in the expected messages', () => {
+    const content = generateStoreSpec(entity([{ name: 'id', type: 'java.util.UUID' }], { displayName: "Customer's Order" }), DEFAULT_CONFIG).content;
+    expect(content).toContain("toBe('The customer\\'s order was changed by someone else. Reload to see the latest version.');");
+    expect(content).not.toContain("toBe('The customer's order");
+  });
+
   it('verifies no request was left outstanding', () => {
     expect(generateStoreSpec(idOnly, DEFAULT_CONFIG).content).toContain('afterEach(() => http.verify());');
   });
