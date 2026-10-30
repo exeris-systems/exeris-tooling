@@ -12,4 +12,6 @@ last-verified: 2026-10-29
 The plural of an entity name ending in an uppercase vowel and `y` takes a plain `s`, as the SDK's
 `pluralName()` does from 0.13.0: `Ay` becomes `Ays`, where it was `Aies`. For such an entity the
 generated route path, the store and the list labels that use the plural change after regenerating,
-and now match the backend's routes. No other name changes.
+and match the backend's routes. Hand-written code that names the old path, or imports the store or
+route under the `Aies` name, renames it to the `Ays` one. An entity that sets an explicit `path`, and
+every other name, is unchanged.
