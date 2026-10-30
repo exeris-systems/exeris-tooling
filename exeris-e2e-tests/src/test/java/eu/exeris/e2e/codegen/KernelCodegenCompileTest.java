@@ -464,6 +464,91 @@ class KernelCodegenCompileTest {
                 .isTrue();
     }
 
+    @Test
+    @DisplayName("J2a: an entity carrying @Graph, @GraphProperty and @UIGroup compiles end to end")
+    void entityWithGraphPropertiesAndUiGroupsCompilesEndToEnd(@TempDir Path workspace) throws IOException {
+        Path entityClasses = workspace.resolve("target/classes");
+        Path generatedMain = workspace.resolve("src/main/generated/java");
+        Path generatedTests = workspace.resolve("src/test/generated/java");
+        ProcessorCompiler.compile(workspace.resolve("src/main/java"), entityClasses, null, graphUiGroupCorpus());
+
+        CodegenPipeline pipeline = CodegenPipeline.createDefault();
+        Path metadataDir = entityClasses.resolve("exeris-metadata");
+        pipeline.run(metadataDir, generatedMain, "com.knowledge");
+        pipeline.runTests(metadataDir, generatedTests, "com.knowledge");
+
+        Path metadataFile = metadataDir.resolve("Article.json");
+        assertThat(metadataFile).exists();
+        String json = Files.readString(metadataFile);
+        assertThat(json)
+                .contains("\"graphMetadata\"")
+                .contains("\"properties\"")
+                .contains("\"uiMetadata\"")
+                .contains("\"groups\"");
+
+        List<String> files = new ArrayList<>();
+        for (Path root : List.of(generatedMain, generatedTests)) {
+            try (Stream<Path> tree = Files.walk(root)) {
+                tree.filter(p -> p.toString().endsWith(".java")).map(Path::toString).sorted().forEach(files::add);
+            }
+        }
+        EmittedJavac.Result result = EmittedJavac.compile(files, workspace.resolve("target/app-classes"),
+                System.getProperty("java.class.path") + File.pathSeparator + entityClasses);
+        assertThat(result.clean())
+                .as("javac output:%n%s", result.render())
+                .isTrue();
+    }
+
+    private static Map<String, String> graphUiGroupCorpus() {
+        Map<String, String> sources = new LinkedHashMap<>();
+        sources.put("com/knowledge/domain/Article.java",
+                """
+                package com.knowledge.domain;
+
+                import eu.exeris.sdk.annotation.ExerisDomain;
+                import eu.exeris.sdk.annotation.Field;
+                import eu.exeris.sdk.annotation.Graph;
+                import eu.exeris.sdk.annotation.GraphProperty;
+                import eu.exeris.sdk.annotation.UI;
+                import eu.exeris.sdk.annotation.UIGroup;
+
+                import java.util.UUID;
+
+                @ExerisDomain(module = "knowledge", path = "/articles")
+                @Graph(nodeClass = "Article")
+                @UI
+                public class Article {
+
+                    private UUID id;
+
+                    @Field(label = "Title", required = true, sortable = true, filterable = true)
+                    @GraphProperty(indexed = true)
+                    @UIGroup(name = "content", label = "Content Details", order = 1)
+                    private String title;
+
+                    @Field(label = "Slug", required = true, unique = true)
+                    @GraphProperty(name = "article_slug", graphType = GraphProperty.GraphType.STRING)
+                    @UIGroup(name = "content")
+                    private String slug;
+
+                    @Field(label = "Summary")
+                    @GraphProperty(graphType = GraphProperty.GraphType.AUTO)
+                    @UIGroup(name = "meta", label = "Metadata", order = 2, collapsible = true, collapsed = false)
+                    private String summary;
+
+                    public UUID getId() { return id; }
+                    public void setId(UUID id) { this.id = id; }
+                    public String getTitle() { return title; }
+                    public void setTitle(String title) { this.title = title; }
+                    public String getSlug() { return slug; }
+                    public void setSlug(String slug) { this.slug = slug; }
+                    public String getSummary() { return summary; }
+                    public void setSummary(String summary) { this.summary = summary; }
+                }
+                """);
+        return sources;
+    }
+
     /** Reads the one emitted migration whose file name contains {@code fragment}. */
     private static String migration(Path generated, String fragment) throws IOException {
         try (Stream<Path> files = Files.walk(generated.resolve("db/migration"))) {

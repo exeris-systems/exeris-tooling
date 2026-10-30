@@ -222,6 +222,7 @@ const MAXIMAL = {
     searchable: true,
     filterable: true,
     exportable: true,
+    groups: [{ name: 'billing', label: 'Billing', order: 1, collapsible: false, collapsed: true, gridSpan: 12, fields: ['total'] }],
   },
   graphMetadata: { label: 'Order', edges: [{ name: 'contains', targetLabel: 'Product', relationType: 'CONTAINS' }] },
   sagaMetadata: {

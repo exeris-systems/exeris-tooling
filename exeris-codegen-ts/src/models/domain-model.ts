@@ -172,11 +172,26 @@ export type ProjectionMetadata = z.infer<typeof ProjectionMetadataSchema>;
 
 // Mirrors the entity-level components of eu.exeris.sdk.sourcemodel.ast.UIMetadata that carry
 // what @UI declares: the seven view switches the processor copies from the annotation, plus the
-// icon and colour the record declares and the processor never sets. `columns`, `defaultLayout`,
-// `bulkActions`, `groups` and `fieldOverrides` are written too, but only ever as the builder's
-// defaults, so leaving them undeclared loses nothing the source said. The switches are optional rather than defaulted: the processor writes all seven
-// whenever @UI is present, so a default would only fill hand-built metadata, with a value no
-// source stated.
+// icon and colour the record declares and the processor never sets, plus the field groups
+// @UIGroup declares. `columns`, `defaultLayout`, `bulkActions` and `fieldOverrides` are written
+// too, but only ever as the builder's defaults, so leaving them undeclared loses nothing the source
+// said. The switches are optional rather than defaulted: the processor writes all seven whenever
+// @UI is present, so a default would only fill hand-built metadata, with a value no source stated.
+// A UIMetadata written for @UIGroup alone carries the builder's switches.
+export const UIGroupMetadataSchema = z.object({
+  name: z.string(),
+  label: z.string().optional(),
+  description: z.string().optional(),
+  order: z.number().int().optional(),
+  collapsible: z.boolean().optional(),
+  collapsed: z.boolean().optional(),
+  icon: z.string().optional(),
+  gridSpan: z.number().int().optional(),
+  fields: z.array(z.string()).default([]),
+});
+
+export type UIGroupMetadata = z.infer<typeof UIGroupMetadataSchema>;
+
 export const UIMetadataSchema = z.object({
   icon: z.string().optional(),
   color: z.string().optional(),
@@ -187,6 +202,7 @@ export const UIMetadataSchema = z.object({
   searchable: z.boolean().optional(),
   filterable: z.boolean().optional(),
   exportable: z.boolean().optional(),
+  groups: z.array(UIGroupMetadataSchema).optional(),
 });
 
 export type UIMetadata = z.infer<typeof UIMetadataSchema>;
@@ -199,10 +215,11 @@ export type UIMetadata = z.infer<typeof UIMetadataSchema>;
 // (GraphPropertyMetadata / GraphEdgeMetadata / GraphQueryMetadata). Those records carry
 // @JsonInclude(NON_NULL), so a null component is absent from the wire rather than null, and an
 // absent component is "not carried" where an empty list is "carried, and there are none". The
-// processor extracts neither GraphMetadata.properties nor .queries and writes both as null, so
-// both are .optional() with no default: a [] here would claim the entity declares none. Edges
-// are extracted and always written, so their default changes nothing for processor output. An
-// edge's targetLabel / relationType are null whenever the annotation left them blank.
+// processor writes GraphMetadata.properties from @GraphProperty, [] when the entity declares none,
+// and .queries as null (@GraphQuery is not extracted); both stay .optional() so metadata written
+// before properties were extracted still parses. Edges are extracted and always written, so their
+// default changes nothing for processor output. An edge's targetLabel / relationType are null
+// whenever the annotation left them blank. A property's `field` names its source field.
 //
 // @GraphEdge.direction has no component on GraphEdgeMetadata — one of the attributes with no
 // carrier listed in ROADMAP's annotation-surface debt — so no metadata document carries it.
@@ -213,6 +230,7 @@ export const GraphPropertyMetadataSchema = z.object({
   name: z.string(),
   type: z.string().optional(),
   indexed: z.boolean().default(false),
+  field: z.string().optional(),
 });
 
 export type GraphPropertyMetadata = z.infer<typeof GraphPropertyMetadataSchema>;

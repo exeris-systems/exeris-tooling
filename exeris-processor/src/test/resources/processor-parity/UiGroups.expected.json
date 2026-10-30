@@ -1,0 +1,53 @@
+{
+  "uiMetadata": {
+    "listView": true,
+    "detailView": true,
+    "createForm": true,
+    "editForm": true,
+    "searchable": true,
+    "filterable": true,
+    "exportable": false,
+    "bulkActions": false,
+    "columns": 12,
+    "defaultLayout": "grid",
+    "groups": [
+      {
+        "name": "identity",
+        "label": "Identity",
+        "order": 2,
+        "collapsible": true,
+        "collapsed": true,
+        "icon": "person",
+        "gridSpan": 12,
+        "fields": [
+          "email",
+          "displayName"
+        ]
+      },
+      {
+        "name": "media",
+        "label": "Media",
+        "description": "Uploads",
+        "order": 0,
+        "collapsible": false,
+        "collapsed": false,
+        "gridSpan": 12,
+        "fields": [
+          "avatar",
+          "banner"
+        ]
+      },
+      {
+        "name": "other",
+        "order": 999,
+        "collapsible": true,
+        "collapsed": false,
+        "gridSpan": 12,
+        "fields": [
+          "note"
+        ]
+      }
+    ],
+    "fieldOverrides": []
+  }
+}

@@ -164,6 +164,11 @@ export const UI_CONTRACT_COVERAGE = {
     written: true,
     reason: 'Written from @UI; no export action is emitted on either side, and the switch defaults to off.',
   },
+  groups: {
+    state: 'RESERVED',
+    written: true,
+    reason: 'Written from @UIGroup; generated forms and detail views are not grouped on either side yet (0.11.0 row S1).',
+  },
 } as const satisfies { readonly [K in keyof UIMetadata]-?: NestedContractCoverageEntry };
 
 export const ACTION_CONTRACT_COVERAGE = {

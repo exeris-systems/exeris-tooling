@@ -1,0 +1,30 @@
+{
+  "graphMetadata": {
+    "properties": [
+      {
+        "name": "title",
+        "indexed": true
+      },
+      {
+        "name": "amt",
+        "type": "DOUBLE",
+        "indexed": false,
+        "field": "amount"
+      },
+      {
+        "name": "code",
+        "indexed": false
+      },
+      {
+        "name": "tag",
+        "indexed": false,
+        "field": "left"
+      },
+      {
+        "name": "tag",
+        "indexed": false,
+        "field": "right"
+      }
+    ]
+  }
+}
