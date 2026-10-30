@@ -1125,6 +1125,7 @@ class ExerisDomainProcessorTest {
 
                     import eu.exeris.sdk.annotation.ExerisDomain;
                     import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.ActionParam;
 
                     @ExerisDomain(module = "tactics", path = "/squads")
                     public class Squad { private java.util.UUID id;
@@ -1132,7 +1133,7 @@ class ExerisDomainProcessorTest {
                         // Bean-setter-shaped method: its simple name would collide with
                         // the generated setter — the action must be identified by `name`.
                         @Action(name = "assign-formation", label = "Assign Formation", path = "/{id}/assign-formation")
-                        public void setFormation(String formation) {}
+                        public void setFormation(@ActionParam(label = "Formation") String formation) {}
                     }
                     """
             );
@@ -1153,6 +1154,208 @@ class ExerisDomainProcessorTest {
             assertThat(metadata)
                     .contains("\"name\" : \"assign-formation\"")
                     .contains("\"methodName\" : \"setFormation\"");
+        }
+
+        @Test
+        @DisplayName("an unannotated parameter of an @Action method is refused with EXT-PROC-1020")
+        void unannotatedParameterIsRefused() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Drone",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "fleet", path = "/drones")
+                    public class Drone {
+                        private java.util.UUID id;
+
+                        @Action(name = "updateTelemetry", label = "Update battery telemetry")
+                        public void updateBatteryTelemetry(int newPercentage) {
+                        }
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation).hadErrorContaining("[Exeris] EXT-PROC-1020: Entity 'Drone', action method 'updateBatteryTelemetry': parameter 'newPercentage' carries no @ActionParam, so the generated handler could not pass it. "
+                    + "Add @ActionParam(label = \"...\").");
+        }
+
+        @Test
+        @DisplayName("a fully annotated @Action method compiles")
+        void fullyAnnotatedActionCompiles() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Drone",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.ActionParam;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "fleet", path = "/drones")
+                    public class Drone {
+                        private java.util.UUID id;
+
+                        @Action(name = "updateTelemetry", label = "Update battery telemetry")
+                        public void updateBatteryTelemetry(@ActionParam(label = "Percentage") int newPercentage) {
+                        }
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeededWithoutWarnings();
+        }
+
+        @Test
+        @DisplayName("a zero-parameter @Action method compiles")
+        void zeroParameterActionCompiles() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Drone",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "fleet", path = "/drones")
+                    public class Drone {
+                        private java.util.UUID id;
+
+                        @Action(name = "reboot", label = "Reboot")
+                        public void reboot() {
+                        }
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeededWithoutWarnings();
+        }
+
+        @Test
+        @DisplayName("a mixed annotated and unannotated parameter list refuses only the unannotated parameter")
+        void mixedParametersRefusesUnannotated() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Drone",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.ActionParam;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "fleet", path = "/drones")
+                    public class Drone {
+                        private java.util.UUID id;
+
+                        @Action(name = "navigate", label = "Navigate")
+                        public void navigate(@ActionParam(label = "Heading") double heading, double speed) {
+                        }
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation).hadErrorContaining("[Exeris] EXT-PROC-1020: Entity 'Drone', action method 'navigate': parameter 'speed' carries no @ActionParam, so the generated handler could not pass it. "
+                    + "Add @ActionParam(label = \"...\").");
+        }
+
+        @Test
+        @DisplayName("overloaded action methods: annotated overload compiles while unannotated overload fails")
+        void overloadedActionMethods() {
+            JavaFileObject validOverload = JavaFileObjects.forSourceString(
+                    "com.example.Drone",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.ActionParam;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "fleet", path = "/drones")
+                    public class Drone {
+                        private java.util.UUID id;
+
+                        @Action(name = "calibrate", label = "Calibrate")
+                        public void calibrate() {
+                        }
+
+                        @Action(name = "calibrateLevel", label = "Calibrate Level")
+                        public void calibrate(@ActionParam(label = "Level") int level) {
+                        }
+                    }
+                    """
+            );
+
+            Compilation validCompilation = compileWithProcessor(validOverload);
+            assertThat(validCompilation).succeededWithoutWarnings();
+
+            JavaFileObject invalidOverload = JavaFileObjects.forSourceString(
+                    "com.example.Drone",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "fleet", path = "/drones")
+                    public class Drone {
+                        private java.util.UUID id;
+
+                        @Action(name = "calibrate", label = "Calibrate")
+                        public void calibrate() {
+                        }
+
+                        @Action(name = "calibrateLevel", label = "Calibrate Level")
+                        public void calibrate(int level) {
+                        }
+                    }
+                    """
+            );
+
+            Compilation invalidCompilation = compileWithProcessor(invalidOverload);
+            assertThat(invalidCompilation).failed();
+            assertThat(invalidCompilation).hadErrorCount(1);
+            assertThat(invalidCompilation).hadErrorContaining("[Exeris] EXT-PROC-1020: Entity 'Drone', action method 'calibrate': parameter 'level' carries no @ActionParam, so the generated handler could not pass it. "
+                    + "Add @ActionParam(label = \"...\").");
+        }
+
+        @Test
+        @DisplayName("a parameter carrying @QueryParam without @ActionParam is refused with EXT-PROC-1020")
+        void queryParamWithoutActionParamIsRefused() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Account",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.QueryParam;
+
+                    @ExerisDomain(module = "core", path = "/accounts")
+                    public class Account {
+                        private java.util.UUID id;
+
+                        @Action(name = "search", label = "Search")
+                        public void search(@QueryParam("q") String query) {
+                        }
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation).hadErrorContaining("[Exeris] EXT-PROC-1020: Entity 'Account', action method 'search': parameter 'query' carries no @ActionParam, so the generated handler could not pass it. "
+                    + "Add @ActionParam(label = \"...\").");
         }
     }
 
@@ -2697,6 +2900,7 @@ class ExerisDomainProcessorTest {
                     package com.example;
 
                     import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.ActionParam;
                     import eu.exeris.sdk.annotation.ExerisDomain;
                     import eu.exeris.sdk.annotation.QueryParam;
 
@@ -2705,7 +2909,7 @@ class ExerisDomainProcessorTest {
                         private String name;
 
                         @Action(name = "search", label = "Search")
-                        public void search(@QueryParam("q") String query) {
+                        public void search(@ActionParam(label = "Query") @QueryParam("q") String query) {
                         }
                     }
                     """

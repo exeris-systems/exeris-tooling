@@ -2696,7 +2696,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             AnnotationMirror actionAnnotation = findAnnotation(method, "eu.exeris.sdk.annotation.Action");
 
             if (actionAnnotation != null) {
-                ActionMetadata action = extractActionMetadata(method, actionAnnotation);
+                ActionMetadata action = extractActionMetadata(element, method, actionAnnotation);
                 actions.add(action);
                 sites.add(new ActionSite(action, method, actionAnnotation));
             }
@@ -2705,7 +2705,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         return actions;
     }
 
-    private ActionMetadata extractActionMetadata(ExecutableElement method, AnnotationMirror annotation) {
+    private ActionMetadata extractActionMetadata(
+            TypeElement entity, ExecutableElement method, AnnotationMirror annotation) {
         Map<String, Object> values = extractAnnotationValues(annotation);
         warnInertAttributes("Action", values, method, annotation);
 
@@ -2770,6 +2771,14 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             AnnotationMirror paramAnnotation = findAnnotation(param, "eu.exeris.sdk.annotation.ActionParam");
             if (paramAnnotation != null) {
                 params.add(extractActionParamMetadata(param, paramAnnotation));
+            } else {
+                error(DiagnosticId.ACTION_PARAMETER_WITHOUT_ACTION_PARAM,
+                        "Entity '" + entity.getSimpleName() + "', action method '"
+                                + method.getSimpleName() + "': parameter '"
+                                + param.getSimpleName()
+                                + "' carries no @ActionParam, so the generated handler could not pass it."
+                                + " Add @ActionParam(label = \"...\").",
+                        param);
             }
         }
         builder.params(params);
