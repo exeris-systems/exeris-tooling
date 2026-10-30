@@ -448,8 +448,9 @@ src/app/generated/
         └── index.ts          # the peer's own barrel
 ```
 
-Under `--tests`, each entity also gets `schemas/<entity>.schema.spec.ts` and
-`services/<entity>.service.spec.ts`, run by `npm test`.
+Under `--tests`, each entity also gets `schemas/<entity>.schema.spec.ts`,
+`services/<entity>.service.spec.ts`, `stores/<entity>.store.spec.ts` and
+`components/<entity>-form.component.spec.ts`, run by `npm test`.
 
 ## Generated tests (`--tests`)
 
@@ -460,6 +461,10 @@ Off by default, because turning it on adds to *your* `package.json`. It emits, i
 - `*.service.spec.ts` — the real service driven through Angular's own
   `provideHttpClientTesting()`, asserting the URL and verb of each call. **No mocking library** is
   needed: the double ships with `@angular/common`, which the app already depends on;
+- `*.store.spec.ts` — state transitions for load/create/update/delete success and error mapping
+  (409 conflict on update vs delete, 422 unprocessable);
+- `*-form.component.spec.ts` — Signal Forms controls on create vs edit (`inCreate` / `inUpdate`),
+  read-only field exclusion, and required field validation blocking submit;
 - a `test` target on `@angular/build:unit-test` (Vitest), a `tsconfig.spec.json`, and the two
   devDependencies the runner cannot start without — `vitest` (an *optional* peer of
   `@angular/build`) and `jsdom` (the builder refuses to run without a DOM implementation).

@@ -28,6 +28,8 @@ import type { GeneratorConfig } from '../../config.js';
 import type { EnumMetadataForGen } from '../api/enum-module-gen.js';
 import { serviceApiPath } from './service-gen.js';
 import { fileHeaderLines } from '../file-header.js';
+import { fieldRenderContext, resolveFieldRenders } from './field-render.js';
+import { entityViews, hasFormPage } from './entity-views.js';
 
 /** An emitted file, in the (path, content) shape the orchestrator composes. */
 export interface SpecOutputFile {
@@ -228,4 +230,321 @@ export function generateServiceSpec(metadata: DomainMetadata, config: GeneratorC
   lines.push('');
 
   return { path: outPath('services', `${kebab}.service.spec.ts`), content: lines.join('\n') };
+}
+
+/**
+ * The store spec: state transitions for load/create/update/delete success, and HTTP error mappings.
+ *
+ * Drives the real Signal store through Angular's HttpTestingController.
+ */
+export function generateStoreSpec(metadata: DomainMetadata, config: GeneratorConfig): SpecOutputFile {
+  const entity = metadata.entityName;
+  const kebab = DslMapper.toKebabCase(entity);
+  const idField = primaryKeyField(metadata);
+  const baseUrl = `${config.apiBasePath}${serviceApiPath(metadata)}`;
+  const noun = (metadata.displayName ?? entity).toLowerCase();
+  const subject = `the ${noun}`;
+  const Subject = subject.charAt(0).toUpperCase() + subject.slice(1);
+
+  const lines = HEADER(`${entity} store spec`);
+  lines.push("import { TestBed } from '@angular/core/testing';");
+  lines.push("import { provideHttpClient } from '@angular/common/http';");
+  lines.push("import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';");
+  lines.push("import { afterEach, beforeEach, describe, expect, it } from 'vitest';");
+  lines.push(`import { ${entity}Store } from './${kebab}.store';`);
+  lines.push('');
+  lines.push(`describe('${entity}Store', () => {`);
+  lines.push(`  let store: ${entity}Store;`);
+  lines.push(`  let http: HttpTestingController;`);
+  lines.push('');
+  lines.push(`  beforeEach(() => {`);
+  lines.push(`    TestBed.configureTestingModule({`);
+  lines.push(`      providers: [provideHttpClient(), provideHttpClientTesting()],`);
+  lines.push(`    });`);
+  lines.push(`    store = TestBed.inject(${entity}Store);`);
+  lines.push(`    http = TestBed.inject(HttpTestingController);`);
+  lines.push(`  });`);
+  lines.push('');
+  lines.push(`  afterEach(() => http.verify());`);
+  lines.push('');
+  lines.push(`  it('loads all entities and updates loading state', async () => {`);
+  lines.push(`    expect(store.loading()).toBe(false);`);
+  lines.push(`    const loadPromise = store.loadAll();`);
+  lines.push(`    expect(store.loading()).toBe(true);`);
+  lines.push(`    const req = http.expectOne((r) => r.url === '${baseUrl}');`);
+  lines.push(`    expect(req.request.method).toBe('GET');`);
+  lines.push(`    req.flush({ content: [{ ${idField}: '42' }], totalElements: 1, totalPages: 1 });`);
+  lines.push(`    await loadPromise;`);
+  lines.push(`    expect(store.loading()).toBe(false);`);
+  lines.push(`    expect(store.entities().length).toBe(1);`);
+  lines.push(`    expect(store.totalElements()).toBe(1);`);
+  lines.push(`    expect(store.error()).toBeNull();`);
+  lines.push(`  });`);
+  lines.push('');
+  lines.push(`  it('loads a single entity by id and updates selection', async () => {`);
+  lines.push(`    expect(store.loading()).toBe(false);`);
+  lines.push(`    const loadPromise = store.loadById('42');`);
+  lines.push(`    expect(store.loading()).toBe(true);`);
+  lines.push(`    const req = http.expectOne('${baseUrl}/42');`);
+  lines.push(`    expect(req.request.method).toBe('GET');`);
+  lines.push(`    req.flush({ ${idField}: '42' });`);
+  lines.push(`    const entity = await loadPromise;`);
+  lines.push(`    expect(store.loading()).toBe(false);`);
+  lines.push(`    expect(store.selected()).toEqual({ ${idField}: '42' });`);
+  lines.push(`    expect(entity).toEqual({ ${idField}: '42' });`);
+  lines.push(`    expect(store.error()).toBeNull();`);
+  lines.push(`  });`);
+  lines.push('');
+  lines.push(`  it('creates an entity and prepends it to entities', async () => {`);
+  lines.push(`    expect(store.saving()).toBe(false);`);
+  lines.push(`    const createPromise = store.create({} as never);`);
+  lines.push(`    expect(store.saving()).toBe(true);`);
+  lines.push(`    const req = http.expectOne('${baseUrl}');`);
+  lines.push(`    expect(req.request.method).toBe('POST');`);
+  lines.push(`    req.flush({ ${idField}: '42' });`);
+  lines.push(`    const created = await createPromise;`);
+  lines.push(`    expect(store.saving()).toBe(false);`);
+  lines.push(`    expect(store.entities()).toContainEqual({ ${idField}: '42' });`);
+  lines.push(`    expect(created).toEqual({ ${idField}: '42' });`);
+  lines.push(`    expect(store.error()).toBeNull();`);
+  lines.push(`  });`);
+  lines.push('');
+  lines.push(`  it('updates a loaded entity and replaces it with the server response', async () => {`);
+  lines.push(`    const loadPromise = store.loadAll();`);
+  lines.push(`    http.expectOne((r) => r.url === '${baseUrl}').flush({ content: [{ ${idField}: '42', revision: 1 }], totalElements: 1, totalPages: 1 });`);
+  lines.push(`    await loadPromise;`);
+  lines.push(`    expect(store.saving()).toBe(false);`);
+  lines.push(`    const updatePromise = store.update('42', {} as never);`);
+  lines.push(`    expect(store.saving()).toBe(true);`);
+  lines.push(`    const req = http.expectOne('${baseUrl}/42');`);
+  lines.push(`    expect(req.request.method).toBe('PUT');`);
+  lines.push(`    req.flush({ ${idField}: '42', revision: 2 });`);
+  lines.push(`    const updated = await updatePromise;`);
+  lines.push(`    expect(store.saving()).toBe(false);`);
+  lines.push(`    expect(store.entities()).toEqual([{ ${idField}: '42', revision: 2 }]);`);
+  lines.push(`    expect(updated).toEqual({ ${idField}: '42', revision: 2 });`);
+  lines.push(`    expect(store.error()).toBeNull();`);
+  lines.push(`  });`);
+  lines.push('');
+  lines.push(`  it('deletes an entity and removes it from entities', async () => {`);
+  lines.push(`    expect(store.saving()).toBe(false);`);
+  lines.push(`    const deletePromise = store.delete('42');`);
+  lines.push(`    expect(store.saving()).toBe(true);`);
+  lines.push(`    const req = http.expectOne('${baseUrl}/42');`);
+  lines.push(`    expect(req.request.method).toBe('DELETE');`);
+  lines.push(`    req.flush(null);`);
+  lines.push(`    await deletePromise;`);
+  lines.push(`    expect(store.saving()).toBe(false);`);
+  lines.push(`    expect(store.entities().some((e) => e.${idField} === '42')).toBe(false);`);
+  lines.push(`    expect(store.error()).toBeNull();`);
+  lines.push(`  });`);
+  if (metadata.softDelete) {
+    lines.push('');
+    lines.push(`  it('archives an entity with DELETE and removes it from entities', async () => {`);
+    lines.push(`    expect(store.saving()).toBe(false);`);
+    lines.push(`    const archivePromise = store.archive('42');`);
+    lines.push(`    expect(store.saving()).toBe(true);`);
+    lines.push(`    const req = http.expectOne('${baseUrl}/42');`);
+    lines.push(`    expect(req.request.method).toBe('DELETE');`);
+    lines.push(`    req.flush(null);`);
+    lines.push(`    await archivePromise;`);
+    lines.push(`    expect(store.saving()).toBe(false);`);
+    lines.push(`    expect(store.entities().some((e) => e.${idField} === '42')).toBe(false);`);
+    lines.push(`    expect(store.error()).toBeNull();`);
+    lines.push(`  });`);
+  }
+  lines.push('');
+  lines.push(`  it('maps a 409 conflict on update to the stale-version message', async () => {`);
+  lines.push(`    let caught: unknown;`);
+  lines.push(`    try {`);
+  lines.push(`      const promise = store.update('42', {} as never);`);
+  lines.push(`      const req = http.expectOne('${baseUrl}/42');`);
+  lines.push(`      req.flush('conflict', { status: 409, statusText: 'Conflict' });`);
+  lines.push(`      await promise;`);
+  lines.push(`    } catch (err) {`);
+  lines.push(`      caught = err;`);
+  lines.push(`    }`);
+  lines.push(`    expect(caught).toBeDefined();`);
+  lines.push(`    expect(store.saving()).toBe(false);`);
+  lines.push(`    expect(store.error()).toBe('${Subject} was changed by someone else. Reload to see the latest version.');`);
+  lines.push(`  });`);
+  lines.push('');
+  lines.push(`  it('maps a 409 conflict on delete to the foreign-key reference message', async () => {`);
+  lines.push(`    let caught: unknown;`);
+  lines.push(`    try {`);
+  lines.push(`      const promise = store.delete('42');`);
+  lines.push(`      const req = http.expectOne('${baseUrl}/42');`);
+  lines.push(`      req.flush('conflict', { status: 409, statusText: 'Conflict' });`);
+  lines.push(`      await promise;`);
+  lines.push(`    } catch (err) {`);
+  lines.push(`      caught = err;`);
+  lines.push(`    }`);
+  lines.push(`    expect(caught).toBeDefined();`);
+  lines.push(`    expect(store.saving()).toBe(false);`);
+  lines.push(`    expect(store.error()).toBe('${Subject} is still referenced by other records. Remove or change them first.');`);
+  lines.push(`  });`);
+  lines.push('');
+  lines.push(`  it('maps a 422 unprocessable entity on create to the related-record message', async () => {`);
+  lines.push(`    let caught: unknown;`);
+  lines.push(`    try {`);
+  lines.push(`      const promise = store.create({} as never);`);
+  lines.push(`      const req = http.expectOne('${baseUrl}');`);
+  lines.push(`      req.flush('unprocessable', { status: 422, statusText: 'Unprocessable Entity' });`);
+  lines.push(`      await promise;`);
+  lines.push(`    } catch (err) {`);
+  lines.push(`      caught = err;`);
+  lines.push(`    }`);
+  lines.push(`    expect(caught).toBeDefined();`);
+  lines.push(`    expect(store.saving()).toBe(false);`);
+  lines.push(`    expect(store.error()).toBe('${Subject} refers to a related record that does not exist.');`);
+  lines.push(`  });`);
+  lines.push('');
+  lines.push(`  it('maps a 422 unprocessable entity on update to the related-record message', async () => {`);
+  lines.push(`    let caught: unknown;`);
+  lines.push(`    try {`);
+  lines.push(`      const promise = store.update('42', {} as never);`);
+  lines.push(`      const req = http.expectOne('${baseUrl}/42');`);
+  lines.push(`      req.flush('unprocessable', { status: 422, statusText: 'Unprocessable Entity' });`);
+  lines.push(`      await promise;`);
+  lines.push(`    } catch (err) {`);
+  lines.push(`      caught = err;`);
+  lines.push(`    }`);
+  lines.push(`    expect(caught).toBeDefined();`);
+  lines.push(`    expect(store.saving()).toBe(false);`);
+  lines.push(`    expect(store.error()).toBe('${Subject} refers to a related record that does not exist.');`);
+  lines.push(`  });`);
+  lines.push(`});`);
+  lines.push('');
+
+  return { path: outPath('stores', `${kebab}.store.spec.ts`), content: lines.join('\n') };
+}
+
+/**
+ * The form spec: Signal Forms control inclusion on create vs edit (inCreate / inUpdate),
+ * exclusion of server-owned and read-only fields, and required field validation blocking submit.
+ */
+export function generateFormSpec(
+  metadata: DomainMetadata,
+  config: GeneratorConfig,
+  enums: EnumMetadataForGen[] = [],
+  allDomains: DomainMetadata[] = [metadata],
+): SpecOutputFile | null {
+  if (!hasFormPage(entityViews(metadata))) {
+    return null;
+  }
+
+  const entity = metadata.entityName;
+  const kebab = DslMapper.toKebabCase(entity);
+  const idField = primaryKeyField(metadata);
+  const baseUrl = `${config.apiBasePath}${serviceApiPath(metadata)}`;
+
+  const renders = resolveFieldRenders(
+    metadata,
+    fieldRenderContext(metadata, allDomains, false, enums, config.generateServices !== false),
+  );
+  const createFields = renders.filter((r) => r.form.placement === 'control');
+  const createOmitted = createFields.filter((r) => !r.form.inCreate);
+  const updateOmitted = createFields.filter((r) => !r.form.inUpdate);
+  const bothModes = createFields.filter((r) => r.form.inCreate && r.form.inUpdate);
+  const nonControlFields = metadata.fields.filter(
+    (f) => f.readOnly === true || f.computed === true || f.name === idField || !createFields.some((c) => c.name === f.name),
+  );
+  const requiredCreateFields = createFields.filter(
+    (r) => r.field.required && r.form.value !== 'boolean' && r.form.inCreate,
+  );
+
+  const lines = HEADER(`${entity} form spec`);
+  lines.push("import { ComponentFixture, TestBed } from '@angular/core/testing';");
+  lines.push("import { provideHttpClient } from '@angular/common/http';");
+  lines.push("import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';");
+  lines.push("import { ActivatedRoute, Router } from '@angular/router';");
+  lines.push("import { afterEach, beforeEach, describe, expect, it } from 'vitest';");
+  lines.push(`import { ${entity}FormComponent } from './${kebab}-form.component';`);
+  lines.push('');
+  lines.push(`describe('${entity}FormComponent', () => {`);
+  lines.push(`  let fixture: ComponentFixture<${entity}FormComponent>;`);
+  lines.push(`  let component: ${entity}FormComponent;`);
+  lines.push(`  let http: HttpTestingController;`);
+  lines.push('');
+  lines.push(`  beforeEach(() => {`);
+  lines.push(`    TestBed.configureTestingModule({`);
+  lines.push(`      providers: [`);
+  lines.push(`        provideHttpClient(),`);
+  lines.push(`        provideHttpClientTesting(),`);
+  lines.push(`        { provide: ActivatedRoute, useValue: {} },`);
+  lines.push(`        { provide: Router, useValue: { navigate: () => {} } },`);
+  lines.push(`      ],`);
+  lines.push(`    });`);
+  lines.push(`    fixture = TestBed.createComponent(${entity}FormComponent);`);
+  lines.push(`    component = fixture.componentInstance;`);
+  lines.push(`    http = TestBed.inject(HttpTestingController);`);
+  lines.push(`  });`);
+  lines.push('');
+  lines.push(`  afterEach(() => http.verify());`);
+
+  if (bothModes.length > 0) {
+    lines.push('');
+    lines.push(`  it('offers editable controls in create mode', () => {`);
+    lines.push(`    fixture.componentRef.setInput('mode', 'create');`);
+    for (const f of bothModes) {
+      lines.push(`    expect(component.form).toHaveProperty('${f.name}');`);
+      lines.push(`    expect(component.form.${f.name}().disabled()).toBe(false);`);
+    }
+    lines.push(`  });`);
+  }
+
+  for (const f of createOmitted) {
+    lines.push('');
+    lines.push(`  it('disables create-omitted field ${f.name} in create mode and enables it in edit mode', () => {`);
+    lines.push(`    fixture.componentRef.setInput('mode', 'create');`);
+    lines.push(`    expect(component.form.${f.name}().disabled()).toBe(true);`);
+    lines.push(`    fixture.componentRef.setInput('mode', 'edit');`);
+    lines.push(`    expect(component.form.${f.name}().disabled()).toBe(false);`);
+    lines.push(`  });`);
+  }
+
+  for (const f of updateOmitted) {
+    lines.push('');
+    lines.push(`  it('enables update-omitted field ${f.name} in create mode and disables it in edit mode', () => {`);
+    lines.push(`    fixture.componentRef.setInput('mode', 'create');`);
+    lines.push(`    expect(component.form.${f.name}().disabled()).toBe(false);`);
+    lines.push(`    fixture.componentRef.setInput('mode', 'edit');`);
+    lines.push(`    expect(component.form.${f.name}().disabled()).toBe(true);`);
+    lines.push(`  });`);
+  }
+
+  lines.push('');
+  lines.push(`  it('does not offer server-owned or read-only fields as editable controls', () => {`);
+  const seenNonControl = new Set<string>();
+  seenNonControl.add(idField);
+  lines.push(`    expect(component.form).not.toHaveProperty('${idField}');`);
+  for (const f of nonControlFields) {
+    if (!seenNonControl.has(f.name)) {
+      seenNonControl.add(f.name);
+      lines.push(`    expect(component.form).not.toHaveProperty('${f.name}');`);
+    }
+  }
+  lines.push(`  });`);
+
+  lines.push('');
+  if (requiredCreateFields.length > 0) {
+    lines.push(`  it('blocks submit when required fields are missing', () => {`);
+    lines.push(`    expect(component.form().invalid()).toBe(true);`);
+    for (const f of requiredCreateFields) {
+      lines.push(`    expect(component.form.${f.name}().invalid()).toBe(true);`);
+    }
+    lines.push(`    component.onSubmit(new Event('submit'));`);
+    lines.push(`    expect(component.saving()).toBe(false);`);
+    lines.push(`    http.expectNone('${baseUrl}');`);
+    lines.push(`  });`);
+  } else {
+    lines.push(`  it('initializes form with valid state when no required fields exist', () => {`);
+    lines.push(`    expect(component.form().valid()).toBe(true);`);
+    lines.push(`  });`);
+  }
+
+  lines.push(`});`);
+  lines.push('');
+
+  return { path: outPath('components', `${kebab}-form.component.spec.ts`), content: lines.join('\n') };
 }
