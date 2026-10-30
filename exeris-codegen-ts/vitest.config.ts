@@ -195,6 +195,90 @@ export default defineConfig({
           branches: 80,
           statements: 85,
         },
+        // SSE stream client generator for streaming entity actions.
+        'src/generators/angular/action-stream-client-gen.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
+        // Bearer auth interceptor function emitter for authenticated HTTP requests.
+        'src/generators/angular/auth-interceptor-gen.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
+        // Entity-level UI view switches for pages, routes, and links.
+        'src/generators/angular/entity-views.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
+        // Field render model resolving display formats, form controls, and view bindings.
+        'src/generators/angular/field-render.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
+        // Application-wide HTTP error formatting helper generator.
+        'src/generators/angular/http-error-gen.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
+        // List route query contract defining pagination, sorting, and filter parameters.
+        'src/generators/angular/list-query.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
+        // Foreign key navigation links and picker resolvers for relationships.
+        'src/generators/angular/relationship-links.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
+        // SSE live-view and spectate client generator for real-time API entities.
+        'src/generators/angular/stream-client-gen.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
+        // Escaping helper for TypeScript single-quoted string literals.
+        'src/generators/angular/ts-literal.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
+        // Presentation IR view component and route generator.
+        'src/generators/angular/view-gen.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
+        // Aggregate view routes array emitter when application scaffold is disabled.
+        'src/generators/angular/view-routes-gen.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
+        // Codegen pipeline orchestrator mapping domain metadata into output files.
+        'src/orchestrator.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
       },
     },
     snapshotFormat: {

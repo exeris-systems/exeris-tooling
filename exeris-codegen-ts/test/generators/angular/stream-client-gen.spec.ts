@@ -451,4 +451,28 @@ describe('generateStreamClient — top-level convenience function', () => {
   it('returns null for a non-realTimeApi domain', () => {
     expect(generateStreamClient(domain({ entityName: 'Order' }), CTX.config)).toBeNull();
   });
+
+  it('defaults to KERNEL backend when config.backend is unset', () => {
+    const configWithoutBackend = { ...CTX.config, backend: undefined };
+    const file = generateStreamClient(
+      domain({ entityName: 'Order', realTimeApi: true }),
+      configWithoutBackend as unknown as GeneratorConfig,
+    );
+    expect(file).not.toBeNull();
+    expect(file!.content).toContain('export class OrderStreamClient');
+  });
+
+  it('falls back to unknown for payload fields not declared on the entity and normalises event names', () => {
+    const unmapped = domain({
+      entityName: 'Order',
+      realTimeApi: true,
+      events: [
+        { name: 'order_status_', payloadFields: ['unmappedField'] },
+      ],
+    });
+    const gen = new StreamClientGenerator();
+    const out = gen.generate(unmapped, CTX)!.content;
+    expect(out).toContain('export interface OrderOrderStatusSpectatePayload {');
+    expect(out).toContain('unmappedField: unknown;');
+  });
 });
