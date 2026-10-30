@@ -11,9 +11,11 @@ import ts from 'typescript';
 import {
   ActionStreamClientGenerator,
   generateActionStreamClient,
+  hasActionStreamClients,
 } from '../../../src/generators/angular/action-stream-client-gen.js';
 import {
   createGeneratorContext,
+  type GeneratorConfig,
   type GeneratorContext,
 } from '../../../src/core/generator-registry.js';
 import {
@@ -267,6 +269,22 @@ describe('generateActionStreamClient — top-level convenience function', () => 
     expect(
       generateActionStreamClient(domain({ entityName: 'Order', actions: [plainAction] }), CTX.config),
     ).toBeNull();
+  });
+
+  it('defaults to KERNEL backend when config.backend is unset', () => {
+    const configWithoutBackend = { ...CTX.config, backend: undefined };
+    const file = generateActionStreamClient(
+      domain({ entityName: 'Order', actions: [streamingAction] }),
+      configWithoutBackend as unknown as GeneratorConfig,
+    );
+    expect(file).not.toBeNull();
+    expect(file!.content).toContain('export class OrderTrackShipmentStreamClient');
+  });
+
+  it('handles absent actions array gracefully', () => {
+    const metadataWithoutActions = { ...domain({ entityName: 'Order' }), actions: undefined as unknown as [] };
+    expect(hasActionStreamClients(metadataWithoutActions)).toBe(false);
+    expect(generateActionStreamClient(metadataWithoutActions, CTX.config)).toBeNull();
   });
 });
 
