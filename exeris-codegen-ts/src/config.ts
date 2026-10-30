@@ -138,6 +138,10 @@ export const GeneratorConfigSchema = z.object({
    *  title either way. */
   viewHeading: z.enum(['title', 'none']).default('title'),
 
+  /** `viewHeading` for one view, keyed by the view's name; a view without an entry takes
+   *  `viewHeading`. */
+  viewHeadings: z.record(z.string(), z.enum(['title', 'none'])).default({}),
+
   /** Emit the Angular project and app shell around the generated tree.
    *
    *  On (the default), the output is a complete Angular application: `package.json`,
@@ -204,6 +208,7 @@ export const DEFAULT_CONFIG: GeneratorConfig = {
   generateTests: false,
   customBlocks: {},
   viewHeading: 'title',
+  viewHeadings: {},
   scaffold: true,
   render: 'csr',
 };

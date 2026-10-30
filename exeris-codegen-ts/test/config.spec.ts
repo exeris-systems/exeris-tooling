@@ -117,6 +117,15 @@ describe('GeneratorConfigSchema', () => {
     expect(() => GeneratorConfigSchema.parse({ viewHeading: 'hidden' })).toThrow();
     expect(() => GeneratorConfigSchema.parse({ viewHeading: false })).toThrow();
   });
+
+  it('viewHeadings defaults to no entry and accepts a mode per view name', () => {
+    expect(GeneratorConfigSchema.parse({}).viewHeadings).toEqual({});
+    expect(DEFAULT_CONFIG.viewHeadings).toEqual({});
+    expect(GeneratorConfigSchema.parse({ viewHeadings: { Landing: 'none' } }).viewHeadings)
+      .toEqual({ Landing: 'none' });
+    expect(() => GeneratorConfigSchema.parse({ viewHeadings: { Landing: 'hidden' } })).toThrow();
+    expect(() => GeneratorConfigSchema.parse({ viewHeadings: 'none' })).toThrow();
+  });
 });
 
 // ---------- DEFAULT_CONFIG ----------

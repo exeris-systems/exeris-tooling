@@ -268,5 +268,11 @@
     "since": "0.11",
     "adr": "ADR-092",
     "justification": "Both names become output path segments, so a metadata file whose entity or package name carries a separator or a dot segment is refused when it is read, and no planned file is written outside the output directory, under --overwrite included. Metadata the annotation processor writes holds Java identifiers and parses as before. docs/migration/0.11.0/ts-02-output-paths-contained.md carries the step."
+  },
+  {
+    "signature": "GeneratorConfig: + viewHeadings (Record<view name, 'title' | 'none'>, default {}); pages/<view>.component.ts: the h1 follows the view's entry, else viewHeading",
+    "since": "0.11",
+    "adr": "ADR-092",
+    "justification": "A site whose landing page carries its headline in a HERO block while its other pages want the generated heading could not express that with one run-wide viewHeading. viewHeadings sets the heading for the views it names; every other view takes viewHeading. The default is no entry, whose output is byte-identical to a run without the key, so no consumer has to act and MIGRATION carries no step."
   }
 ]
