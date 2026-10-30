@@ -1970,8 +1970,9 @@ class ExerisDomainProcessorTest {
                     .hadErrorContaining(BESIDE_ID + "@ExerisDomain type 'Workspace' names 'key' as its primary "
                             + "key and also declares a field 'id'. Moving the key off an 'id' column changes "
                             + "the entity's CREATE TABLE migration, which then fails Flyway's checksum on every "
-                            + "database that applied it. Drop primaryKeyField to keep 'id' as the key; if no "
-                            + "database has applied the migration, rename or remove the field 'id' instead.")
+                            + "database that applied it. Drop primaryKeyField, or move @PrimaryKey to 'id', to "
+                            + "keep 'id' as the key; if no database has applied the migration, rename or remove "
+                            + "the field 'id' instead.")
                     .inFile(source)
                     .onLine(6);
         }
@@ -1998,6 +1999,235 @@ class ExerisDomainProcessorTest {
                     }"""));
 
             assertThat(compilation).succeededWithoutWarnings();
+        }
+
+        @Test
+        @DisplayName("@PrimaryKey marker on a UUID field renames the key into systemFields.primaryKeyField")
+        void markerRenamesKey() throws IOException {
+            Compilation compilation = compileWithProcessor(JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.system.PrimaryKey;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    public class Order {
+                        @PrimaryKey private java.util.UUID orderId;
+                    }
+                    """));
+
+            assertThat(compilation).succeededWithoutWarnings();
+            JsonNode metadata = new ObjectMapper().readTree(readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Order.json").orElseThrow()));
+            assertThat(metadata.path("systemFields").path("primaryKeyField").asText()).isEqualTo("orderId");
+        }
+
+        @Test
+        @DisplayName("@PrimaryKey marker and matching primaryKeyField override pass and name the key")
+        void markerAndMatchingOverridePass() throws IOException {
+            Compilation compilation = compileWithProcessor(JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.system.PrimaryKey;
+
+                    @ExerisDomain(module = "sales", path = "/orders", primaryKeyField = "orderId")
+                    public class Order {
+                        @PrimaryKey private java.util.UUID orderId;
+                    }
+                    """));
+
+            assertThat(compilation).succeededWithoutWarnings();
+            JsonNode metadata = new ObjectMapper().readTree(readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Order.json").orElseThrow()));
+            assertThat(metadata.path("systemFields").path("primaryKeyField").asText()).isEqualTo("orderId");
+        }
+
+        @ParameterizedTest(name = "strategy = {0}")
+        @ValueSource(strings = {"SEQUENCE", "IDENTITY", "NONE"})
+        @DisplayName("@PrimaryKey with refused strategy (SEQUENCE, IDENTITY, NONE) is refused with EXT-PROC-1021")
+        void refusedStrategyIsRefused(String strategy) {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.system.PrimaryKey;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    public class Order {
+                        @PrimaryKey(strategy = PrimaryKey.Strategy.%s) private java.util.UUID orderId;
+                    }
+                    """.formatted(strategy));
+
+            Compilation compilation = compileWithProcessor(source);
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining("[Exeris] EXT-PROC-1021: @PrimaryKey on field 'orderId' "
+                    + "of @ExerisDomain type 'Order' declares strategy = " + strategy
+                    + "; only UUID and UUID_DATABASE are accepted.");
+        }
+
+        @Test
+        @DisplayName("@PrimaryKey on more than one field is refused with EXT-PROC-1011")
+        void markerOnMultipleFieldsIsRefused() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.system.PrimaryKey;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    public class Order {
+                        @PrimaryKey private java.util.UUID orderId;
+                        @PrimaryKey private java.util.UUID altId;
+                    }
+                    """);
+
+            Compilation compilation = compileWithProcessor(source);
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining("[Exeris] EXT-PROC-1011: @PrimaryKey is declared on 2 fields "
+                    + "('orderId', 'altId'). SystemFieldsMetadata carries one field name per role, so the pipeline "
+                    + "cannot express more than one. Declare it once.");
+        }
+
+        @Test
+        @DisplayName("@PrimaryKey marker and conflicting primaryKeyField override are refused with EXT-PROC-1012")
+        void markerConflictingWithOverrideIsRefused() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.system.PrimaryKey;
+
+                    @ExerisDomain(module = "sales", path = "/orders", primaryKeyField = "otherId")
+                    public class Order {
+                        @PrimaryKey private java.util.UUID orderId;
+                        private java.util.UUID otherId;
+                    }
+                    """);
+
+            Compilation compilation = compileWithProcessor(source);
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining("[Exeris] EXT-PROC-1012: @PrimaryKey is on field 'orderId' "
+                    + "while @ExerisDomain(primaryKeyField = \"otherId\") names a different one. One role resolves to one "
+                    + "field; drop whichever is wrong.");
+        }
+
+        @Test
+        @DisplayName("@PrimaryKey on a non-UUID field is refused with EXT-PROC-1018")
+        void markerOnNonUuidFieldIsRefused() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.system.PrimaryKey;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    public class Order {
+                        @PrimaryKey private Long orderId;
+                    }
+                    """);
+
+            Compilation compilation = compileWithProcessor(source);
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining(NOT_UUID + "The primary key 'orderId' of @ExerisDomain type "
+                    + "'Order' is java.lang.Long; it must be java.util.UUID.");
+        }
+
+        @Test
+        @DisplayName("@PrimaryKey on a renamed key beside a field 'id' is refused with EXT-PROC-1019")
+        void markerOnRenamedKeyBesideIdIsRefused() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.system.PrimaryKey;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    public class Order {
+                        private java.util.UUID id;
+                        @PrimaryKey private java.util.UUID orderId;
+                    }
+                    """);
+
+            Compilation compilation = compileWithProcessor(source);
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining(BESIDE_ID + "@ExerisDomain type 'Order' names 'orderId' as its "
+                    + "primary key and also declares a field 'id'.");
+        }
+
+        @Test
+        @DisplayName("@PrimaryKey with strategy = UUID_DATABASE is accepted and produces same output")
+        void uuidDatabaseStrategyAccepted() throws IOException {
+            Compilation compilation = compileWithProcessor(JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.system.PrimaryKey;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    public class Order {
+                        @PrimaryKey(strategy = PrimaryKey.Strategy.UUID_DATABASE) private java.util.UUID orderId;
+                    }
+                    """));
+
+            assertThat(compilation).succeededWithoutWarnings();
+            JsonNode metadata = new ObjectMapper().readTree(readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Order.json").orElseThrow()));
+            assertThat(metadata.path("systemFields").path("primaryKeyField").asText()).isEqualTo("orderId");
+        }
+
+        @Test
+        @DisplayName("@PrimaryKey inert attributes (generated, sequenceName, allowClientId) warned only under -Aexeris.strict")
+        void primaryKeyInertAttributesWarnedOnlyUnderStrict() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.system.PrimaryKey;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    public class Order {
+                        @PrimaryKey(generated = false, sequenceName = "order_seq", allowClientId = true)
+                        private java.util.UUID orderId;
+                    }
+                    """);
+
+            Compilation normalCompilation = compileWithProcessor(source);
+            assertThat(normalCompilation).succeededWithoutWarnings();
+
+            Compilation strictCompilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(strictCompilation).succeeded();
+            assertThat(strictCompilation.warnings()).hasSize(3);
+            assertThat(strictCompilation).hadWarningContaining("[Exeris] EXT-PROC-1201: @PrimaryKey.generated");
+            assertThat(strictCompilation).hadWarningContaining("[Exeris] EXT-PROC-1201: @PrimaryKey.sequenceName");
+            assertThat(strictCompilation).hadWarningContaining("[Exeris] EXT-PROC-1201: @PrimaryKey.allowClientId");
         }
     }
 
@@ -5052,8 +5282,8 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("-Aexeris.strict still reports @PrimaryKey as never read, and no longer reports the nine")
-        void strictReportsPrimaryKeyButNotTheNine() {
+        @DisplayName("-Aexeris.strict reports neither @PrimaryKey nor the other system-field markers as never read")
+        void strictDoesNotReportPrimaryKeyOrTheNine() {
             Compilation compilation = javac()
                     .withOptions("-Aexeris.strict=true")
                     .withProcessors(new ExerisDomainProcessor())
@@ -5074,16 +5304,15 @@ class ExerisDomainProcessorTest {
                             """));
 
             assertThat(compilation).succeeded();
-            // @PrimaryKey stays unread until the SDK source-model reader reads it the same way
-            // (ADR-042); the key is named through @ExerisDomain(primaryKeyField) meanwhile.
             boolean primaryKeyReported = compilation.warnings().stream()
                     .anyMatch(d -> d.getMessage(null) != null
-                            && d.getMessage(null).contains("PrimaryKey"));
+                            && d.getMessage(null).contains("PrimaryKey")
+                            && d.getMessage(null).contains("never read"));
             boolean tenantIdReported = compilation.warnings().stream()
                     .anyMatch(d -> d.getMessage(null) != null
                             && d.getMessage(null).contains("@TenantId is set")
                             && d.getMessage(null).contains("never read"));
-            assertThat(primaryKeyReported).as("@PrimaryKey still reported").isTrue();
+            assertThat(primaryKeyReported).as("@PrimaryKey no longer reported as never read").isFalse();
             assertThat(tenantIdReported).as("@TenantId no longer reported as never read").isFalse();
         }
 

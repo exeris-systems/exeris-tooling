@@ -286,5 +286,11 @@
     "since": "0.11",
     "adr": "ADR-092",
     "justification": "The emitted field keeps literal types so a custom component whose props input declares a literal union type (e.g. variant: 'primary' | 'secondary') type-checks under Angular strict templates instead of failing on a widened string. Arrays in the props become readonly, so a component input typed as a mutable array declares it readonly. A view without CUSTOM blocks, or a CUSTOM block with no props, is unchanged. docs/migration/0.11.0/ts-06-custom-block-props-as-const.md carries the step."
+  },
+  {
+    "signature": "@PrimaryKey on a field: no effect -> the field is the entity's primary key (SystemFieldsMetadata.primaryKeyField); its route variable, JSON and TypeScript property, accessors and foreign-key target follow",
+    "since": "0.11",
+    "adr": "ADR-104",
+    "justification": "The processor reads the field-level @PrimaryKey marker as the SDK reader does, so the marked UUID field names the key the generated code identifies a row by, as primaryKeyField does. strategy SEQUENCE, IDENTITY and NONE are refused (EXT-PROC-1021). An entity without the marker, or with it on its id field, generates as before. docs/migration/0.11.0/java-05-primary-key-marker.md carries the step."
   }
 ]

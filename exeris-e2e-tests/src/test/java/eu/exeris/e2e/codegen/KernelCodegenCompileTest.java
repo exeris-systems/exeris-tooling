@@ -439,11 +439,17 @@ class KernelCodegenCompileTest {
                 .doesNotContain("default_status")
                 .doesNotContain("system_tag")
                 .doesNotContain("session_token");
+        assertThat(migration(generatedMain, "create_receipts"))
+                .contains("receipt_no UUID PRIMARY KEY DEFAULT gen_random_uuid()")
+                .doesNotContain(" id UUID");
         assertThat(migration(generatedMain, "foreign_keys"))
                 .contains("FOREIGN KEY (invoice_id) REFERENCES invoices(invoice_no)");
         assertThat(Files.readString(generatedMain.resolve("com/billing/repository/InvoiceRepository.java")))
                 .contains("WHERE invoice_no = ?")
                 .contains("entity.setInvoiceNo(");
+        assertThat(Files.readString(generatedMain.resolve("com/billing/repository/ReceiptRepository.java")))
+                .contains("WHERE receipt_no = ?")
+                .contains("entity.setReceiptNo(");
 
         List<String> files = new ArrayList<>();
         for (Path root : List.of(generatedMain, generatedTests)) {
@@ -528,6 +534,31 @@ class KernelCodegenCompileTest {
                     public void setAmount(BigDecimal amount) { this.amount = amount; }
                     public UUID getInvoiceId() { return invoiceId; }
                     public void setInvoiceId(UUID invoiceId) { this.invoiceId = invoiceId; }
+                }
+                """);
+        sources.put("com/billing/domain/Receipt.java",
+                """
+                package com.billing.domain;
+
+                import eu.exeris.sdk.annotation.ExerisDomain;
+                import eu.exeris.sdk.annotation.Field;
+                import eu.exeris.sdk.annotation.system.PrimaryKey;
+
+                import java.util.UUID;
+
+                @ExerisDomain(module = "billing", path = "/receipts")
+                public class Receipt {
+
+                    @PrimaryKey
+                    private UUID receiptNo;
+
+                    @Field(label = "Merchant", required = true, sortable = true, filterable = true)
+                    private String merchant;
+
+                    public UUID getReceiptNo() { return receiptNo; }
+                    public void setReceiptNo(UUID receiptNo) { this.receiptNo = receiptNo; }
+                    public String getMerchant() { return merchant; }
+                    public void setMerchant(String merchant) { this.merchant = merchant; }
                 }
                 """);
         return sources;

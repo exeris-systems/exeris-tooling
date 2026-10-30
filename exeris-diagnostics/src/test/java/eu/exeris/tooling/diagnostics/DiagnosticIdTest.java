@@ -68,6 +68,7 @@ class DiagnosticIdTest {
         m.put(DiagnosticId.PRIMARY_KEY_NOT_UUID, "EXT-PROC-1018");
         m.put(DiagnosticId.PRIMARY_KEY_RENAMED_BESIDE_ID, "EXT-PROC-1019");
         m.put(DiagnosticId.ACTION_PARAMETER_WITHOUT_ACTION_PARAM, "EXT-PROC-1020");
+        m.put(DiagnosticId.PRIMARY_KEY_STRATEGY_REFUSED, "EXT-PROC-1021");
         m.put(DiagnosticId.TENANT_SCOPED_DEPRECATED, "EXT-PROC-1101");
         m.put(DiagnosticId.VALIDATION_ATTRIBUTE_DEPRECATED, "EXT-PROC-1102");
         m.put(DiagnosticId.VALIDATE_ON_UNRECOGNISED, "EXT-PROC-1103");

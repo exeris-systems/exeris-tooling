@@ -166,6 +166,14 @@ public enum DiagnosticId {
     ACTION_PARAMETER_WITHOUT_ACTION_PARAM("EXT-PROC-1020",
             "A parameter of an @Action method carries no @ActionParam annotation."),
 
+    /**
+     * An {@code @ExerisDomain} type carries {@code @PrimaryKey} with a {@code strategy} other than
+     * {@code UUID} or {@code UUID_DATABASE}: the kernel identifies an entity's event stream and graph
+     * node by a UUID (ADR-104).
+     */
+    PRIMARY_KEY_STRATEGY_REFUSED("EXT-PROC-1021",
+            "@PrimaryKey declares a generation strategy other than UUID or UUID_DATABASE."),
+
     // -----------------------------------------------------------------------
     // EXT-PROC-11xx — warnings on an ordinary build (javac WARNING)
     // -----------------------------------------------------------------------
