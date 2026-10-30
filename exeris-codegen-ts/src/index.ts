@@ -209,8 +209,8 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
   console.log(pc.dim('─'.repeat(50)));
   if (config.render === 'ssg' && !config.scaffold) {
     console.log(
-      pc.yellow('render "ssg" emits nothing without the scaffold:'),
-      'the server entry, server routes and builder options belong to the app that owns angular.json',
+      pc.yellow('render "ssg" without the scaffold emits view.routes.server.ts:'),
+      'the server entry and builder options belong to the app that owns angular.json; spread viewServerRoutes into app.routes.server.ts',
     );
   }
 

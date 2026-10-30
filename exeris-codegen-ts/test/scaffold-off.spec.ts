@@ -96,6 +96,24 @@ describe('scaffold off', () => {
       'view.routes.ts',
     ]);
   });
+
+  it('emits view.routes.server.ts under render: ssg with scaffold: false', () => {
+    const ssgFiles = buildGeneratedFiles([], [], { ...scaffoldOff, render: 'ssg' }, [
+      view('About', 'about'),
+      view('Quote', "it's"),
+    ]);
+    expect(ssgFiles.map((f) => f.path).sort()).toEqual([
+      'pages/about.component.ts',
+      'pages/about.route.ts',
+      'pages/quote.component.ts',
+      'pages/quote.route.ts',
+      'view.routes.server.ts',
+      'view.routes.ts',
+    ]);
+    const serverRoutes = ssgFiles.find((f) => f.path === 'view.routes.server.ts')?.content;
+    expect(serverRoutes).toContain("import { RenderMode, ServerRoute } from '@angular/ssr';");
+    expect(serverRoutes).toContain("export const viewServerRoutes: ServerRoute[] = [\n  { path: 'about', renderMode: RenderMode.Prerender },\n  { path: 'it\\'s', renderMode: RenderMode.Prerender },\n];\n");
+  });
 });
 
 describe('the views-only init preset', () => {

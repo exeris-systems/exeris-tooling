@@ -161,8 +161,9 @@ export const GeneratorConfigSchema = z.object({
    *  `package.json`. `ng build` then writes one HTML file per param-less `@View` page that reads no
    *  entity data; every other route renders in the browser.
    *
-   *  Only the scaffold carries a render setup. With `scaffold` off the consumer owns
-   *  `angular.json` and its server configuration, so `ssg` emits nothing there. */
+   *  With `scaffold` off the consumer owns `angular.json` and its server configuration; under
+   *  `ssg` the generator emits `view.routes.server.ts` next to `view.routes.ts` for the owning
+   *  app's `app.routes.server.ts` to spread. */
   render: z.enum(['csr', 'ssg']).default('csr'),
 
 });

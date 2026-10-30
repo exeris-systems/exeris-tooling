@@ -212,10 +212,69 @@ describe("render: 'ssg' — determinism and scope", () => {
     expect(scaffold(reversed)).toEqual(scaffold(first));
   });
 
-  it('changes nothing without the scaffold: the consumer owns its server setup', () => {
+  it("emits view.routes.server.ts under scaffold: false and render: 'ssg', and no scaffold file", () => {
     const domains = [domain({ entityName: 'Product' })];
-    expect(buildGeneratedFiles(domains, [], cfg({ scaffold: false, render: 'ssg' }), views)).toEqual(
-      buildGeneratedFiles(domains, [], cfg({ scaffold: false }), views),
-    );
+    const ssgUnscaffolded = buildGeneratedFiles(domains, [], cfg({ scaffold: false, render: 'ssg' }), views);
+    const csrUnscaffolded = buildGeneratedFiles(domains, [], cfg({ scaffold: false }), views);
+
+    const ssgPaths = ssgUnscaffolded.map((f) => f.path);
+    const csrPaths = csrUnscaffolded.map((f) => f.path);
+    expect(ssgPaths.filter((p) => !csrPaths.includes(p))).toEqual(['view.routes.server.ts']);
+    expect(csrPaths.filter((p) => !ssgPaths.includes(p))).toEqual([]);
+
+    const serverRoutes = content(ssgUnscaffolded, 'view.routes.server.ts');
+    expect(serverRoutes).toContain("import { RenderMode, ServerRoute } from '@angular/ssr';");
+    expect(serverRoutes).toContain(`export const viewServerRoutes: ServerRoute[] = [
+  { path: 'about-us', renderMode: RenderMode.Prerender },
+  { path: 'footer', renderMode: RenderMode.Prerender },
+  { path: 'home', renderMode: RenderMode.Prerender },
+];
+`);
+    for (const excluded of ['posts/:slug', 'docs/**', 'catalogue', 'products']) {
+      expect(serverRoutes).not.toContain(`path: '${excluded}'`);
+    }
+    expect(serverRoutes).not.toContain("path: '**'");
+
+    const file = ssgUnscaffolded.find((f) => f.path === 'view.routes.server.ts');
+    expect(file?.overwritable).not.toBe(false);
+    expect(SEED_PATHS.has('view.routes.server.ts')).toBe(false);
+
+    for (const serverFile of SERVER_FILES) {
+      expect(ssgPaths).not.toContain(serverFile);
+    }
+  });
+
+  it('lists the views the scaffold\'s server routes prerender, without the redirect and the fallback', () => {
+    const prerendered = (text: string): string[] =>
+      [...text.matchAll(/\{ path: '([^']*)', renderMode: RenderMode\.Prerender \}/g)].map((m) => m[1]);
+    const domains = [domain({ entityName: 'Product' })];
+    const scaffolded = buildGeneratedFiles(domains, [], cfg({ render: 'ssg' }), views);
+    const pagesOnly = buildGeneratedFiles(domains, [], cfg({ scaffold: false, render: 'ssg' }), views);
+    expect(prerendered(content(pagesOnly, 'view.routes.server.ts')))
+      .toEqual(prerendered(content(scaffolded, 'src/app/app.routes.server.ts')).filter((path) => path !== ''));
+  });
+
+  it("is repeatable and independent of view arrival order under scaffold: false and render: 'ssg'", () => {
+    const domains = [domain({ entityName: 'Product' })];
+    const normal = buildGeneratedFiles(domains, [], cfg({ scaffold: false, render: 'ssg' }), views);
+    const reversed = buildGeneratedFiles(domains, [], cfg({ scaffold: false, render: 'ssg' }), [...views].reverse());
+    expect(content(reversed, 'view.routes.server.ts')).toBe(content(normal, 'view.routes.server.ts'));
+  });
+
+  it("emits no view.routes.server.ts when views is empty under scaffold: false and render: 'ssg'", () => {
+    const domains = [domain({ entityName: 'Product' })];
+    const files = buildGeneratedFiles(domains, [], cfg({ scaffold: false, render: 'ssg' }), []);
+    expect(files.some((f) => f.path === 'view.routes.server.ts')).toBe(false);
+  });
+
+  it("emits an empty viewServerRoutes array without RenderMode when no view is prerenderable", () => {
+    const domains = [domain({ entityName: 'Product' })];
+    const files = buildGeneratedFiles(domains, [], cfg({ scaffold: false, render: 'ssg' }), [
+      view({ name: 'Post', route: 'posts/:slug', regions: authored('A post') }),
+    ]);
+    const serverRoutes = content(files, 'view.routes.server.ts');
+    expect(serverRoutes).toContain("import { ServerRoute } from '@angular/ssr';");
+    expect(serverRoutes).not.toContain('RenderMode');
+    expect(serverRoutes).toContain('export const viewServerRoutes: ServerRoute[] = [\n];\n');
   });
 });
