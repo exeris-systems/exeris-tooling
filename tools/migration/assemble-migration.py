@@ -24,8 +24,10 @@ Fragment format, all of it enforced by --check:
     heading of level 1 to 3 outside fenced code, and ends with a single newline;
   * a `ts` step's heading starts with "`exeris-codegen-ts`:", the prefix MIGRATION gives every
     TypeScript generator step, and a `java` step's heading does not;
-  * a relative link is written relative to the fragment and must resolve; the assembler rewrites it
-    relative to MIGRATION, so the link checker passes on both the fragment and the assembled file.
+  * a relative link is written relative to the fragment and must resolve; it must not target another
+    fragment file under docs/migration/ (link to the step's heading anchor in MIGRATION instead);
+    the assembler rewrites relative links relative to MIGRATION, so the link checker passes on both
+    the fragment and the assembled file.
 
 Stdlib only, and deterministic: the same tree assembles to the same bytes on every machine.
 """
@@ -117,6 +119,19 @@ def is_relative(target: str) -> bool:
     return not (target.startswith("#") or target.startswith("/") or SCHEME.match(target))
 
 
+def is_fragment_target(resolved: Path, root: Path) -> bool:
+    """True when the path resolves to a migration fragment under docs/migration/."""
+    try:
+        rel = resolved.relative_to(root / FRAGMENTS)
+    except ValueError:
+        return False
+    if rel == Path("README.md"):
+        return False
+    if resolved.is_file():
+        return True
+    return len(rel.parts) == 2 and bool(VERSION.match(rel.parts[0])) and bool(FILENAME.match(rel.parts[1]))
+
+
 def read_fragment(root: Path, path: Path, findings: Findings) -> Fragment | None:
     rel = path.relative_to(root)
     m = FILENAME.match(path.name)
@@ -176,7 +191,13 @@ def read_fragment(root: Path, path: Path, findings: Findings) -> Fragment | None
         if not is_relative(target):
             continue
         local = target.split("#", 1)[0]
-        if local and not (path.parent / local).exists():
+        if not local:
+            continue
+        resolved = Path(os.path.normpath(path.parent / local))
+        if is_fragment_target(resolved, root):
+            findings.add(rel, f"line {i + 1}: link '{target}' resolves to another fragment file; "
+                              "link to the MIGRATION guide heading anchor instead")
+        elif not resolved.exists():
             findings.add(rel, f"line {i + 1}: relative link '{target}' does not resolve from the "
                               "fragment's own directory")
     return Fragment(path, heading, body)

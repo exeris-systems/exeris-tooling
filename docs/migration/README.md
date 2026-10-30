@@ -44,8 +44,11 @@ last-verified: YYYY-MM-DD
   does not.
 - Use `####` for a sub-heading; a second `###`, or any `#` or `##` outside fenced code, is refused.
 - Write a relative link relative to the fragment, as `../../diagnostics.md`. The assembler
-  rewrites it relative to MIGRATION, so the link checker passes on both files. Link to the train
-  heading in MIGRATION from elsewhere, never to a fragment, because the cut deletes the fragments.
+  rewrites it relative to MIGRATION, so the link checker passes on both files. A fragment must not
+  link to another fragment file under `docs/migration/` (neither inline nor reference-style, even
+  with an `#anchor`); link to the step's heading anchor in MIGRATION instead, because the cut
+  inlines and deletes the fragments. Link to the train heading in MIGRATION from elsewhere, never to
+  a fragment, for the same reason.
 - The front matter is the one the organisation docs-lint requires of every page. The assembler
   drops it.
 
