@@ -168,6 +168,7 @@ describe('buildGeneratedFiles — presentation IR (@View) flows to src/app/pages
     const r = at('src/app/pages/dashboard.route.ts');
     expect(r, 'src/app/pages/dashboard.route.ts missing').toBeDefined();
     expect(r!.content).toContain('export const dashboardRoutes: Routes = [');
+    expect(r!.content).toContain("data: { view: 'Dashboard' },");
   });
 
   it('omits the pages tree entirely when no views are supplied (default arg)', () => {

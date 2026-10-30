@@ -720,6 +720,7 @@ export function generateViewRoute(view: ViewMetadata, _config: GeneratorConfig):
   lines.push(`    path: '${escapeTsStr(path)}',`);
   lines.push(`    loadComponent: () => import('./${kebab}.component').then((m) => m.${className}),`);
   lines.push(`    title: '${escapeTsStr(title)}',`);
+  lines.push(`    data: { view: '${escapeTsStr(view.name)}' },`);
   lines.push('  },');
   lines.push('];');
   lines.push('');

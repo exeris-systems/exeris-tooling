@@ -293,12 +293,14 @@ describe('generateViewRoute — paired lazy route', () => {
       "loadComponent: () => import('./product-landing.component').then((m) => m.ProductLandingPageComponent),",
     );
     expect(f.content).toContain("title: 'Products',");
+    expect(f.content).toContain("data: { view: 'ProductLanding' },");
   });
 
   it('falls back to the kebab name when no route is declared', () => {
     const view = ViewMetadataSchema.parse({ name: 'NoRoute' });
     const f = generateViewRoute(view, DEFAULT_CONFIG);
     expect(f.content).toContain("path: 'no-route',");
+    expect(f.content).toContain("data: { view: 'NoRoute' },");
   });
 
   it('escapes the title as a TS string literal, not HTML', () => {
@@ -308,6 +310,13 @@ describe('generateViewRoute — paired lazy route', () => {
     // so & stays literal (NOT &amp;) and the apostrophe is backslash-escaped.
     expect(f.content).toContain("title: 'Tom\\'s Books & More',");
     expect(f.content).not.toContain('&amp;');
+    expect(f.content).toContain("data: { view: 'Shop' },");
+  });
+
+  it('escapes the view name in route data as a TS string literal', () => {
+    const view = ViewMetadataSchema.parse({ name: "Tom's Books & More", route: '/shop', title: 'Shop' });
+    const f = generateViewRoute(view, DEFAULT_CONFIG);
+    expect(f.content).toContain("data: { view: 'Tom\\'s Books & More' },");
   });
 });
 
@@ -346,6 +355,7 @@ describe('generateView — a kebab-case @View.name emits VALID TypeScript identi
     expect(route.content).not.toContain('commander-rosterRoutes');
     // The two files must agree on the class name or loadComponent resolves to undefined at runtime.
     expect(route.content).toContain('.then((m) => m.CommanderRosterPageComponent)');
+    expect(route.content).toContain("data: { view: 'commander-roster' },");
   });
 });
 
