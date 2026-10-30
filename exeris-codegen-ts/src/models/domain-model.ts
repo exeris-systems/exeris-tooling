@@ -346,9 +346,14 @@ export type InternalApiMetadata = z.infer<typeof InternalApiMetadataSchema>;
 // Domain Metadata (Root)
 // ============================================================================
 
+// Entity and package names become output path segments, so they are held to the Java identifier
+// grammar, letters of any script included: no separator, dot segment or other path syntax gets through.
+const JAVA_IDENTIFIER_PATTERN = /^[\p{L}_$][\p{L}\p{N}_$]*$/u;
+const DOTTED_IDENTIFIER_PATTERN = /^[\p{L}_$][\p{L}\p{N}_$]*(\.[\p{L}_$][\p{L}\p{N}_$]*)*$/u;
+
 export const DomainMetadataSchema = z.object({
-  entityName: z.string(),
-  packageName: z.string(),
+  entityName: z.string().regex(JAVA_IDENTIFIER_PATTERN),
+  packageName: z.string().regex(DOTTED_IDENTIFIER_PATTERN),
   tableName: z.string().optional(),
   displayName: z.string().optional(),
   pluralName: z.string().optional(),

@@ -268,4 +268,67 @@ class OutputWriterTest {
         assertThat(Files.readString(dirA.resolve(OutputWriter.MANIFEST_NAME)))
                 .isEqualTo(Files.readString(dirB.resolve(OutputWriter.MANIFEST_NAME)));
     }
+
+    // --- path containment and name boundary validation ---
+
+    @Test
+    @DisplayName("writeJavaSource rejects empty or navigating package segments and writes nothing")
+    void writeJavaSourceRejectsInvalidPackageSegments() {
+        Path outputRoot = tempDir.resolve("out");
+        OutputWriter writer = new OutputWriter(outputRoot, false);
+
+        assertThatThrownBy(() -> writer.writeJavaSource("com..example", "Foo", "class Foo {}", "Foo.java"))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("com..example");
+
+        assertThatThrownBy(() -> writer.writeJavaSource("..", "Foo", "class Foo {}", "Foo.java"))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("..");
+
+        assertThatThrownBy(() -> writer.writeJavaSource("com/example", "Foo", "class Foo {}", "Foo.java"))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("com/example");
+
+        assertThat(tempDir.resolve("Foo.java")).doesNotExist();
+        assertThat(tempDir.resolve("com/example/Foo.java")).doesNotExist();
+        assertThat(outputRoot).doesNotExist();
+    }
+
+    @Test
+    @DisplayName("writeJavaSource rejects class names with path separators and writes nothing outside output dir")
+    void writeJavaSourceRejectsClassNamesWithSeparators() {
+        Path outputRoot = tempDir.resolve("out");
+        OutputWriter writer = new OutputWriter(outputRoot, false);
+
+        assertThatThrownBy(() -> writer.writeJavaSource("com.example", "sub/Bar", "class Bar {}", "Bar.java"))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("sub/Bar");
+
+        assertThatThrownBy(() -> writer.writeJavaSource("com.example", "../Bar", "class Bar {}", "Bar.java"))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("../Bar");
+
+        assertThat(tempDir.resolve("Bar.java")).doesNotExist();
+        assertThat(tempDir.resolve("sub/Bar.java")).doesNotExist();
+        assertThat(outputRoot.resolve("com/example/Bar.java")).doesNotExist();
+    }
+
+    @Test
+    @DisplayName("writeResource and writeResourceBytes refuse escaping paths and write nothing outside output dir")
+    void writeResourceRefusesEscapingPaths() {
+        Path outputRoot = tempDir.resolve("out");
+        OutputWriter writer = new OutputWriter(outputRoot, false);
+
+        assertThatThrownBy(() -> writer.writeResource("../escape.txt", "escaped content"))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("../escape.txt");
+
+        assertThatThrownBy(() -> writer.writeResourceBytes("../escape.bin", new byte[] { 0x01, 0x02 }))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("../escape.bin");
+
+        assertThat(tempDir.resolve("escape.txt")).doesNotExist();
+        assertThat(tempDir.resolve("escape.bin")).doesNotExist();
+        assertThat(outputRoot).doesNotExist();
+    }
 }
