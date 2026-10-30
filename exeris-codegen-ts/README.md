@@ -293,6 +293,11 @@ import { viewRoutes } from './generated/view.routes';
 export const routes: Routes = [...viewRoutes];
 ```
 
+Each view route carries the view's name in its `data`, as `data: { view: '<ViewName>' }`, so an app
+shell, a navigation highlight or analytics can read the active view from
+`route.snapshot.data['view']` without parsing the path, which follows `@View.route` and changes with
+it.
+
 What the scaffold would otherwise provide is then your app's to provide: `provideHttpClient()` when
 an emitted service or store calls the API, the `@exeris/ui-kit` styles and Tailwind, and the npm
 dependencies the emitted files import (`zod`, `@angular/cdk`, `@angular/forms`, as the enabled
