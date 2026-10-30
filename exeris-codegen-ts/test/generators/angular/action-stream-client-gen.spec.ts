@@ -15,6 +15,7 @@ import {
 } from '../../../src/generators/angular/action-stream-client-gen.js';
 import {
   createGeneratorContext,
+  type GeneratorConfig,
   type GeneratorContext,
 } from '../../../src/core/generator-registry.js';
 import {
