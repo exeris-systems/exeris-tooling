@@ -88,6 +88,17 @@
             <artifactId>compile-testing</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- The SDK conformance kit, bound in eu.exeris.tooling.processor.tck. -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-sdk-tck</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-sdk-source-model-io</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
