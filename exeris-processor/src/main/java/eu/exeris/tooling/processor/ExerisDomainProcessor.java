@@ -3020,10 +3020,11 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     }
 
     /**
-     * The entity's non-static, non-transient {@code @Field}-annotated field names in declaration order — the
-     * universe EV1 payload resolution selects from. Must agree byte-for-byte with
-     * {@code SourceModelReader.entityFieldNames} (ADR-042 lock-step). Fields without
-     * {@code @Field} (and {@code @Relationship} fields) are not payload fields.
+     * The entity's {@code @Field}-annotated instance field names in declaration order — the
+     * universe EV1 payload resolution selects from. {@code SourceModelReader.entityFieldNames}
+     * must yield the same list (ADR-042 lock-step), which holds only where the reader also skips
+     * static and transient fields. Fields without {@code @Field} (and {@code @Relationship}
+     * fields) are not payload fields.
      */
     private List<String> entityFieldNames(TypeElement element) {
         List<String> names = new ArrayList<>();
