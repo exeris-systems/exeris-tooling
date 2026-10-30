@@ -20,10 +20,16 @@ function typesOf(metadata: DomainMetadata): string {
   return new TypeGenerator().generate(metadata, ctx)!.content;
 }
 
+// The emitted types need only the ES library, not the DOM one, and the library files parse once
+// for the whole suite: a fresh parse in every case outlasts the default test timeout on a slow runner.
+const options: ts.CompilerOptions = {
+  strict: true, noEmit: true, target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, types: [], lib: ['lib.es2022.d.ts'],
+};
+const librarySources = new Map<string, ts.SourceFile | undefined>();
+
 /** Diagnostics for `usage`, compiled against the emitted types module. */
 function diagnostics(types: string, usage: string): string[] {
   const files: Record<string, string> = { '/types.ts': types, '/usage.ts': usage };
-  const options: ts.CompilerOptions = { strict: true, noEmit: true, target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, types: [] };
   const host = ts.createCompilerHost(options);
   const readFile = host.readFile.bind(host);
   const fileExists = host.fileExists.bind(host);
@@ -31,11 +37,16 @@ function diagnostics(types: string, usage: string): string[] {
   host.readFile = (name) => files[name] ?? readFile(name);
   host.fileExists = (name) => name in files || fileExists(name);
   host.getSourceFile = (name, version) =>
-    name in files ? ts.createSourceFile(name, files[name], version) : getSourceFile(name, version);
+    name in files ? ts.createSourceFile(name, files[name], version) : librarySource(name, () => getSourceFile(name, version));
   const program = ts.createProgram(['/usage.ts'], options, host);
   return ts.getPreEmitDiagnostics(program)
     .filter((d) => d.file?.fileName === '/usage.ts')
     .map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n'));
+}
+
+function librarySource(name: string, parse: () => ts.SourceFile | undefined): ts.SourceFile | undefined {
+  if (!librarySources.has(name)) librarySources.set(name, parse());
+  return librarySources.get(name);
 }
 
 const ledger = parseOffered({
