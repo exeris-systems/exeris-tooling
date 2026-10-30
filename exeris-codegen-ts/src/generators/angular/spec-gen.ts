@@ -29,7 +29,7 @@ import type { EnumMetadataForGen } from '../api/enum-module-gen.js';
 import { serviceApiPath } from './service-gen.js';
 import { fileHeaderLines } from '../file-header.js';
 import { tsSingleQuoted } from './ts-literal.js';
-import { fieldRenderContext, resolveFieldRenders } from './field-render.js';
+import { fieldRenderContext, formStartsBlank, resolveFieldRenders } from './field-render.js';
 import { entityViews, hasFormPage } from './entity-views.js';
 
 /** An emitted file, in the (path, content) shape the orchestrator composes. */
@@ -450,8 +450,9 @@ export function generateFormSpec(
   const nonControlFields = metadata.fields.filter(
     (f) => f.readOnly === true || f.computed === true || f.name === idField || !createFields.some((c) => c.name === f.name),
   );
+  // Only a required control that starts blank is invalid on a new form; a declared default fills it.
   const requiredCreateFields = createFields.filter(
-    (r) => r.field.required && r.form.value !== 'boolean' && r.form.inCreate,
+    (r) => r.field.required && r.form.value !== 'boolean' && r.form.inCreate && formStartsBlank(r.field, r.form.value),
   );
 
   const lines = HEADER(`${entity} form spec`);

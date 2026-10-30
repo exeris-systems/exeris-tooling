@@ -448,13 +448,14 @@ src/app/generated/
         └── index.ts          # the peer's own barrel
 ```
 
-Under `--tests`, each entity also gets `schemas/<entity>.schema.spec.ts`,
-`services/<entity>.service.spec.ts`, `stores/<entity>.store.spec.ts` and
-`components/<entity>-form.component.spec.ts`, run by `npm test`.
+Under `--tests`, each entity also gets `schemas/<entity>.schema.spec.ts` (with Zod schemas on),
+`services/<entity>.service.spec.ts` (with services on), `stores/<entity>.store.spec.ts` (with
+stores and services on) and `components/<entity>-form.component.spec.ts` (with forms and services
+on, for an entity with a form page), run by `npm test`; `docs/generators.md` lists the conditions.
 
 ## Generated tests (`--tests`)
 
-Off by default, because turning it on adds to *your* `package.json`. It emits, in one piece:
+Off by default, because turning it on adds to *your* `package.json`. It emits, each where the generator it tests is on:
 
 - `*.schema.spec.ts` — a fixture built from your metadata, asserting the schema accepts it and
   rejects each declared required field's absence;
@@ -464,7 +465,7 @@ Off by default, because turning it on adds to *your* `package.json`. It emits, i
 - `*.store.spec.ts` — state transitions for load/create/update/delete success and error mapping
   (409 conflict on update vs delete, 422 unprocessable);
 - `*-form.component.spec.ts` — Signal Forms controls on create vs edit (`inCreate` / `inUpdate`),
-  read-only field exclusion, and required field validation blocking submit;
+  read-only field exclusion, and a required field that starts blank (no default) blocking submit;
 - a `test` target on `@angular/build:unit-test` (Vitest), a `tsconfig.spec.json`, and the two
   devDependencies the runner cannot start without — `vitest` (an *optional* peer of
   `@angular/build`) and `jsdom` (the builder refuses to run without a DOM implementation).

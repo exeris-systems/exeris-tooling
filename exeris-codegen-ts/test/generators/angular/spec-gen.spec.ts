@@ -387,6 +387,30 @@ describe('generateFormSpec', () => {
     expect(content).toContain("http.expectNone('/orders');");
   });
 
+  it('leaves a required field with a default out of the blocks-submit case', () => {
+    const content = generateFormSpec(
+      entity([
+        { name: 'id', type: 'java.util.UUID' },
+        { name: 'title', type: 'String', required: true },
+        { name: 'status', type: 'String', required: true, defaultValue: 'NEW' },
+        { name: 'quantity', type: 'Integer', required: true, defaultValue: '1' },
+      ]),
+      DEFAULT_CONFIG,
+    )!.content;
+    expect(content).toContain('expect(component.form.title().invalid()).toBe(true);');
+    expect(content).not.toContain('component.form.status().invalid()');
+    expect(content).not.toContain('component.form.quantity().invalid()');
+  });
+
+  it('asserts a valid initial state when every required field has a default', () => {
+    const content = generateFormSpec(
+      entity([{ name: 'id', type: 'java.util.UUID' }, { name: 'status', type: 'String', required: true, defaultValue: 'NEW' }]),
+      DEFAULT_CONFIG,
+    )!.content;
+    expect(content).not.toContain("it('blocks submit when required fields are missing'");
+    expect(content).toContain('expect(component.form().valid()).toBe(true);');
+  });
+
   it('asserts valid initial state when no required fields are declared', () => {
     const content = generateFormSpec(idOnly, DEFAULT_CONFIG)!.content;
     expect(content).toContain('expect(component.form().valid()).toBe(true);');

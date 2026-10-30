@@ -502,6 +502,14 @@ const FORM_MODEL_TYPES = { boolean: 'boolean', number: 'number | null', text: 's
 const FORM_EMPTY_VALUES = { boolean: 'false', number: 'null', text: "''" } as const;
 
 /**
+ * Whether a control starts blank on a new form: its seed is the empty value, so a required one is
+ * invalid until the user fills it. A declared default makes it start filled.
+ */
+export function formStartsBlank(field: FieldMetadata, value: FormValueKind): boolean {
+  return formInitialValue(field, value) === FORM_EMPTY_VALUES[value];
+}
+
+/**
  * A collection or map field: its DTO type is an array or a record. The form has no control that
  * edits one, so it offers none; an edit sends the loaded record, which keeps the stored value.
  */
