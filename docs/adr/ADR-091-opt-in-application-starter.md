@@ -9,7 +9,7 @@ slug: adr/ADR-091
 
 # ADR-091 — Publish an opt-in application starter, so a consumer does not hand-write its build
 
-- **Status:** ACCEPTED (2026-09-30) · amended 2026-10-01 (Amendment 1 — backend, frontend and backend + frontend; Amendment 2 — starter scope, publication metadata, starter version) · amended 2026-10-02 (Amendment 3 — the release profile list) · amended 2026-10-06 (Amendment 4 — Maven coordinates move to the eu.exeris group) · amended 2026-10-13 (Amendment 5 — a new project, written by exeris-initializr)
+- **Status:** ACCEPTED (2026-09-30) · amended 2026-10-01 (Amendment 1 — backend, frontend and backend + frontend; Amendment 2 — starter scope, publication metadata, starter version) · amended 2026-10-02 (Amendment 3 — the release profile list) · amended 2026-10-06 (Amendment 4 — Maven coordinates move to the eu.exeris group) · amended 2026-10-13 (Amendment 5 — a new project, written by exeris-initializr) · amended 2026-10-30 (Amendment 6 — a new project pins its generated trees to LF)
 - **Deciders:** the founder (scope); `exeris-tooling` (module layout)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / build (consumer-build contract)
@@ -459,3 +459,27 @@ consumer project as a directory or a ZIP archive.
 
 Lands in 0.10.0 and does not hold the cut. Migration owner: `exeris-tooling`; no existing consumer
 is affected.
+
+## Amendment 6 — a new project pins its generated trees to LF (2026-10-30)
+
+- **Status:** ACCEPTED (2026-10-30). Decided by the founder.
+- **Amends:** Amendment 5, point 6: the *Writes* column of both topologies gains a `.gitattributes`.
+  Every other point of Amendment 5 is unchanged.
+
+Both generators write every file with LF line endings on every platform, which is what makes the same
+metadata yield the same bytes on every machine. A project checked out with CRLF conversion
+(`core.autocrlf=true`) shows every regenerated file as changed, by line endings alone. The initializr
+writes the project's first `.gitattributes`, which pins the trees the generators write to LF:
+
+| `--topology` | `.gitattributes` pins |
+|---|---|
+| `backend-only` | `src/main/generated/**`, `src/test/generated/**` |
+| `e2e` | `backend/src/main/generated/**`, `backend/src/test/generated/**`, `frontend/app/**` |
+
+Like the POM, the file is written once and is the application's from then on: no generator writes,
+rewrites or reads it. The generators keep writing LF; writing the platform separator instead would
+make the output differ between machines.
+
+Lands in 0.11.0. Migration owner: `exeris-tooling`; a project the initializr already wrote is
+unaffected, and the README says how to add the same lines by hand.
+

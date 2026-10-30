@@ -58,10 +58,12 @@ public final class ProjectGenerator {
         files.add(ScaffoldFile.text(".gitignore", template("gitignore", context)));
         switch (request.topology()) {
             case BACKEND_ONLY -> {
+                files.add(ScaffoldFile.text(".gitattributes", template("gitattributes/backend-only", context)));
                 files.add(ScaffoldFile.text("README.md", template("readme/backend-only.md", context)));
                 backend(request, "", context, files);
             }
             case E2E -> {
+                files.add(ScaffoldFile.text(".gitattributes", template("gitattributes/e2e", context)));
                 files.add(ScaffoldFile.text("README.md", template("readme/e2e.md", context)));
                 backend(request, BACKEND, context, files);
                 files.add(ScaffoldFile.text(FRONTEND + "package.json", template("frontend/package.json", context)));

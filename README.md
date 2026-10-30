@@ -316,6 +316,9 @@ src/app/generated/**  text eol=lf
 The last line is the TypeScript generator's default output directory; use the directory your
 `exeris-codegen.json` or `--output` names.
 
+A project written by `exeris-initializr` already carries these lines for the trees it lays out
+(ADR-091 Amendment 6).
+
 ### Generated tests
 
 Set `<exeris.tests>true</exeris.tests>` to emit tests for the generated code under
