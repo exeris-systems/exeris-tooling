@@ -509,8 +509,8 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("graph properties and queries are absent, not empty: neither is extracted")
-        void graphPropertiesAndQueriesAreNotCarried() throws IOException {
+        @DisplayName("graph properties are empty when undeclared; queries are absent")
+        void graphPropertiesAreEmptyWhenUndeclaredAndQueriesAreNotCarried() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.Order",
                     """
@@ -534,7 +534,8 @@ class ExerisDomainProcessorTest {
 
             assertThat(graph.path("label").asText()).isEqualTo("Order");
             assertThat(graph.has("edges")).isTrue();
-            assertThat(graph.has("properties")).as("properties").isFalse();
+            assertThat(graph.path("properties").isArray()).isTrue();
+            assertThat(graph.path("properties").isEmpty()).isTrue();
             assertThat(graph.has("queries")).as("queries").isFalse();
         }
 
@@ -5732,30 +5733,56 @@ class ExerisDomainProcessorTest {
             assertThat(warnings(compilation, INERT)).isEmpty();
         }
 
-        @ParameterizedTest(name = "@{0}")
-        @ValueSource(strings = {"Tab", "UIGroup"})
-        @DisplayName("@Tab and @UIGroup are reported as never read")
-        void groupingAnnotationsAreReportedAsUnread(String annotation) {
+        @Test
+        @DisplayName("@Tab is reported as never read")
+        void tabAnnotationIsReportedAsUnread() {
             Compilation compilation = strictCompile("Widget", """
                     package com.example;
 
                     import eu.exeris.sdk.annotation.ExerisDomain;
                     import eu.exeris.sdk.annotation.Field;
-                    import eu.exeris.sdk.annotation.%1$s;
+                    import eu.exeris.sdk.annotation.Tab;
 
                     @ExerisDomain(module = "core", path = "/widgets")
                     public class Widget { private java.util.UUID id;
                         @Field(label = "Name")
-                        @%1$s(name = "general")
+                        @Tab(name = "general")
                         private String name;
                     }
-                    """.formatted(annotation));
+                    """);
 
             assertThat(compilation).succeeded();
             assertThat(warnings(compilation, UNREAD))
                     .singleElement()
-                    .satisfies(m -> assertThat(m).contains("@" + annotation + " is set")
+                    .satisfies(m -> assertThat(m).contains("@Tab is set")
                             .contains("grouping is emitted from @View"));
+        }
+
+        @Test
+        @DisplayName("@UIGroup is extracted and its unconsumed attributes are reported as inert under strict mode")
+        void uiGroupAttributesAuditedUnderStrictMode() {
+            Compilation compilation = strictCompile("Widget", """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+                    import eu.exeris.sdk.annotation.UIGroup;
+
+                    @ExerisDomain(module = "core", path = "/widgets")
+                    public class Widget { private java.util.UUID id;
+                        @Field(label = "Name")
+                        @UIGroup(name = "general", label = "General", columns = 2, cssClass = "wide", visibleWhen = "true")
+                        private String name;
+                    }
+                    """);
+
+            assertThat(compilation).succeeded();
+            assertThat(warnings(compilation, UNREAD)).isEmpty();
+            List<String> inert = warnings(compilation, INERT);
+            assertThat(inert).hasSize(3);
+            assertThat(inert).anySatisfy(m -> assertThat(m).contains("@UIGroup.columns is set"));
+            assertThat(inert).anySatisfy(m -> assertThat(m).contains("@UIGroup.cssClass is set"));
+            assertThat(inert).anySatisfy(m -> assertThat(m).contains("@UIGroup.visibleWhen is set"));
         }
     }
 

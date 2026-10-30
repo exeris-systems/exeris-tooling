@@ -208,8 +208,17 @@ describe('UIMetadataSchema', () => {
     };
     expect(UIMetadataSchema.parse(wire)).toEqual({
       listView: false, detailView: true, createForm: true, editForm: true,
-      searchable: true, filterable: true, exportable: true,
+      searchable: true, filterable: true, exportable: true, groups: [],
     });
+  });
+
+  it('keeps the field groups the processor writes for @UIGroup', () => {
+    const parsed = UIMetadataSchema.parse({
+      groups: [{ name: 'billing', label: 'Billing', order: 999, collapsible: true, collapsed: false, gridSpan: 12, fields: ['total', 'tax'] }],
+    });
+    expect(parsed.groups).toEqual([
+      { name: 'billing', label: 'Billing', order: 999, collapsible: true, collapsed: false, gridSpan: 12, fields: ['total', 'tax'] },
+    ]);
   });
 
   it('fills no switch the wire leaves out', () => {

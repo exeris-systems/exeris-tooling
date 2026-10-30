@@ -21,6 +21,7 @@ import eu.exeris.sdk.sourcemodel.ast.EventSourcedMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphEdgeMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
+import eu.exeris.sdk.sourcemodel.ast.GraphPropertyMetadata;
 import eu.exeris.sdk.sourcemodel.ast.InternalApiMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ProvidesMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RegionMetadata;
@@ -152,6 +153,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
     private static final String GRAPH_EDGES_FQN = "eu.exeris.sdk.annotation.GraphEdges";
 
+    /** {@code @GraphProperty}, read on fields under a type-level {@code @Graph}. */
+    private static final String GRAPH_PROPERTY_FQN = "eu.exeris.sdk.annotation.GraphProperty";
+
     /** {@code @SagaStep}, and the container javac synthesises when it is repeated on one method. */
     private static final String SAGA_STEP_FQN = "eu.exeris.sdk.annotation.SagaStep";
 
@@ -164,6 +168,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
     /** {@code @UI}, which the processor reads on a type and never on a field. */
     private static final String UI_FQN = "eu.exeris.sdk.annotation.UI";
+
+    /** {@code @UIGroup}, which groups fields for presentation. */
+    private static final String UI_GROUP_FQN = "eu.exeris.sdk.annotation.UIGroup";
 
     /** Package every SDK annotation lives under, including the {@code capability} sub-package. */
     private static final String SDK_ANNOTATION_PACKAGE = "eu.exeris.sdk.annotation.";
@@ -565,8 +572,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             new InertAttribute("Field", "cssClass",
                     FIELD_NOT_EXTRACTED + "No emitted component applies it"),
             new InertAttribute("Field", "group",
-                    FIELD_NOT_EXTRACTED + "Generated forms are not grouped, and @UIGroup, the "
-                            + "grouping annotation, is not read either"),
+                    FIELD_NOT_EXTRACTED + "Generated forms are not grouped by this attribute; "
+                            + "declare @UIGroup on the field instead"),
             new InertAttribute("Field", "sensitive",
                     FIELD_NOT_EXTRACTED + "The field is stored, returned and rendered exactly "
                             + "as an unmarked field; nothing is masked, redacted or kept out of "
@@ -654,6 +661,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             new InertAttribute("UI", "props", UI_FIELD_ATTRIBUTE_ON_TYPE),
             new InertAttribute("UI", "visibleWhen", UI_FIELD_ATTRIBUTE_ON_TYPE),
             new InertAttribute("UI", "enabledWhen", UI_FIELD_ATTRIBUTE_ON_TYPE),
+            new InertAttribute("UIGroup", "columns",
+                    "UIGroupMetadata carries no column count, and form grids use the entity-level columns"),
+            new InertAttribute("UIGroup", "cssClass",
+                    "UIGroupMetadata carries no CSS class, and no emitted component applies it"),
+            new InertAttribute("UIGroup", "visibleWhen",
+                    "visibility conditions are not modeled on UIGroupMetadata and no generator reads them"),
             new InertAttribute(DOMAIN_EVENT, "description",
                     "it is extracted into DomainEventMetadata.description and reaches the JSON, but "
                             + "no emitter renders it"),
@@ -804,9 +817,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             "Action", "ActionParam", "AuditCreatedAt", "AuditCreatedBy", "AuditUpdatedAt",
             "AuditUpdatedBy", "Bind", "Block", "CapabilityLifecycle", "CapabilityModule",
             DOMAIN_EVENT, "EventSourced", "ExerisDomain", "Field", "Graph", "GraphEdge",
-            "InternalApi", "PrimaryKey", "Provides", "Region", "Relationship", "Requires", "Saga",
-            "SagaStep", "SharedScope", "SoftDelete", "SoftDeleteTimestamp", "SoftDeletedBy",
-            "TenantId", "UI", "Validation", "Version", "View");
+            "GraphProperty", "InternalApi", "PrimaryKey", "Provides", "Region", "Relationship",
+            "Requires", "Saga", "SagaStep", "SharedScope", "SoftDelete", "SoftDeleteTimestamp",
+            "SoftDeletedBy", "TenantId", "UI", "UIGroup", "Validation", "Version", "View");
 
     /**
      * The members of {@link #EXTRACTED_ANNOTATIONS} the processor reads on a type declaration and
@@ -849,9 +862,6 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                     "reserved. Its open question is cross-service exposure, which is the same fork "
                             + "T12 and the @View mesh binding sit on — so it is design-gated on a "
                             + "topology decision, not on an extractor"),
-            new UnreadAnnotation("GraphProperty",
-                    "the type-level @Graph and the field-level @GraphEdge are read — this one is "
-                            + "not, and GraphMetadata.properties is passed as null in consequence"),
             new UnreadAnnotation("GraphQuery",
                     "the type-level @Graph and the field-level @GraphEdge are read — this one is "
                             + "not, and GraphMetadata.queries is passed as null in consequence"),
@@ -887,9 +897,6 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                     "presentation grouping is emitted from @View (regions and blocks), and this "
                             + "annotation does not feed it. Generated forms and detail views are "
                             + "not split into tabs"),
-            new UnreadAnnotation("UIGroup",
-                    "same gap as @Tab: grouping is emitted from @View, and generated forms are not "
-                            + "grouped by this annotation or by @Field.group"),
             // Reached only from a non-type element: on a type, @UI is extracted (TYPE_LEVEL_EXTRACTION).
             new UnreadAnnotation("UI",
                     "the processor reads @UI on a type only. On a field it reaches no metadata, so "
@@ -3215,22 +3222,120 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
     private UIMetadata extractUIMetadata(TypeElement element) {
         AnnotationMirror uiAnnotation = findAnnotation(element, UI_FQN);
-        if (uiAnnotation == null) {
+        List<UIMetadata.UIGroupMetadata> groups = uiGroups(element);
+        if (uiAnnotation == null && groups.isEmpty()) {
             return null;
         }
 
-        Map<String, Object> values = extractAnnotationValues(uiAnnotation);
-        warnInertAttributes("UI", values, element, uiAnnotation);
+        UIMetadata.Builder builder = UIMetadata.builder();
+        if (uiAnnotation != null) {
+            Map<String, Object> values = extractAnnotationValues(uiAnnotation);
+            warnInertAttributes("UI", values, element, uiAnnotation);
 
-        return UIMetadata.builder()
-                .listView(values.containsKey("listView") ? (Boolean) values.get("listView") : true)
-                .detailView(values.containsKey("detailView") ? (Boolean) values.get("detailView") : true)
-                .createForm(values.containsKey("createForm") ? (Boolean) values.get("createForm") : true)
-                .editForm(values.containsKey("editForm") ? (Boolean) values.get("editForm") : true)
-                .searchable(values.containsKey("searchable") ? (Boolean) values.get("searchable") : true)
-                .filterable(values.containsKey("filterable") ? (Boolean) values.get("filterable") : true)
-                .exportable(values.containsKey("exportable") ? (Boolean) values.get("exportable") : false)
-                .build();
+            builder.listView(getBoolean(values, "listView", true))
+                    .detailView(getBoolean(values, "detailView", true))
+                    .createForm(getBoolean(values, "createForm", true))
+                    .editForm(getBoolean(values, "editForm", true))
+                    .searchable(getBoolean(values, "searchable", true))
+                    .filterable(getBoolean(values, "filterable", true))
+                    .exportable(getBoolean(values, "exportable", false));
+        }
+
+        builder.groups(groups);
+        return builder.build();
+    }
+
+    private List<UIMetadata.UIGroupMetadata> uiGroups(TypeElement element) {
+        Map<String, GroupDeclarations> byName = new LinkedHashMap<>();
+        for (Element enclosed : element.getEnclosedElements()) {
+            if (enclosed.getKind() != ElementKind.FIELD
+                    || enclosed.getModifiers().contains(Modifier.STATIC)
+                    || enclosed.getModifiers().contains(Modifier.TRANSIENT)) {
+                continue;
+            }
+
+            AnnotationMirror groupAnnotation = findAnnotation(enclosed, UI_GROUP_FQN);
+            if (groupAnnotation == null) {
+                continue;
+            }
+
+            Map<String, Object> values = extractAnnotationValues(groupAnnotation);
+            warnInertAttributes("UIGroup", values, enclosed, groupAnnotation);
+
+            String name = getString(values, "name", null);
+            if (name == null || name.isBlank()) {
+                continue;
+            }
+
+            GroupDeclarations declarations = byName.computeIfAbsent(name, GroupDeclarations::new);
+            declarations.absorb(values);
+            declarations.fields.add(enclosed.getSimpleName().toString());
+        }
+
+        List<UIMetadata.UIGroupMetadata> result = new ArrayList<>();
+        for (GroupDeclarations group : byName.values()) {
+            result.add(group.build());
+        }
+        return List.copyOf(result);
+    }
+
+    private static final class GroupDeclarations {
+        private final String name;
+        private final List<String> fields = new ArrayList<>();
+        private String label;
+        private String description;
+        private Integer order;
+        private Boolean collapsible;
+        private Boolean collapsed;
+        private String icon;
+
+        private GroupDeclarations(String name) {
+            this.name = name;
+        }
+
+        private void absorb(Map<String, Object> values) {
+            if (label == null) {
+                String declaredLabel = getString(values, "label", null);
+                if (declaredLabel != null && !declaredLabel.isBlank()) {
+                    label = declaredLabel;
+                }
+            }
+            if (description == null) {
+                String declaredDesc = getString(values, "description", null);
+                if (declaredDesc != null && !declaredDesc.isBlank()) {
+                    description = declaredDesc;
+                }
+            }
+            if (order == null && values.containsKey("order")) {
+                order = getInt(values, "order", UIMetadata.UIGroupMetadata.DEFAULT_ORDER);
+            }
+            if (collapsible == null && values.containsKey("collapsible")) {
+                collapsible = getBoolean(values, "collapsible", true);
+            }
+            if (collapsed == null && values.containsKey("collapsed")) {
+                collapsed = getBoolean(values, "collapsed", false);
+            }
+            if (icon == null) {
+                String declaredIcon = getString(values, "icon", null);
+                if (declaredIcon != null && !declaredIcon.isBlank()) {
+                    icon = declaredIcon;
+                }
+            }
+        }
+
+        private UIMetadata.UIGroupMetadata build() {
+            return new UIMetadata.UIGroupMetadata(
+                    name,
+                    label,
+                    description,
+                    order != null ? order : UIMetadata.UIGroupMetadata.DEFAULT_ORDER,
+                    !Boolean.FALSE.equals(collapsible),
+                    Boolean.TRUE.equals(collapsed),
+                    icon,
+                    UIMetadata.UIGroupMetadata.DEFAULT_GRID_SPAN,
+                    List.copyOf(fields)
+            );
+        }
     }
 
     private GraphMetadata extractGraphMetadata(TypeElement element) {
@@ -3247,14 +3352,44 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             label = (String) values.get("nodeClass");
         }
 
-        // properties and queries are not extracted, so both are null: NON_NULL keeps them off the
-        // wire, which reads as "not carried". An empty list would claim the entity declares none.
         return new GraphMetadata(
                 label,
-                null,
+                graphProperties(element),
                 graphEdges(element),
                 null
         );
+    }
+
+    private List<GraphPropertyMetadata> graphProperties(TypeElement element) {
+        List<GraphPropertyMetadata> properties = new ArrayList<>();
+        for (Element enclosed : element.getEnclosedElements()) {
+            if (enclosed.getKind() != ElementKind.FIELD
+                    || enclosed.getModifiers().contains(Modifier.STATIC)
+                    || enclosed.getModifiers().contains(Modifier.TRANSIENT)) {
+                continue;
+            }
+
+            AnnotationMirror propertyAnnotation = findAnnotation(enclosed, GRAPH_PROPERTY_FQN);
+            if (propertyAnnotation == null) {
+                continue;
+            }
+
+            Map<String, Object> values = extractAnnotationValues(propertyAnnotation);
+            warnInertAttributes("GraphProperty", values, enclosed, propertyAnnotation);
+
+            String fieldName = enclosed.getSimpleName().toString();
+            String declaredName = getString(values, "name", null);
+            String name = (declaredName != null && !declaredName.isBlank()) ? declaredName : fieldName;
+
+            String graphTypeConstant = enumConstantName(values.get("graphType"));
+            String type = (graphTypeConstant != null && !"AUTO".equals(graphTypeConstant))
+                    ? graphTypeConstant : null;
+
+            boolean indexed = getBoolean(values, "indexed", false);
+
+            properties.add(new GraphPropertyMetadata(name, type, indexed, fieldName));
+        }
+        return List.copyOf(properties);
     }
 
     /**
