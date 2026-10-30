@@ -159,6 +159,13 @@ public enum DiagnosticId {
     STREAM_EVENT_TYPE_COLLIDES("EXT-PROC-1017",
             "A streaming action's result-frame name is reserved or names an event the action triggers."),
 
+    /**
+     * A parameter of an {@code @Action} method carries no {@code @ActionParam}. The generated
+     * handler cannot bind an unannotated parameter from the action request body.
+     */
+    ACTION_PARAMETER_WITHOUT_ACTION_PARAM("EXT-PROC-1020",
+            "A parameter of an @Action method carries no @ActionParam annotation."),
+
     // -----------------------------------------------------------------------
     // EXT-PROC-11xx — warnings on an ordinary build (javac WARNING)
     // -----------------------------------------------------------------------
