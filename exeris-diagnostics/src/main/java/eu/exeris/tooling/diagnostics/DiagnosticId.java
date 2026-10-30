@@ -160,11 +160,11 @@ public enum DiagnosticId {
             "A streaming action's result-frame name is reserved or names an event the action triggers."),
 
     /**
-     * A parameter of an {@code @Action} method carries no {@code @ActionParam}. The generated
-     * handler cannot bind an unannotated parameter from the action request body.
+     * A parameter of an {@code @Action} method carries neither {@code @ActionParam} nor {@code @QueryParam}.
+     * The generated handler cannot bind an unannotated parameter from the action request body or query string.
      */
     ACTION_PARAMETER_WITHOUT_ACTION_PARAM("EXT-PROC-1020",
-            "A parameter of an @Action method carries no @ActionParam annotation."),
+            "A parameter of an @Action method carries neither @ActionParam nor @QueryParam annotation."),
 
     /**
      * An {@code @ExerisDomain} type carries {@code @PrimaryKey} with a {@code strategy} other than

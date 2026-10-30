@@ -61,6 +61,8 @@ export const ActionParamMetadataSchema = z.object({
   required: z.boolean().default(false),
   description: z.string().optional(),
   defaultValue: z.string().optional(),
+  bindingSource: z.enum(['BODY', 'QUERY']).nullable().optional(),
+  queryKey: z.string().nullable().optional(),
 });
 
 export type ActionParamMetadata = z.infer<typeof ActionParamMetadataSchema>;

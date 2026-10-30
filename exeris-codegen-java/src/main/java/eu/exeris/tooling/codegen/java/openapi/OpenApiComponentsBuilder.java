@@ -4,6 +4,7 @@ import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.ParamSource;
 import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
 import eu.exeris.tooling.codegen.java.support.ListQuerySupport;
 import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
@@ -47,7 +48,7 @@ public final class OpenApiComponentsBuilder {
         schemas.put(pageSchemaName(metadata.entityName()), buildPageSchema(metadata));
         if (metadata.hasActions()) {
             for (ActionMetadata action : metadata.actions()) {
-                if (action.hasParams()) {
+                if (hasBodyParams(action)) {
                     schemas.put(RequestBodyFactory.actionRequestSchemaName(metadata.entityName(), action),
                             buildActionRequestSchema(action));
                 }
@@ -207,8 +208,23 @@ public final class OpenApiComponentsBuilder {
     }
 
     /**
+     * Whether an action declares any parameters bound from the request body.
+     */
+    public static boolean hasBodyParams(ActionMetadata action) {
+        if (!action.hasParams()) {
+            return false;
+        }
+        for (ActionParamMetadata param : action.params()) {
+            if (param.effectiveBindingSource() != ParamSource.QUERY) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * The body of one action, member for member as the emitted {@code <Action>Request} record
-     * declares it: one property per {@code @ActionParam}, in declaration order, with its type and
+     * declares it: one property per BODY {@code @ActionParam}, in declaration order, with its type and
      * format. No member is {@code required}: no emitted handler checks that a parameter is present,
      * and {@code @ActionParam.required} and {@code .description} are registered as inert in the
      * processor's strict audit.
@@ -219,6 +235,9 @@ public final class OpenApiComponentsBuilder {
         schema.setDescription("Request for the " + action.name() + " action");
         Map<String, Schema> properties = new LinkedHashMap<>();
         for (ActionParamMetadata param : action.params()) {
+            if (param.effectiveBindingSource() == ParamSource.QUERY) {
+                continue;
+            }
             Schema<Object> paramSchema =
                     OpenApiSchemas.typed(new Schema<>(), TypeMapper.toOpenApiType(param.type()));
             String format = TypeMapper.toOpenApiFormat(param.type());

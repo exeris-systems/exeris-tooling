@@ -276,10 +276,10 @@
     "justification": "A site whose landing page carries its headline in a HERO block while its other pages want the generated heading could not express that with one run-wide viewHeading. viewHeadings sets the heading for the views it names; every other view takes viewHeading. The default is no entry, whose output is byte-identical to a run without the key, so no consumer has to act and MIGRATION carries no step."
   },
   {
-    "signature": "@Action method parameter without @ActionParam: dropped from the generated call -> compile error EXT-PROC-1020",
+    "signature": "@Action method parameter carrying neither @ActionParam nor @QueryParam: dropped from the generated call -> compile error EXT-PROC-1020",
     "since": "0.11",
     "adr": "ADR-015",
-    "justification": "The generated handler binds only @ActionParam parameters from the request body, so an unannotated parameter was dropped and the generated call compiled against the wrong arity or another overload. The processor refuses it, naming the entity, the method and the parameter. An entity whose action parameters all carry @ActionParam generates as before, Java and TypeScript alike. docs/migration/0.11.0/java-04-action-param-required.md carries the step."
+    "justification": "The generated handler binds parameters from the request body (@ActionParam) or query string (@QueryParam), so an unannotated parameter was dropped and the generated call compiled against the wrong arity or another overload. The processor refuses it, naming the entity, the method and the parameter. An entity whose action parameters each carry @ActionParam or @QueryParam generates as before, Java and TypeScript alike. docs/migration/0.11.0/java-04-action-param-required.md carries the step."
   },
   {
     "signature": "pages/<view>.component.ts: CUSTOM block props field emits as const (protected readonly blockProps<N> = <JSON> as const)",

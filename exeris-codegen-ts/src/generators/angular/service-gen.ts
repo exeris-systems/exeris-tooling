@@ -127,6 +127,8 @@ export class ServiceGenerator implements CodeGenerator {
       params: (action.params ?? []).map((p) => ({
         name: p.name,
         tsType: mapScopedType(p.type, scope).tsType,
+        bindingSource: (p.bindingSource ?? 'BODY') as 'BODY' | 'QUERY',
+        queryKey: (p.queryKey && p.queryKey.trim().length > 0) ? p.queryKey : p.name,
       })),
     }));
 
@@ -157,7 +159,14 @@ export class ServiceGenerator implements CodeGenerator {
       softDelete: boolean;
       filterableFields: Array<{ name: string; filterType: string }>;
       sortFields: string[];
-      actions: Array<{ name: string; description: string; methodName: string; kebabName: string; hasParams: boolean; params: Array<{ name: string; tsType: string }> }>;
+      actions: Array<{
+        name: string;
+        description: string;
+        methodName: string;
+        kebabName: string;
+        hasParams: boolean;
+        params: Array<{ name: string; tsType: string; bindingSource: 'BODY' | 'QUERY'; queryKey: string }>;
+      }>;
       systemFields: string[];
       enumTypes: string[];
       entityImports: string[];
@@ -298,11 +307,21 @@ export class ServiceGenerator implements CodeGenerator {
       const paramsStr = action.hasParams
         ? ', ' + action.params.map(p => `${p.name}: ${p.tsType}`).join(', ')
         : '';
-      const bodyParams = action.hasParams
-        ? `{ ${action.params.map(p => p.name).join(', ')} }`
+      const queryParams = action.params.filter(p => p.bindingSource === 'QUERY');
+      const bodyParams = action.params.filter(p => p.bindingSource !== 'QUERY');
+      const bodyParamsStr = bodyParams.length > 0
+        ? `{ ${bodyParams.map(p => p.name).join(', ')} }`
         : '{}';
       lines.push(`  ${action.methodName}(id: string${paramsStr}): Observable<${modelName}> {`);
-      lines.push(`    return this.http.post<${modelName}>(\`\${this.baseUrl}/\${id}/actions/${action.kebabName}\`, ${bodyParams});`);
+      if (queryParams.length > 0) {
+        lines.push(`    let params = new HttpParams();`);
+        for (const qp of queryParams) {
+          lines.push(`    if (${qp.name} !== undefined && ${qp.name} !== null) params = params.set('${qp.queryKey}', String(${qp.name}));`);
+        }
+        lines.push(`    return this.http.post<${modelName}>(\`\${this.baseUrl}/\${id}/actions/${action.kebabName}\`, ${bodyParamsStr}, { params });`);
+      } else {
+        lines.push(`    return this.http.post<${modelName}>(\`\${this.baseUrl}/\${id}/actions/${action.kebabName}\`, ${bodyParamsStr});`);
+      }
       lines.push(`  }`);
     }
 
