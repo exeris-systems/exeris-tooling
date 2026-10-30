@@ -356,6 +356,43 @@ describe('ServiceGenerator custom actions emission', () => {
     // Only the 5 fixed CRUD methods + no custom action method comments.
     expect(content).not.toContain('/** Execute');
   });
+
+  it('action with @QueryParam → HttpParams with effective query key, empty body {}', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      actions: [{
+        name: 'search',
+        params: [
+          { name: 'term', type: 'String', bindingSource: 'QUERY', queryKey: 'q' },
+          { name: 'limit', type: 'int', bindingSource: 'QUERY' },
+        ],
+      }],
+    }), CTX)!.content;
+
+    expect(content).toContain('search(id: string, term: string, limit: number): Observable<Order>');
+    expect(content).toContain('let params = new HttpParams();');
+    expect(content).toContain("params = params.set('q', String(term));");
+    expect(content).toContain("params = params.set('limit', String(limit));");
+    expect(content).toContain('this.http.post<Order>(`${this.baseUrl}/${id}/actions/search`, {}, { params })');
+  });
+
+  it('action with mixed QUERY and BODY params → HttpParams for query, body object for body', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      actions: [{
+        name: 'reassign',
+        params: [
+          { name: 'notify', type: 'boolean', bindingSource: 'QUERY', queryKey: 'notify' },
+          { name: 'assignee', type: 'String', bindingSource: 'BODY' },
+        ],
+      }],
+    }), CTX)!.content;
+
+    expect(content).toContain('reassign(id: string, notify: boolean, assignee: string): Observable<Order>');
+    expect(content).toContain('let params = new HttpParams();');
+    expect(content).toContain("params = params.set('notify', String(notify));");
+    expect(content).toContain('this.http.post<Order>(`${this.baseUrl}/${id}/actions/reassign`, { assignee }, { params })');
+  });
 });
 
 // ---------- collectEnumTypes ----------

@@ -1,8 +1,10 @@
 package eu.exeris.tooling.codegen.java.openapi;
 
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
+import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.ParamSource;
 import eu.exeris.tooling.codegen.java.support.ForeignKeys;
 import eu.exeris.tooling.codegen.java.support.KernelStreamScaffold;
 import eu.exeris.tooling.codegen.java.support.ListQuerySupport;
@@ -215,12 +217,36 @@ public final class OpenApiPathsBuilder {
         op.setTags(List.of(entity + " Actions"));
         op.addParametersItem(buildIdParam());
         if (action.hasParams()) {
-            op.setRequestBody(RequestBodyFactory.buildActionRequestBody(entity, action));
+            for (ActionParamMetadata param : action.params()) {
+                if (param.effectiveBindingSource() == ParamSource.QUERY) {
+                    op.addParametersItem(actionQueryParam(param));
+                }
+            }
+            if (OpenApiComponentsBuilder.hasBodyParams(action)) {
+                op.setRequestBody(RequestBodyFactory.buildActionRequestBody(entity, action));
+            }
         }
         Responses responses = Responses.of(OK, "Action result").badRequest().notFound();
         op.setResponses((versioned ? responses.conflict() : responses)
                 .unprocessable(missingReference).serverError());
         return op;
+    }
+
+    private static Parameter actionQueryParam(ActionParamMetadata param) {
+        Parameter p = new Parameter();
+        p.setName(param.effectiveQueryKey());
+        p.setIn("query");
+        p.setRequired(param.required());
+        if (param.description() != null) {
+            p.setDescription(param.description());
+        }
+        Schema<?> schema = OpenApiSchemas.typed(new Schema<>(), TypeMapper.toOpenApiType(param.type()));
+        String format = TypeMapper.toOpenApiFormat(param.type());
+        if (format != null) {
+            schema.setFormat(format);
+        }
+        p.setSchema(schema);
+        return p;
     }
 
     /**
@@ -250,7 +276,14 @@ public final class OpenApiPathsBuilder {
         op.setTags(List.of(entity + " Actions"));
         op.addParametersItem(buildIdParam());
         if (action.hasParams()) {
-            op.setRequestBody(RequestBodyFactory.buildActionRequestBody(entity, action));
+            for (ActionParamMetadata param : action.params()) {
+                if (param.effectiveBindingSource() == ParamSource.QUERY) {
+                    op.addParametersItem(actionQueryParam(param));
+                }
+            }
+            if (OpenApiComponentsBuilder.hasBodyParams(action)) {
+                op.setRequestBody(RequestBodyFactory.buildActionRequestBody(entity, action));
+            }
         }
         String frames = events.isEmpty()
                 ? "The action triggers no @DomainEvent, so the stream closes once the action has run, "
@@ -260,7 +293,7 @@ public final class OpenApiPathsBuilder {
                         + "data is the event payload, and closes once each has arrived or a deadline has "
                         + "passed. ";
         String refusals = "A malformed id, "
-                + (action.hasParams() ? "a request body that does not decode, " : "")
+                + (OpenApiComponentsBuilder.hasBodyParams(action) ? "a request body that does not decode, " : "")
                 + "an absent or invisible row, "
                 + (metadata.versioned() ? "a version conflict, " : "")
                 + (missingReference ? "a relationship naming a row that does not exist, " : "")

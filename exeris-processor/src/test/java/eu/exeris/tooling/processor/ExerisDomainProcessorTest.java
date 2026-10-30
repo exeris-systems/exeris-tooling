@@ -1182,8 +1182,10 @@ class ExerisDomainProcessorTest {
             Compilation compilation = compileWithProcessor(source);
             assertThat(compilation).failed();
             assertThat(compilation).hadErrorCount(1);
-            assertThat(compilation).hadErrorContaining("[Exeris] EXT-PROC-1020: Entity 'Drone', action method 'updateBatteryTelemetry': parameter 'newPercentage' carries no @ActionParam, so the generated handler could not pass it. "
-                    + "Add @ActionParam(label = \"...\").");
+            assertThat(compilation).hadErrorContaining("[Exeris] EXT-PROC-1020: Entity 'Drone', action method "
+                    + "'updateBatteryTelemetry': parameter 'newPercentage' carries neither @ActionParam nor "
+                    + "@QueryParam, so the generated handler could not pass it. "
+                    + "Add @ActionParam(label = \"...\") or @QueryParam(\"key\").");
         }
 
         @Test
@@ -1265,8 +1267,10 @@ class ExerisDomainProcessorTest {
             Compilation compilation = compileWithProcessor(source);
             assertThat(compilation).failed();
             assertThat(compilation).hadErrorCount(1);
-            assertThat(compilation).hadErrorContaining("[Exeris] EXT-PROC-1020: Entity 'Drone', action method 'navigate': parameter 'speed' carries no @ActionParam, so the generated handler could not pass it. "
-                    + "Add @ActionParam(label = \"...\").");
+            assertThat(compilation).hadErrorContaining("[Exeris] EXT-PROC-1020: Entity 'Drone', action method "
+                    + "'navigate': parameter 'speed' carries neither @ActionParam nor "
+                    + "@QueryParam, so the generated handler could not pass it. "
+                    + "Add @ActionParam(label = \"...\") or @QueryParam(\"key\").");
         }
 
         @Test
@@ -1325,13 +1329,15 @@ class ExerisDomainProcessorTest {
             Compilation invalidCompilation = compileWithProcessor(invalidOverload);
             assertThat(invalidCompilation).failed();
             assertThat(invalidCompilation).hadErrorCount(1);
-            assertThat(invalidCompilation).hadErrorContaining("[Exeris] EXT-PROC-1020: Entity 'Drone', action method 'calibrate': parameter 'level' carries no @ActionParam, so the generated handler could not pass it. "
-                    + "Add @ActionParam(label = \"...\").");
+            assertThat(invalidCompilation).hadErrorContaining("[Exeris] EXT-PROC-1020: Entity 'Drone', action method "
+                    + "'calibrate': parameter 'level' carries neither @ActionParam nor "
+                    + "@QueryParam, so the generated handler could not pass it. "
+                    + "Add @ActionParam(label = \"...\") or @QueryParam(\"key\").");
         }
 
         @Test
-        @DisplayName("a parameter carrying @QueryParam without @ActionParam is refused with EXT-PROC-1020")
-        void queryParamWithoutActionParamIsRefused() {
+        @DisplayName("a parameter carrying @QueryParam alone compiles and extracts as QUERY parameter")
+        void queryParamAloneCompilesAndExtracts() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.Account",
                     """
@@ -1353,10 +1359,92 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = compileWithProcessor(source);
-            assertThat(compilation).failed();
-            assertThat(compilation).hadErrorCount(1);
-            assertThat(compilation).hadErrorContaining("[Exeris] EXT-PROC-1020: Entity 'Account', action method 'search': parameter 'query' carries no @ActionParam, so the generated handler could not pass it. "
-                    + "Add @ActionParam(label = \"...\").");
+            assertThat(compilation).succeededWithoutWarnings();
+            JsonNode param = readMetadataRoot(compilation, "Account")
+                    .path("actions").get(0).path("params").get(0);
+            assertThat(param.path("name").asText()).isEqualTo("query");
+            assertThat(param.path("type").asText()).isEqualTo("java.lang.String");
+            assertThat(param.path("bindingSource").asText()).isEqualTo("QUERY");
+            assertThat(param.path("queryKey").asText()).isEqualTo("q");
+            assertThat(param.path("required").asBoolean()).isTrue();
+        }
+
+        @Test
+        @DisplayName("@QueryParam with value attribute and non-default attributes")
+        void queryParamExplicitValueAndDefaults() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Account",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.QueryParam;
+
+                    @ExerisDomain(module = "core", path = "/accounts")
+                    public class Account {
+                        private java.util.UUID id;
+
+                        @Action(name = "search", label = "Search")
+                        public void search(
+                                @QueryParam(value = "limit", required = false, defaultValue = "10",
+                                        description = "Maximum results") int limit) {
+                        }
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeededWithoutWarnings();
+            JsonNode param = readMetadataRoot(compilation, "Account")
+                    .path("actions").get(0).path("params").get(0);
+            assertThat(param.path("name").asText()).isEqualTo("limit");
+            assertThat(param.path("type").asText()).isEqualTo("int");
+            assertThat(param.path("bindingSource").asText()).isEqualTo("QUERY");
+            assertThat(param.hasNonNull("queryKey")).isFalse();
+            assertThat(param.path("required").asBoolean()).isFalse();
+            assertThat(param.path("defaultValue").asText()).isEqualTo("10");
+            assertThat(param.path("description").asText()).isEqualTo("Maximum results");
+        }
+
+        @Test
+        @DisplayName("both @ActionParam and @QueryParam: @ActionParam wins on precedence, binding is QUERY")
+        void actionParamAndQueryParamPrecedence() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Account",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.ActionParam;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.QueryParam;
+
+                    @ExerisDomain(module = "core", path = "/accounts")
+                    public class Account {
+                        private java.util.UUID id;
+
+                        @Action(name = "filter", label = "Filter")
+                        public void filter(
+                                @ActionParam(name = "searchTerm", label = "Search Query", required = false,
+                                        description = "Search filter", defaultValue = "active")
+                                @QueryParam("q") String term) {
+                        }
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeededWithoutWarnings();
+            JsonNode param = readMetadataRoot(compilation, "Account")
+                    .path("actions").get(0).path("params").get(0);
+            assertThat(param.path("name").asText()).isEqualTo("searchTerm");
+            assertThat(param.path("displayName").asText()).isEqualTo("Search Query");
+            assertThat(param.path("bindingSource").asText()).isEqualTo("QUERY");
+            assertThat(param.path("queryKey").asText()).isEqualTo("q");
+            assertThat(param.path("required").asBoolean()).isFalse();
+            assertThat(param.path("defaultValue").asText()).isEqualTo("active");
+            assertThat(param.path("description").asText()).isEqualTo("Search filter");
         }
     }
 
@@ -3123,8 +3211,8 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("warns on @QueryParam — the action-parameter site C0 added")
-        void strictWarnsOnUnreadParameterAnnotation() {
+        @DisplayName("-Aexeris.strict does not warn on @QueryParam: the processor extracts it")
+        void strictDoesNotWarnOnExtractedQueryParam() {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.Account",
                     """
@@ -3136,7 +3224,8 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.QueryParam;
 
                     @ExerisDomain(module = "core", path = "/accounts")
-                    public class Account { private java.util.UUID id;
+                    public class Account {
+                        private java.util.UUID id;
                         private String name;
 
                         @Action(name = "search", label = "Search")
@@ -3152,11 +3241,9 @@ class ExerisDomainProcessorTest {
                     .compile(source);
 
             assertThat(compilation).succeeded();
-            // The parameter carries no @ActionParam, so the pre-existing sweep never visited it:
-            // the audit call had to sit outside that gate, which is exactly the shape this pins.
             assertThat(hasUnreadWarningFor(compilation, "@QueryParam"))
-                    .as("warning naming @QueryParam on an otherwise-unannotated parameter")
-                    .isTrue();
+                    .as("no warning naming @QueryParam as unread")
+                    .isFalse();
         }
 
         /**
@@ -3810,6 +3897,38 @@ class ExerisDomainProcessorTest {
             assertThat(inertWarnings(compilation))
                     .as("exactly two inert warnings (description + required)")
                     .isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict warns on @QueryParam unconsumed attributes")
+        void strictWarnsOnInertQueryParamAttributes() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.QueryParam;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    public class Order {
+                        private java.util.UUID id;
+
+                        @Action(name = "search", label = "Search")
+                        public void search(@QueryParam(value = "q", sanitize = false) String q) {
+                        }
+                    }
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            assertThat(hasInertWarningFor(compilation, "@QueryParam.sanitize")).isTrue();
         }
 
         @Test

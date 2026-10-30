@@ -4,9 +4,11 @@ import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.ParamSource;
 import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.PathItem;
 import io.swagger.v3.oas.models.Paths;
+import io.swagger.v3.oas.models.parameters.Parameter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -167,6 +169,34 @@ class OpenApiPathsBuilderTest {
         assertThat(post.getRequestBody()).isNotNull();
         assertThat(post.getRequestBody().getContent().get("application/json").getSchema().get$ref())
                 .isEqualTo("#/components/schemas/OrderApproveRequest");
+    }
+
+    @Test
+    @DisplayName("Action with query parameters emits query parameters and no request body")
+    void actionWithQueryParamsEmitsQueryParameters() {
+        ActionParamMetadata query = ActionParamMetadata.builder("searchTerm", "String")
+                .bindingSource(ParamSource.QUERY)
+                .queryKey("q")
+                .required(true)
+                .description("Search term")
+                .build();
+        DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .actions(List.of(
+                        ActionMetadata.builder("search").addParam(query).build()))
+                .build();
+
+        Operation post = OpenApiPathsBuilder.buildPaths(meta)
+                .get("/orders/{id}/actions/search")
+                .getPost();
+
+        assertThat(post.getRequestBody()).isNull();
+        assertThat(post.getParameters()).hasSize(2);
+        Parameter qp = post.getParameters().get(1);
+        assertThat(qp.getName()).isEqualTo("q");
+        assertThat(qp.getIn()).isEqualTo("query");
+        assertThat(qp.getRequired()).isTrue();
+        assertThat(qp.getDescription()).isEqualTo("Search term");
     }
 
     @Test
