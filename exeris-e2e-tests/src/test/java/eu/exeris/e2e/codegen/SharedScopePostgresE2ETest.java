@@ -62,6 +62,7 @@ class SharedScopePostgresE2ETest {
     private static final String OWNER_A = "00000000-0000-4000-8000-00000000000a";
     private static final String OWNER_B = "00000000-0000-4000-8000-00000000000b";
     private static final String WORLD = "00000000-0000-4000-8000-00000000000f";
+    private static final String FOREIGN_SCOPE = "00000000-0000-4000-8000-00000000000e";
     private static final String NO_SCOPE = "";
 
     /** Row payloads ({@code x}), one per seeded row. */
@@ -84,6 +85,7 @@ class SharedScopePostgresE2ETest {
         CodegenPipeline.createDefault().run(classes.resolve("exeris-metadata"), generated, "com.world");
         String create = migration(generated, "__create_galaxy_presences");
         String widen = migration(generated, "__shared_scope_galaxy_presences");
+        String tenantPolicy = migration(generated, "__tenant_policy_galaxy_presences");
 
         admin = target.adminConnection();
         try (Statement st = admin.createStatement()) {
@@ -95,8 +97,10 @@ class SharedScopePostgresE2ETest {
             // Verbatim, as a consumer's Flyway would run them, and in version order.
             st.execute(create);
             st.execute(widen);
-            // Replaying the widening must be harmless (DROP POLICY IF EXISTS / CREATE INDEX IF NOT EXISTS).
+            st.execute(tenantPolicy);
+            // Replaying the widening and policy update must be harmless (DROP POLICY IF EXISTS / CREATE INDEX IF NOT EXISTS).
             st.execute(widen);
+            st.execute(tenantPolicy);
             st.execute("GRANT USAGE ON SCHEMA " + SCHEMA + " TO " + APP_ROLE);
             st.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON galaxy_presences TO " + APP_ROLE);
         }
@@ -184,9 +188,34 @@ class SharedScopePostgresE2ETest {
     }
 
     @Test
-    @DisplayName("fail-closed: unset session keys match no row and raise no cast error")
-    void unsetSessionKeysMatchNothing() throws SQLException {
-        assertThat(visibleAs(NO_SCOPE, NO_SCOPE)).isEmpty();
+    @DisplayName("fail-closed: a tenant-less read raises with 22P02, never returning an empty result")
+    void tenantlessReadRaises() {
+        assertThatThrownBy(() -> visibleAs(NO_SCOPE, NO_SCOPE))
+                .isInstanceOf(SQLException.class)
+                .satisfies(e -> assertThat(((SQLException) e).getSQLState()).isEqualTo("22P02"));
+        assertThatThrownBy(() -> visibleAs(NO_SCOPE, WORLD))
+                .isInstanceOf(SQLException.class)
+                .satisfies(e -> assertThat(((SQLException) e).getSQLState()).isEqualTo("22P02"));
+    }
+
+    @Test
+    @DisplayName("tag pinning: a write with a foreign scope tag is refused (SQLSTATE 42501)")
+    void writeWithForeignScopeTagIsRefused() {
+        // Insert with a scope the session does not publish is refused by WITH CHECK
+        assertThatThrownBy(() -> asTenant(OWNER_A, WORLD, () -> insert(OWNER_A, FOREIGN_SCOPE, 88)))
+                .isInstanceOf(SQLException.class)
+                .satisfies(e -> assertThat(((SQLException) e).getSQLState()).isEqualTo("42501"));
+
+        // Insert with a scope when session publishes no scope is refused
+        assertThatThrownBy(() -> asTenant(OWNER_A, NO_SCOPE, () -> insert(OWNER_A, WORLD, 77)))
+                .isInstanceOf(SQLException.class)
+                .satisfies(e -> assertThat(((SQLException) e).getSQLState()).isEqualTo("42501"));
+
+        // Retagging an own row to a foreign scope is refused
+        assertThatThrownBy(() -> asTenant(OWNER_A, WORLD, () ->
+                update("UPDATE galaxy_presences SET universe_id = '" + FOREIGN_SCOPE + "'::uuid WHERE x = " + A_IN_SCOPE)))
+                .isInstanceOf(SQLException.class)
+                .satisfies(e -> assertThat(((SQLException) e).getSQLState()).isEqualTo("42501"));
     }
 
     // ── harness ──────────────────────────────────────────────────────────────────────────────

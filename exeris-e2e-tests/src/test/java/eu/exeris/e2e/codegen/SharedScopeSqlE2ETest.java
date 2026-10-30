@@ -47,6 +47,7 @@ class SharedScopeSqlE2ETest {
     private static Path generated;
     private static String create;
     private static String widen;
+    private static String tenantPolicy;
     private static String repository;
 
     @BeforeAll
@@ -60,6 +61,7 @@ class SharedScopeSqlE2ETest {
 
         create = migration("__create_galaxy_presences");
         widen = migration("__shared_scope_galaxy_presences");
+        tenantPolicy = migration("__tenant_policy_galaxy_presences");
         repository = Files.readString(generated.resolve("com/world/repository/GalaxyPresenceRepository.java"));
     }
 
@@ -68,6 +70,8 @@ class SharedScopeSqlE2ETest {
     void sessionKeysAreTheKernelConstants() {
         assertThat(widen).contains("current_setting('" + ConnectionInterceptor.SESSION_KEY_SHARED_SCOPE + "', true)");
         assertThat(create).contains("current_setting('" + ConnectionInterceptor.SESSION_KEY_TENANT_ID + "', true)");
+        assertThat(tenantPolicy).contains("current_setting('" + ConnectionInterceptor.SESSION_KEY_TENANT_ID + "', true)");
+        assertThat(tenantPolicy).contains("current_setting('" + ConnectionInterceptor.SESSION_KEY_SHARED_SCOPE + "', true)");
     }
 
     @Test
@@ -96,15 +100,30 @@ class SharedScopeSqlE2ETest {
     }
 
     @Test
-    @DisplayName("the two migrations of one table pair on their six digits, and the widening sorts last")
+    @DisplayName("the tenant policy update migration: unguarded tenant cast and scope tag pin in WITH CHECK")
+    void tenantPolicyMigrationUpdatesPolicy() {
+        assertThat(tenantPolicy)
+                .contains("DROP POLICY IF EXISTS galaxy_presences_tenant_policy ON galaxy_presences;")
+                .contains("CREATE POLICY galaxy_presences_tenant_policy ON galaxy_presences")
+                .contains("USING (owner_tenant_id = current_setting('exeris.tenant_id', true)::uuid)")
+                .contains("WITH CHECK (owner_tenant_id = current_setting('exeris.tenant_id', true)::uuid\n"
+                        + "        AND (universe_id IS NULL\n"
+                        + "             OR universe_id = NULLIF(current_setting('exeris.shared_scope', true), '')::uuid));");
+    }
+
+    @Test
+    @DisplayName("the three migrations of one table pair on their six digits and sort in tier order (CREATE, widen, policy)")
     void migrationsPairAndOrder() throws IOException {
         List<String> names = migrationNames();
         String createName = names.stream().filter(n -> n.contains("__create_galaxy_presences")).findFirst().orElseThrow();
         String widenName = names.stream().filter(n -> n.contains("__shared_scope_galaxy_presences")).findFirst().orElseThrow();
+        String policyName = names.stream().filter(n -> n.contains("__tenant_policy_galaxy_presences")).findFirst().orElseThrow();
 
         assertThat(createName).startsWith("V2");
         assertThat(widenName).startsWith("V4");
+        assertThat(policyName).startsWith("V5");
         assertThat(widenName.substring(2, 8)).isEqualTo(createName.substring(2, 8));
+        assertThat(policyName.substring(2, 8)).isEqualTo(createName.substring(2, 8));
     }
 
     @Test

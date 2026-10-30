@@ -258,7 +258,7 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
     }
 
     /** Snake-cased SQL name of the tenant column (honours tenantIdField, T5). */
-    private String tenantColumn(DomainMetadata metadata) {
+    String tenantColumn(DomainMetadata metadata) {
         return sysCol(metadata, "tenantId");
     }
 

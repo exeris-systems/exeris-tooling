@@ -38,6 +38,7 @@ class SystemFieldSqlE2ETest {
     static Path workspace;
 
     private static String createInvoices;
+    private static String tenantPolicyInvoices;
 
     @BeforeAll
     static void generateTheSchema() throws IOException {
@@ -48,7 +49,8 @@ class SystemFieldSqlE2ETest {
         CodegenPipeline.createDefault()
                 .run(classes.resolve("exeris-metadata"), generated, "com.shop");
 
-        createInvoices = migration(generated, "invoices");
+        createInvoices = migration(generated, "__create_invoices");
+        tenantPolicyInvoices = migration(generated, "__tenant_policy_invoices");
     }
 
     @Test
@@ -95,6 +97,11 @@ class SystemFieldSqlE2ETest {
                 // Excluded in its column form only: 'exeris.tenant_id' is the session key the
                 // policy reads, is not a column, and is correctly unaffected by the rename.
                 .doesNotContain("tenant_id UUID");
+
+        assertThat(tenantPolicyInvoices)
+                .contains("DROP POLICY IF EXISTS invoices_tenant_policy ON invoices;")
+                .contains("USING (org_id = current_setting('exeris.tenant_id', true)::uuid)")
+                .contains("WITH CHECK (org_id = current_setting('exeris.tenant_id', true)::uuid);");
     }
 
     /** Reads the one emitted migration whose file name contains {@code fragment}. */
