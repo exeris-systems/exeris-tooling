@@ -2761,9 +2761,11 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         // Each check below is verified live against the SDK declaration
         // and exercised by ActionAttributeMatrixTests. Attributes the
         // processor checked elsewhere but @Action does NOT declare
-        // (displayName, idempotent, dangerous, requiresConfirmation)
-        // remain absent — their containsKey checks were genuinely
-        // unreachable and are not restored.
+        // (idempotent, dangerous, requiresConfirmation) remain absent.
+        // displayName is @Action.label, as the SDK reader reads it (ADR-042).
+        if (values.containsKey("label")) {
+            builder.displayName((String) values.get("label"));
+        }
         if (values.containsKey("description")) {
             builder.description((String) values.get("description"));
         }

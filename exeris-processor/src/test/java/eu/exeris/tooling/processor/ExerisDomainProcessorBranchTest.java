@@ -387,7 +387,7 @@ class ExerisDomainProcessorBranchTest {
     class ActionAttributeMatrixTests {
 
         @Test
-        @DisplayName("Every @Action attribute the processor reads (description / httpMethod / async) flows into metadata")
+        @DisplayName("Every @Action attribute the processor reads (label / description / httpMethod / async) flows into metadata")
         void everyActionAttributeFlowsThrough() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.ActionAttrFixture",
@@ -418,6 +418,7 @@ class ExerisDomainProcessorBranchTest {
 
             String json = metadataFor(compilation, "ActionAttrFixture");
             assertThat(json)
+                    .contains("\"displayName\" : \"Approve Order\"")
                     .contains("\"description\" : \"Mark the order as approved\"")
                     .contains("\"httpMethod\" : \"POST\"")
                     .contains("\"async\" : true");

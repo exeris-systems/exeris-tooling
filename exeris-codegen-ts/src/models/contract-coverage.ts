@@ -178,7 +178,7 @@ export const ACTION_CONTRACT_COVERAGE = {
     written: true,
     reason: 'The emitted handler invokes this method on the aggregate; the client addresses the action by name.',
   },
-  displayName: { state: 'RESERVED', written: false, reason: `${NOT_WRITTEN} @Action declares a label it does not copy here.` },
+  displayName: { state: 'RESERVED', written: true, reason: 'Written from @Action.label; the emitted action controls label an action by its name on both sides.' },
   description: { state: 'READ', written: true },
   httpMethod: {
     state: 'RESERVED',
