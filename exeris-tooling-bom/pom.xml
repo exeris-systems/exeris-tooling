@@ -18,7 +18,7 @@
 
     <properties>
         <!--
-          SDK 0.13.1, the final release on Maven Central (tag `v0.13.1`), the
+          SDK 0.13.2, the final release on Maven Central (tag `v0.13.2`), the
           line that pairs with kernel 0.13.1. Both Exeris pins are releases, as
           the released-pins rule requires of a tooling cut (ROADMAP "Versioning
           policy"), and both resolve from Central with no settings file.
@@ -33,7 +33,7 @@
           `SchemaVersion.CURRENT`. `@Channel` and `@RouteAccess` are read by
           nothing yet.
         -->
-        <exeris.sdk.version>0.13.1</exeris.sdk.version>
+        <exeris.sdk.version>0.13.2</exeris.sdk.version>
         <!--
           Kernel 0.13.1 — the line SDK 0.13 pairs with. Its HTTP dispatcher asks
           an `HttpRoutePolicy` about the path without its query string, and about

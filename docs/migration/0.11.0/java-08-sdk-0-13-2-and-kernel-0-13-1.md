@@ -1,5 +1,5 @@
 ---
-title: "0.11.0 migration step: exeris-app-bom pins SDK 0.13.1 and kernel 0.13.1"
+title: "0.11.0 migration step: exeris-app-bom pins SDK 0.13.2 and kernel 0.13.1"
 type: migration-guide
 visibility: public
 owning-repo: exeris-tooling
@@ -7,10 +7,10 @@ status: active
 last-verified: 2026-10-30
 ---
 
-### `exeris-app-bom` pins SDK 0.13.1 and kernel 0.13.1
+### `exeris-app-bom` pins SDK 0.13.2 and kernel 0.13.1
 
-`exeris.sdk.version` and `exeris.kernel.version` in `exeris-app-bom` are `0.13.1`. Neither release
-changes an SPI type or the shape of the metadata, so regenerating changes no generated file.
+`exeris.sdk.version` in `exeris-app-bom` is `0.13.2` and `exeris.kernel.version` is `0.13.1`. Neither
+release changes an SPI type or the shape of the metadata, so regenerating changes no generated file.
 
 Kernel 0.13.1's Community security provider reads its verification keys from configuration:
 `security.jwks.uri`, `security.jwt.issuer` and `security.jwt.audience`, all three or none. On kernel

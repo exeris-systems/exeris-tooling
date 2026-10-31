@@ -19,6 +19,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardLocation;
 
@@ -45,6 +47,10 @@ final class TckCorpusProducer {
             Facet.TABS,
             Facet.BLOBS));
 
+    private static final Pattern PACKAGE = Pattern.compile("^package\\s+([\\w.]+)\\s*;", Pattern.MULTILINE);
+    private static final Pattern PUBLIC_TYPE = Pattern.compile(
+            "^public\\s+(?:final\\s+|abstract\\s+)?(?:class|record|enum|interface)\\s+(\\w+)", Pattern.MULTILINE);
+
     private static final Map<String, String> METADATA = compileCorpus();
 
     private TckCorpusProducer() {
@@ -58,6 +64,34 @@ final class TckCorpusProducer {
             }
         }
         throw new IllegalArgumentException("not a corpus entity source");
+    }
+
+    /**
+     * The metadata JSON the processor writes for one {@code @ExerisDomain} source. A corpus entity
+     * comes from the corpus compilation, since the corpus entities reference one another; any other
+     * source, such as a reader-suite case, compiles on its own.
+     */
+    static String produceAny(String entitySource) {
+        for (String name : TckCorpus.entityNames()) {
+            if (TckCorpus.sourceOf(name).equals(entitySource)) {
+                return METADATA.get(name);
+            }
+        }
+        Matcher pkg = PACKAGE.matcher(entitySource);
+        Matcher type = PUBLIC_TYPE.matcher(entitySource);
+        if (!type.find()) {
+            throw new IllegalArgumentException("the source declares no public type");
+        }
+        String simpleName = type.group(1);
+        String qualifiedName = pkg.find() ? pkg.group(1) + "." + simpleName : simpleName;
+        Compilation compilation = javac().withProcessors(new ExerisDomainProcessor())
+                .compile(JavaFileObjects.forSourceString(qualifiedName, entitySource));
+        if (compilation.status() != Compilation.Status.SUCCESS) {
+            throw new IllegalStateException("the processor refuses " + qualifiedName + ": " + compilation.errors());
+        }
+        return read(compilation.generatedFile(StandardLocation.CLASS_OUTPUT,
+                "exeris-metadata/" + simpleName + ".json").orElseThrow(
+                        () -> new IllegalStateException("no exeris-metadata/" + simpleName + ".json")));
     }
 
     private static Map<String, String> compileCorpus() {
