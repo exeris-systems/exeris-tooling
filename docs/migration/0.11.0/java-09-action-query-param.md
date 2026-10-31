@@ -23,3 +23,12 @@ Two shapes are refused at compile time:
   `@ActionParam` alone;
 - a `@QueryParam` parameter on an `@Action(streaming = true)` method (`EXT-PROC-1023`): a streaming
   action reads its parameters from the request body only.
+
+A parameter that already carried both `@ActionParam` and `@QueryParam` was bound from the request
+body, because `@QueryParam` was not read. After regenerating it is bound from the query string: the
+generated handler reads it there, the OpenAPI document declares it `in: query`, and the TypeScript
+client sends it as a query parameter. A caller that posts it in the body, rather than through the
+generated client, moves it to the query string, or drops `@QueryParam` to keep it in the body.
+
+`@ActionParam(name)` must be a Java name (`EXT-PROC-1024`), because the generated record, handler and
+client use it as an identifier.

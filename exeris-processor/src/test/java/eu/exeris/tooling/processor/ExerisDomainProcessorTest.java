@@ -1185,6 +1185,31 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
+        @DisplayName("@ActionParam(name) that is not a Java name is refused with EXT-PROC-1024")
+        void actionParamNameThatIsNotANameIsRefused() {
+            JavaFileObject source = JavaFileObjects.forSourceString("com.example.Drone", """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.ActionParam;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "fleet", path = "/drones")
+                    public class Drone {
+                        private java.util.UUID id;
+
+                        @Action(name = "plan", label = "Plan")
+                        public void plan(@ActionParam(name = "start-date", label = "Start") String start) {
+                        }
+                    }
+                    """);
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining("[Exeris] EXT-PROC-1024: Parameter 'start': @ActionParam(name = \"start-date\") is not a Java name");
+        }
+
+        @Test
         @DisplayName("a @QueryParam parameter on a streaming action is refused with EXT-PROC-1023")
         void queryParamOnStreamingActionIsRefused() {
             JavaFileObject source = JavaFileObjects.forSourceString("com.example.Drone", """

@@ -74,6 +74,7 @@ Printed by `javac` while it compiles your sources. `-Aexeris.strict=true` enable
 | `EXT-PROC-1021` | An `@ExerisDomain` type carries `@PrimaryKey` with a `strategy` of `SEQUENCE`, `IDENTITY` or `NONE`. The kernel identifies an entity's event stream and graph node by a UUID, so only `UUID` and `UUID_DATABASE` are accepted ([ADR-104](adr/ADR-104-declared-primary-key-uuid-only.md)). | Use strategy `UUID` (the default) or `UUID_DATABASE`, or remove the strategy attribute. |
 | `EXT-PROC-1022` | An `@Action` parameter carrying `@QueryParam` has a type the generated handler cannot read from a query-string value. | Use a primitive or its box, `String`, `BigDecimal`, `UUID`, `LocalDate`, `LocalDateTime`, `Instant`, `OffsetDateTime` or an enum, or bind the parameter from the body with `@ActionParam` alone. |
 | `EXT-PROC-1023` | A streaming `@Action` declares a `@QueryParam` parameter. The generated stream handler reads an action's parameters from the request body only. | Bind the parameter with `@ActionParam` alone, or make the action respond once. |
+| `EXT-PROC-1024` | `@ActionParam(name)` declares a name that is not a Java name, such as `start-date`. The generated request record, handler and TypeScript client use the parameter's name as an identifier. | Use a Java identifier, or leave `name` unset to take the parameter's own name. |
 
 ### 11xx — warnings on an ordinary build
 

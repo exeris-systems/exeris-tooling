@@ -188,6 +188,13 @@ public enum DiagnosticId {
     QUERY_PARAMETER_ON_STREAMING_ACTION("EXT-PROC-1023",
             "A streaming @Action declares a @QueryParam parameter; it takes body parameters only."),
 
+    /**
+     * {@code @ActionParam(name)} declares a name that is not a Java name; the generated handler and
+     * client use the parameter name as a record component, a local and a method parameter.
+     */
+    ACTION_PARAM_NAME_NOT_A_NAME("EXT-PROC-1024",
+            "@ActionParam(name) is not a Java name."),
+
     // -----------------------------------------------------------------------
     // EXT-PROC-11xx — warnings on an ordinary build (javac WARNING)
     // -----------------------------------------------------------------------

@@ -2954,7 +2954,17 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         }
 
         String declaredName = actionValues != null ? getString(actionValues, "name", null) : null;
-        String name = (declaredName != null && !declaredName.isBlank())
+        // The name becomes a request-record component, a handler local and a TS method parameter,
+        // so a declared one must be a Java name; a refused one falls back to the parameter's own.
+        boolean namedValidly = declaredName == null || declaredName.isBlank() || SourceVersion.isName(declaredName);
+        if (!namedValidly) {
+            error(DiagnosticId.ACTION_PARAM_NAME_NOT_A_NAME,
+                    "Parameter '" + param.getSimpleName() + "': @ActionParam(name = \"" + declaredName
+                            + "\") is not a Java name, and the generated handler and client use it as one."
+                            + " Use a Java identifier, or leave name unset to take the parameter's.",
+                    param, actionParamMirror);
+        }
+        String name = (namedValidly && declaredName != null && !declaredName.isBlank())
                 ? declaredName
                 : param.getSimpleName().toString();
         String type = param.asType().toString();
