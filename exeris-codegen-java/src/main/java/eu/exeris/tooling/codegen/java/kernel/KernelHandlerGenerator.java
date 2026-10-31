@@ -761,12 +761,20 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
     private static void appendQueryParamRead(
             MethodSpec.Builder method, ActionParamMetadata p) {
         String varName = queryParamLocal(p);
-        String rawName = "raw" + NameCasing.pascal(p.name());
+        // The underscore keeps the raw local apart from every camelCase local the handler declares
+        // (rawQuery, request, entity, ...) and from every queryX value local, whatever the name.
+        String rawName = "raw_" + p.name();
         String key = p.effectiveQueryKey();
         method.addStatement("String $L = queryParam(rawQuery, $S)", rawName, key);
         if (p.defaultValue() != null && !p.defaultValue().isBlank()) {
             method.beginControlFlow("if ($L == null)", rawName)
                     .addStatement("$L = $S", rawName, p.defaultValue())
+                    .endControlFlow();
+        }
+        if (isCharType(p.type())) {
+            method.beginControlFlow("if ($L != null && $L.length() != 1)", rawName, rawName)
+                    .addStatement("throw new $T($S + $S)", ILLEGAL_ARGUMENT_EXCEPTION,
+                            "query parameter is not a single character: ", key)
                     .endControlFlow();
         }
         if (p.required()) {
@@ -799,8 +807,15 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         };
     }
 
+    private static boolean isCharType(String type) {
+        return "char".equals(type) || "java.lang.Character".equals(type) || "Character".equals(type);
+    }
+
     private static CodeBlock parseQueryValue(ActionParamMetadata p, String raw) {
         String type = p.type();
+        if (isCharType(type)) {
+            return CodeBlock.of("$L.charAt(0)", raw);
+        }
         DomainTypeKind kind = DomainTypeKind.of(type);
         return switch (kind) {
             case STRING -> CodeBlock.of("$L", raw);

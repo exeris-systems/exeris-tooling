@@ -749,7 +749,9 @@ class KernelCodegenCompileTest {
         assertThat(Files.readString(handlerPath))
                 .contains("queryParam(rawQuery, \"q\")")
                 .contains("queryParam(rawQuery, \"limit\")")
-                .contains("Integer.parseInt(rawLimit)");
+                .contains("Integer.parseInt(raw_limit)")
+                .contains("String raw_query = queryParam(rawQuery, \"query\");")
+                .contains("queryGrade = raw_grade.charAt(0);");
 
         List<String> files = new ArrayList<>();
         try (Stream<Path> tree = Files.walk(generatedMain)) {
@@ -793,6 +795,13 @@ class KernelCodegenCompileTest {
                     public void search(
                             @QueryParam("q") String term,
                             @QueryParam(value = "limit", required = false, defaultValue = "20") int limit) {
+                    }
+
+                    @Action(name = "lookup", label = "Look up")
+                    public void lookup(
+                            @QueryParam("query") String query,
+                            @QueryParam("params") String params,
+                            @QueryParam(value = "grade", required = false) char grade) {
                     }
 
                     @Action(name = "filter", label = "Filter and tag")

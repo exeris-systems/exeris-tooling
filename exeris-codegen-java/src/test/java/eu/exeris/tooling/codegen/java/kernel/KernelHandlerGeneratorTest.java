@@ -1053,16 +1053,38 @@ class KernelHandlerGeneratorTest {
         assertThat(handler).contains("String rawQuery = rawQuery(exchange);");
         assertThat(handler).contains("String queryTerm;");
         assertThat(handler).contains("int queryLimit;");
-        assertThat(handler).contains("String rawTerm = queryParam(rawQuery, \"q\");");
-        assertThat(handler).contains("if (rawTerm == null) {");
+        assertThat(handler).contains("String raw_term = queryParam(rawQuery, \"q\");");
+        assertThat(handler).contains("if (raw_term == null) {");
         assertThat(handler).contains("throw new IllegalArgumentException(\"missing required query parameter: \" + \"q\");");
-        assertThat(handler).contains("String rawLimit = queryParam(rawQuery, \"limit\");");
-        assertThat(handler).contains("if (rawLimit == null) {");
-        assertThat(handler).contains("rawLimit = \"50\";");
-        assertThat(handler).contains("queryLimit = Integer.parseInt(rawLimit);");
+        assertThat(handler).contains("String raw_limit = queryParam(rawQuery, \"limit\");");
+        assertThat(handler).contains("if (raw_limit == null) {");
+        assertThat(handler).contains("raw_limit = \"50\";");
+        assertThat(handler).contains("queryLimit = Integer.parseInt(raw_limit);");
         assertThat(handler).contains("catch (IllegalArgumentException e) {");
         assertThat(handler).contains("exchange.respond(HttpStatus.BAD_REQUEST);");
         assertThat(handler).contains("entity.searchOrders(queryTerm, queryLimit);");
+    }
+
+    @Test
+    @DisplayName("a @QueryParam named query and a char parameter emit locals that do not collide, and a single-character read")
+    void queryParamNamedQueryAndCharParam() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .actions(List.of(ActionMetadata.builder("lookup").methodName("lookup")
+                        .params(List.of(
+                                ActionParamMetadata.builder("query", "String").bindingSource(ParamSource.QUERY).build(),
+                                ActionParamMetadata.builder("grade", "char").bindingSource(ParamSource.QUERY)
+                                        .required(false).build()))
+                        .build()))
+                .build();
+
+        String handler = new KernelHandlerGenerator().generate(metadata).content();
+
+        assertThat(handler).contains("String rawQuery = rawQuery(exchange);");
+        assertThat(handler).contains("String raw_query = queryParam(rawQuery, \"query\");");
+        assertThat(handler).contains("if (raw_grade != null && raw_grade.length() != 1) {");
+        assertThat(handler).contains("queryGrade = raw_grade.charAt(0);");
+        assertThat(handler).contains("entity.lookup(queryQuery, queryGrade);");
     }
 
     @Test
