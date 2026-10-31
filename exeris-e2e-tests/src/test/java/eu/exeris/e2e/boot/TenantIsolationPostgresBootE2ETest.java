@@ -25,6 +25,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Tenant isolation of the emitted application, over HTTP, on a <b>real</b> kernel boot against a
@@ -265,6 +266,44 @@ class TenantIsolationPostgresBootE2ETest {
         assertThat(get("/outposts/" + outpostShared, as(TENANT_A, WORLD))).as("the owner's row is untouched")
                 .startsWith("HTTP/1.1 200").contains("\"label\":\"shared\"")
                 .contains("\"ownerTenantId\":\"" + TENANT_A + "\"");
+    }
+
+    @Test
+    @DisplayName("RLS: a tenant-less read raises with 22P02, never an empty result")
+    void tenantlessReadRaisesOnDatabase() throws SQLException {
+        try (Connection conn = target.adminConnection(); Statement st = conn.createStatement()) {
+            st.execute("SET ROLE " + APP_ROLE);
+            st.execute("SET search_path TO " + SCHEMA);
+            st.execute("SELECT set_config('exeris.tenant_id', '', false)");
+            assertThatThrownBy(() -> st.executeQuery("SELECT id FROM ledgers"))
+                    .isInstanceOf(SQLException.class)
+                    .satisfies(e -> assertThat(((SQLException) e).getSQLState()).isEqualTo("22P02"));
+            assertThatThrownBy(() -> st.executeQuery("SELECT id FROM outposts"))
+                    .isInstanceOf(SQLException.class)
+                    .satisfies(e -> assertThat(((SQLException) e).getSQLState()).isEqualTo("22P02"));
+            st.execute("RESET ROLE");
+        }
+    }
+
+    @Test
+    @DisplayName("RLS: a write with a foreign scope tag is refused by WITH CHECK (SQLSTATE 42501)")
+    void writeWithForeignScopeTagIsRefused() throws SQLException {
+        String foreignScope = "00000000-0000-4000-8000-00000000000e";
+        try (Connection conn = target.adminConnection(); Statement st = conn.createStatement()) {
+            st.execute("SET ROLE " + APP_ROLE);
+            st.execute("SET search_path TO " + SCHEMA);
+            st.execute("SELECT set_config('exeris.tenant_id', '" + TENANT_A + "', false)");
+            st.execute("SELECT set_config('exeris.shared_scope', '" + WORLD + "', false)");
+            assertThatThrownBy(() -> st.executeUpdate("INSERT INTO outposts (id, label, owner_tenant_id, universe_id) "
+                    + "VALUES (gen_random_uuid(), 'foreign', '" + TENANT_A + "'::uuid, '" + foreignScope + "'::uuid)"))
+                    .isInstanceOf(SQLException.class)
+                    .satisfies(e -> assertThat(((SQLException) e).getSQLState()).isEqualTo("42501"));
+            st.execute("RESET ROLE");
+        }
+
+        // Also over HTTP: an insert naming a foreign scope is refused as a caller fault (400)
+        assertThat(post("/outposts", "{\"label\":\"foreign\",\"universeId\":\"" + foreignScope + "\"}",
+                as(TENANT_A, WORLD))).startsWith("HTTP/1.1 400");
     }
 
     // ------------------------------------------------------------------ HTTP

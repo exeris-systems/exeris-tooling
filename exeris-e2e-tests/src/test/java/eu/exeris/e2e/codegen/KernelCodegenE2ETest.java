@@ -82,7 +82,8 @@ class KernelCodegenE2ETest {
                             ArtifactType.EVENT_HANDLER,
                             ArtifactType.GRAPH_SYNC,
                             ArtifactType.SAGA,
-                            ArtifactType.CONFIGURATION,
+                            ArtifactType.CONFIGURATION, // create migration
+                            ArtifactType.CONFIGURATION, // tenant policy migration
                             ArtifactType.OPENAPI_SPEC,
                             ArtifactType.CLIENT);
         }
@@ -236,10 +237,17 @@ class KernelCodegenE2ETest {
                     .filter(f -> f.artifactType() == ArtifactType.CONFIGURATION)
                     .toList();
             assertThat(migrations).extracting(GeneratedFile::className)
-                    .containsExactly("V2416003__create_specieses", "V4416003__shared_scope_specieses");
+                    .containsExactly("V2416003__create_specieses", "V4416003__shared_scope_specieses", "V5416003__tenant_policy_specieses");
             assertThat(migrations.get(1).content())
                     .contains("CREATE POLICY specieses_shared_scope_policy ON specieses FOR SELECT")
                     .contains("USING (world_id = NULLIF(current_setting('exeris.shared_scope', true), '')::uuid);");
+            assertThat(migrations.get(2).content())
+                    .contains("DROP POLICY IF EXISTS specieses_tenant_policy ON specieses;\n"
+                            + "CREATE POLICY specieses_tenant_policy ON specieses\n"
+                            + "    USING (organization_id = current_setting('exeris.tenant_id', true)::uuid)\n"
+                            + "    WITH CHECK (organization_id = current_setting('exeris.tenant_id', true)::uuid\n"
+                            + "        AND (world_id IS NULL\n"
+                            + "             OR world_id = NULLIF(current_setting('exeris.shared_scope', true), '')::uuid));");
             assertThat(files.stream().filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
                     .findFirst().orElseThrow().content())
                     .contains("if (entity.getWorldId() == null) entity.setWorldId(actingSharedScope());");
