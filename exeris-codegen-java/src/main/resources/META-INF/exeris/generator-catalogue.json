@@ -302,6 +302,20 @@
       "since": "0.10.0"
     },
     {
+      "id": "tenant-policy-migration",
+      "generator": "KernelTenantPolicyMigrationGenerator",
+      "artefact": "The Flyway migration replacing the tenant RLS policy with an unguarded tenant cast and shared-scope tag pinning.",
+      "outputRoot": "main",
+      "pathPattern": "^db/migration/V5[0-9]{6}__tenant_policy_[^/]+\\.sql$",
+      "pathTemplate": "db/migration/V5{nnnnnn}__tenant_policy_{table}.sql",
+      "scope": "entity",
+      "cardinality": "zero-or-one",
+      "condition": "`dataScope` `TENANT` or `UNIVERSE`; `{nnnnnn}` is the one in the table's create migration",
+      "ambiguousWith": [],
+      "adr": "ADR-012",
+      "since": "0.11.0"
+    },
+    {
       "id": "openapi",
       "generator": "KernelOpenApiGenerator",
       "artefact": "The OpenAPI 3.1 document of the entity's routes.",

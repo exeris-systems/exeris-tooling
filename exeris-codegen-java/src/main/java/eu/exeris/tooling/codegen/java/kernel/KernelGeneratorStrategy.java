@@ -46,6 +46,9 @@ import java.util.List;
  *   <li>{@link KernelFlywayGenerator} — SQL migrations</li>
  *   <li>{@link KernelSharedScopeMigrationGenerator} — the additive shared-scope read widening of a
  *       {@code DataScope.UNIVERSE} entity; nothing for any other entity</li>
+ *   <li>{@link KernelTenantPolicyMigrationGenerator} — the tenant policy update with unguarded
+ *       tenant cast and tag pinning for tenant-partitioned entities ({@code TENANT} and
+ *       {@code UNIVERSE}); nothing for {@code GLOBAL}</li>
  *   <li>{@link KernelOpenApiGenerator} — OpenAPI 3.1 YAML</li>
  *   <li>{@link KernelClientGenerator} — typed service-to-service HTTP client
  *       against the tier-neutral {@code core.http.client.KernelWebClient}
@@ -101,6 +104,7 @@ public class KernelGeneratorStrategy {
         registry.register(new KernelSagaGenerator());
         registry.register(new KernelFlywayGenerator());
         registry.register(new KernelSharedScopeMigrationGenerator());
+        registry.register(new KernelTenantPolicyMigrationGenerator());
         registry.register(new KernelOpenApiGenerator());
         registry.register(new KernelClientGenerator());
     }
