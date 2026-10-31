@@ -733,4 +733,87 @@ class KernelCodegenCompileTest {
                 }
                 """.formatted(DOMAIN_PACKAGE);
     }
+
+    @Test
+    @DisplayName("an entity with @Action carrying @QueryParam parameters compiles cleanly through processor and codegen")
+    void actionWithQueryParamCorpusCompilesClean(@TempDir Path workspace) throws IOException {
+        Path entityClasses = workspace.resolve("target/classes");
+        Path generatedMain = workspace.resolve("src/main/generated/java");
+        ProcessorCompiler.compile(workspace.resolve("src/main/java"), entityClasses, null, queryActionCorpus());
+
+        CodegenPipeline pipeline = CodegenPipeline.createDefault();
+        Path metadataDir = entityClasses.resolve("exeris-metadata");
+        pipeline.run(metadataDir, generatedMain, "com.catalog");
+
+        Path handlerPath = generatedMain.resolve("com/catalog/handler/ItemHandler.java");
+        assertThat(Files.readString(handlerPath))
+                .contains("queryParam(rawQuery, \"q\")")
+                .contains("queryParam(rawQuery, \"limit\")")
+                .contains("Integer.parseInt(raw_limit)")
+                .contains("String raw_query = queryParam(rawQuery, \"query\");")
+                .contains("queryGrade = raw_grade.charAt(0);")
+                .contains("querySince = Instant.parse(raw_since);");
+
+        List<String> files = new ArrayList<>();
+        try (Stream<Path> tree = Files.walk(generatedMain)) {
+            tree.filter(p -> p.toString().endsWith(".java")).map(Path::toString).sorted().forEach(files::add);
+        }
+        EmittedJavac.Result result = EmittedJavac.compile(files, workspace.resolve("target/app-classes"),
+                System.getProperty("java.class.path") + File.pathSeparator + entityClasses);
+        assertThat(result.clean())
+                .as("javac output:%n%s", result.render())
+                .isTrue();
+    }
+
+    private static Map<String, String> queryActionCorpus() {
+        Map<String, String> sources = new LinkedHashMap<>();
+        sources.put("com/catalog/domain/Item.java",
+                """
+                package com.catalog.domain;
+
+                import eu.exeris.sdk.annotation.Action;
+                import eu.exeris.sdk.annotation.ActionParam;
+                import eu.exeris.sdk.annotation.ExerisDomain;
+                import eu.exeris.sdk.annotation.Field;
+                import eu.exeris.sdk.annotation.QueryParam;
+
+                import java.util.UUID;
+
+                @ExerisDomain(module = "catalog", path = "/items")
+                public class Item {
+
+                    private UUID id;
+
+                    @Field(label = "Title")
+                    private String title;
+
+                    public UUID getId() { return id; }
+                    public void setId(UUID id) { this.id = id; }
+                    public String getTitle() { return title; }
+                    public void setTitle(String title) { this.title = title; }
+
+                    @Action(name = "search", label = "Search items")
+                    public void search(
+                            @QueryParam("q") String term,
+                            @QueryParam(value = "limit", required = false, defaultValue = "20") int limit) {
+                    }
+
+                    @Action(name = "lookup", label = "Look up")
+                    public void lookup(
+                            @QueryParam("query") String query,
+                            @QueryParam("params") String params,
+                            @QueryParam(value = "grade", required = false) char grade,
+                            @QueryParam(value = "since", required = false) java.time.Instant since,
+                            @QueryParam(value = "at", required = false) java.time.LocalDateTime at) {
+                    }
+
+                    @Action(name = "filter", label = "Filter and tag")
+                    public void filter(
+                            @QueryParam("category") String category,
+                            @ActionParam(label = "Note") String note) {
+                    }
+                }
+                """);
+        return sources;
+    }
 }

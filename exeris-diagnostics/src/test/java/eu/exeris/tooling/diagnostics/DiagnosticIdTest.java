@@ -69,6 +69,9 @@ class DiagnosticIdTest {
         m.put(DiagnosticId.PRIMARY_KEY_RENAMED_BESIDE_ID, "EXT-PROC-1019");
         m.put(DiagnosticId.ACTION_PARAMETER_WITHOUT_ACTION_PARAM, "EXT-PROC-1020");
         m.put(DiagnosticId.PRIMARY_KEY_STRATEGY_REFUSED, "EXT-PROC-1021");
+        m.put(DiagnosticId.QUERY_PARAMETER_TYPE_UNSUPPORTED, "EXT-PROC-1022");
+        m.put(DiagnosticId.QUERY_PARAMETER_ON_STREAMING_ACTION, "EXT-PROC-1023");
+        m.put(DiagnosticId.ACTION_PARAM_NAME_NOT_A_NAME, "EXT-PROC-1024");
         m.put(DiagnosticId.TENANT_SCOPED_DEPRECATED, "EXT-PROC-1101");
         m.put(DiagnosticId.VALIDATION_ATTRIBUTE_DEPRECATED, "EXT-PROC-1102");
         m.put(DiagnosticId.VALIDATE_ON_UNRECOGNISED, "EXT-PROC-1103");

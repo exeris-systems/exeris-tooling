@@ -13,6 +13,7 @@ import type { BackendType } from '../../core/backend-strategy.js';
 import { enumTypeOf } from './field-render.js';
 import { filterProperties, sortableProperties, type ListQueryProperty } from './list-query.js';
 import { fileHeaderLines } from '../file-header.js';
+import { tsSingleQuoted } from './ts-literal.js';
 import {
   entityTypeImport,
   fieldEnumImports,
@@ -127,6 +128,8 @@ export class ServiceGenerator implements CodeGenerator {
       params: (action.params ?? []).map((p) => ({
         name: p.name,
         tsType: mapScopedType(p.type, scope).tsType,
+        bindingSource: (p.bindingSource ?? 'BODY') as 'BODY' | 'QUERY',
+        queryKey: (p.queryKey && p.queryKey.trim().length > 0) ? p.queryKey : p.name,
       })),
     }));
 
@@ -157,7 +160,14 @@ export class ServiceGenerator implements CodeGenerator {
       softDelete: boolean;
       filterableFields: Array<{ name: string; filterType: string }>;
       sortFields: string[];
-      actions: Array<{ name: string; description: string; methodName: string; kebabName: string; hasParams: boolean; params: Array<{ name: string; tsType: string }> }>;
+      actions: Array<{
+        name: string;
+        description: string;
+        methodName: string;
+        kebabName: string;
+        hasParams: boolean;
+        params: Array<{ name: string; tsType: string; bindingSource: 'BODY' | 'QUERY'; queryKey: string }>;
+      }>;
       systemFields: string[];
       enumTypes: string[];
       entityImports: string[];
@@ -298,11 +308,29 @@ export class ServiceGenerator implements CodeGenerator {
       const paramsStr = action.hasParams
         ? ', ' + action.params.map(p => `${p.name}: ${p.tsType}`).join(', ')
         : '';
-      const bodyParams = action.hasParams
-        ? `{ ${action.params.map(p => p.name).join(', ')} }`
+      const queryParams = action.params.filter(p => p.bindingSource === 'QUERY');
+      const bodyParams = action.params.filter(p => p.bindingSource !== 'QUERY');
+      const bodyParamsStr = bodyParams.length > 0
+        ? `{ ${bodyParams.map(p => p.name).join(', ')} }`
         : '{}';
-      lines.push(`  ${action.methodName}(id: string${paramsStr}): Observable<${modelName}> {`);
-      lines.push(`    return this.http.post<${modelName}>(\`\${this.baseUrl}/\${id}/actions/${action.kebabName}\`, ${bodyParams});`);
+      // The path id and the HttpParams local take names no action parameter has, so an action
+      // parameter named `id` or `params` cannot redeclare them.
+      const taken = new Set(action.params.map((p) => p.name));
+      const pathIdSignature = action.params.some((p) => /^id$/.test(p.name))
+        ? `${freeName('entityId', taken)}: string`
+        : `id: string`;
+      const pathIdName = pathIdSignature.slice(0, pathIdSignature.indexOf(':'));
+      const paramsName = freeName('httpParams', taken);
+      lines.push(`  ${action.methodName}(${pathIdSignature}${paramsStr}): Observable<${modelName}> {`);
+      if (queryParams.length > 0) {
+        lines.push(`    let ${paramsName} = new HttpParams();`);
+        for (const qp of queryParams) {
+          lines.push(`    if (${qp.name} !== undefined && ${qp.name} !== null) ${paramsName} = ${paramsName}.set('${tsSingleQuoted(qp.queryKey)}', String(${qp.name}));`);
+        }
+        lines.push(`    return this.http.post<${modelName}>(\`\${this.baseUrl}/\${${pathIdName}}/actions/${action.kebabName}\`, ${bodyParamsStr}, { params: ${paramsName} });`);
+      } else {
+        lines.push(`    return this.http.post<${modelName}>(\`\${this.baseUrl}/\${${pathIdName}}/actions/${action.kebabName}\`, ${bodyParamsStr});`);
+      }
       lines.push(`  }`);
     }
 
@@ -375,3 +403,10 @@ export function generateService(
   return generator.generate(metadata, context);
 }
 
+/** `base`, or `base` followed by the first counter that no name in `taken` uses. */
+function freeName(base: string, taken: ReadonlySet<string>): string {
+  if (!taken.has(base)) return base;
+  let n = 2;
+  while (taken.has(`${base}${n}`)) n++;
+  return `${base}${n}`;
+}

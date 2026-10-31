@@ -276,10 +276,10 @@
     "justification": "A site whose landing page carries its headline in a HERO block while its other pages want the generated heading could not express that with one run-wide viewHeading. viewHeadings sets the heading for the views it names; every other view takes viewHeading. The default is no entry, whose output is byte-identical to a run without the key, so no consumer has to act and MIGRATION carries no step."
   },
   {
-    "signature": "@Action method parameter without @ActionParam: dropped from the generated call -> compile error EXT-PROC-1020",
+    "signature": "@Action method parameter carrying neither @ActionParam nor @QueryParam: dropped from the generated call -> compile error EXT-PROC-1020",
     "since": "0.11",
     "adr": "ADR-015",
-    "justification": "The generated handler binds only @ActionParam parameters from the request body, so an unannotated parameter was dropped and the generated call compiled against the wrong arity or another overload. The processor refuses it, naming the entity, the method and the parameter. An entity whose action parameters all carry @ActionParam generates as before, Java and TypeScript alike. docs/migration/0.11.0/java-04-action-param-required.md carries the step."
+    "justification": "The generated handler binds parameters from the request body (@ActionParam) or query string (@QueryParam), so an unannotated parameter was dropped and the generated call compiled against the wrong arity or another overload. The processor refuses it, naming the entity, the method and the parameter. An entity whose action parameters each carry @ActionParam or @QueryParam generates as before, Java and TypeScript alike. docs/migration/0.11.0/java-04-action-param-required.md carries the step."
   },
   {
     "signature": "pages/<view>.component.ts: CUSTOM block props field emits as const (protected readonly blockProps<N> = <JSON> as const)",
@@ -298,5 +298,11 @@
     "since": "0.11",
     "adr": "ADR-059",
     "justification": "The generated tenant policy reads the tenant key with the unguarded cast and, for a shared-scope table, pins the scope tag in WITH CHECK, as kernel ADR-012 §4c.2 and §4c.3 rule. The policy moves forward in a tier-5 migration, so an applied CREATE migration keeps its checksum. Code that read a tenant table with no tenant bound got an empty result and gets EX-PERS-5003. GLOBAL entities and H2 are unaffected. docs/migration/0.11.0/java-07-tenant-policy-raises-and-pins-scope.md carries the step."
+  },
+  {
+    "signature": "@Action parameter carrying both @ActionParam and @QueryParam: request body -> query string (handler, OpenAPI in: query, TS client HttpParams); EXT-PROC-1022 for a type with no text conversion, EXT-PROC-1023 on a streaming action, EXT-PROC-1024 for @ActionParam(name) that is not a Java name",
+    "since": "0.11",
+    "adr": "ADR-015",
+    "justification": "The processor reads @QueryParam, so a parameter carrying it is bound from the query string under its key, as the SDK reader reads it. A parameter that carried both annotations was bound from the body, because @QueryParam was unread; after regenerating, the generated handler reads it from the query string, the OpenAPI document declares it in: query and the TypeScript client sends it as a query parameter. Such a parameter on a streaming action, or of a type with no conversion from text, is refused. docs/migration/0.11.0/java-09-action-query-param.md carries the step."
   }
 ]

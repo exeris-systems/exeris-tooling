@@ -23,6 +23,7 @@ import eu.exeris.sdk.sourcemodel.ast.GraphEdgeMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphPropertyMetadata;
 import eu.exeris.sdk.sourcemodel.ast.InternalApiMetadata;
+import eu.exeris.sdk.sourcemodel.ast.ParamSource;
 import eu.exeris.sdk.sourcemodel.ast.ProvidesMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RegionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
@@ -210,6 +211,15 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             + "It describes a field, and on a field @UI is not read either: a field's presentation "
             + "facet arrives with @View's field facet";
 
+    /**
+     * Opening clause of every {@code @QueryParam} entry in {@link #INERT_ATTRIBUTES} whose
+     * attribute the processor never reads, so {@code ActionParamMetadata} has nothing to carry it
+     * in.
+     */
+    private static final String QUERY_PARAM_NOT_EXTRACTED =
+            "the processor does not read it, so it never reaches ActionParamMetadata and no generator "
+                    + "can honour it";
+
     /** Closing clause on every strict-mode diagnostic — it is opt-in, so say so at the point of use. */
     private static final String STRICT_SUFFIX = ". (reported because -Aexeris.strict is enabled)";
 
@@ -379,6 +389,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             new InertAttribute("ActionParam", "required",
                     "the value reaches ActionParamMetadata in the JSON, but no emitter renders "
                             + "it — action-parameter generation reads only the parameter name and type"),
+            new InertAttribute("QueryParam", "transform", QUERY_PARAM_NOT_EXTRACTED),
+            new InertAttribute("QueryParam", "validation", QUERY_PARAM_NOT_EXTRACTED),
+            new InertAttribute("QueryParam", "validationMessage", QUERY_PARAM_NOT_EXTRACTED),
+            new InertAttribute("QueryParam", "type", QUERY_PARAM_NOT_EXTRACTED),
+            new InertAttribute("QueryParam", "elementType", QUERY_PARAM_NOT_EXTRACTED),
+            new InertAttribute("QueryParam", "sanitize", QUERY_PARAM_NOT_EXTRACTED),
             new InertAttribute("PrimaryKey", "generated",
                     "the annotation's role — which field plays it — is extracted and reaches the "
                             + "schema and the repository. This attribute is not: SystemFieldsMetadata "
@@ -817,9 +833,10 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             "Action", "ActionParam", "AuditCreatedAt", "AuditCreatedBy", "AuditUpdatedAt",
             "AuditUpdatedBy", "Bind", "Block", "CapabilityLifecycle", "CapabilityModule",
             DOMAIN_EVENT, "EventSourced", "ExerisDomain", "Field", "Graph", "GraphEdge",
-            "GraphProperty", "InternalApi", "PrimaryKey", "Provides", "Region", "Relationship",
-            "Requires", "Saga", "SagaStep", "SharedScope", "SoftDelete", "SoftDeleteTimestamp",
-            "SoftDeletedBy", "TenantId", "UI", "UIGroup", "Validation", "Version", "View");
+            "GraphProperty", "InternalApi", "PrimaryKey", "Provides", "QueryParam", "Region",
+            "Relationship", "Requires", "Saga", "SagaStep", "SharedScope", "SoftDelete",
+            "SoftDeleteTimestamp", "SoftDeletedBy", "TenantId", "UI", "UIGroup", "Validation",
+            "Version", "View");
 
     /**
      * The members of {@link #EXTRACTED_ANNOTATIONS} the processor reads on a type declaration and
@@ -885,10 +902,6 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "carries no channel. realTimeApi and @Action.streaming are the "
                             + "server-push (SSE) surfaces that do reach emitted code. The WebSocket "
                             + "emitter is tracked in ROADMAP.md"),
-            new UnreadAnnotation("QueryParam",
-                    "action parameters are extracted through @ActionParam only; a parameter "
-                            + "carrying just this annotation reaches ActionMetadata as if it were "
-                            + "unannotated"),
             new UnreadAnnotation("NavMenu",
                     "no navigation artefact is emitted from it on either side. The TS app shell "
                             + "builds its sidebar from the entity list and the @View routes, never "
@@ -918,6 +931,13 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
     /** The one type a primary key may have (ADR-104), and one of the two a shared-scope key may. */
     private static final String UUID_FQN = "java.util.UUID";
+
+    /** The declared types a generated handler converts from a query-string value; enums as well. */
+    private static final Set<String> QUERY_PARAMETER_TYPES = Set.of(
+            "java.lang.String", "java.lang.Integer", "java.lang.Long", "java.lang.Short", "java.lang.Byte",
+            "java.lang.Boolean", "java.lang.Float", "java.lang.Double", "java.lang.Character",
+            "java.math.BigDecimal", "java.util.UUID", "java.time.LocalDate", "java.time.LocalDateTime",
+            "java.time.Instant", "java.time.OffsetDateTime");
 
     /** The {@code @ExerisDomain} attribute naming the primary key field. */
     private static final String PRIMARY_KEY_FIELD = "primaryKeyField";
@@ -2797,21 +2817,24 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         // Extract parameters
         List<ActionParamMetadata> params = new ArrayList<>();
         for (VariableElement param : method.getParameters()) {
-            // Outside the @ActionParam gate, for the reason the field and method sweeps give:
-            // @QueryParam on an otherwise-unannotated parameter is exactly the shape the strict
-            // audit reports, and gating the audit on @ActionParam would hide it.
             auditAnnotations(param);
 
-            AnnotationMirror paramAnnotation = findAnnotation(param, "eu.exeris.sdk.annotation.ActionParam");
-            if (paramAnnotation != null) {
-                params.add(extractActionParamMetadata(param, paramAnnotation));
+            AnnotationMirror actionParamMirror = findAnnotation(param, "eu.exeris.sdk.annotation.ActionParam");
+            AnnotationMirror queryParamMirror = findAnnotation(param, "eu.exeris.sdk.annotation.QueryParam");
+            if (actionParamMirror != null || queryParamMirror != null) {
+                if (queryParamMirror != null) {
+                    refuseUnreadableQueryParam(entity, method, param, queryParamMirror,
+                            Boolean.TRUE.equals(values.get("streaming")));
+                }
+                params.add(extractActionParamMetadata(param, actionParamMirror, queryParamMirror));
             } else {
                 error(DiagnosticId.ACTION_PARAMETER_WITHOUT_ACTION_PARAM,
                         "Entity '" + entity.getSimpleName() + "', action method '"
                                 + method.getSimpleName() + "': parameter '"
                                 + param.getSimpleName()
-                                + "' carries no @ActionParam, so the generated handler could not pass it."
-                                + " Add @ActionParam(label = \"...\").",
+                                + "' carries neither @ActionParam nor @QueryParam, so the generated"
+                                + " handler could not pass it. Add @ActionParam(label = \"...\") or"
+                                + " @QueryParam(\"key\").",
                         param);
             }
         }
@@ -2881,19 +2904,113 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         }
     }
 
-    private ActionParamMetadata extractActionParamMetadata(VariableElement param, AnnotationMirror annotation) {
-        String name = param.getSimpleName().toString();
-        String type = param.asType().toString();
-        Map<String, Object> values = extractAnnotationValues(annotation);
-        warnInertAttributes("ActionParam", values, param, annotation);
+    /**
+     * Refuses a {@code @QueryParam} action parameter the generated handler could not read: one on a
+     * streaming action, whose stream handler decodes its parameters from the body only, and one
+     * whose type has no conversion from a query-string value.
+     */
+    private void refuseUnreadableQueryParam(TypeElement entity, ExecutableElement method,
+                                            VariableElement param, AnnotationMirror queryParam,
+                                            boolean streaming) {
+        String where = "Entity '" + entity.getSimpleName() + "', action method '" + method.getSimpleName()
+                + "': parameter '" + param.getSimpleName() + "'";
+        if (streaming) {
+            error(DiagnosticId.QUERY_PARAMETER_ON_STREAMING_ACTION,
+                    where + " carries @QueryParam on a streaming action, whose stream handler reads"
+                            + " its parameters from the request body only. Bind it with @ActionParam"
+                            + " alone, or make the action respond once.",
+                    param, queryParam);
+            return;
+        }
+        TypeMirror type = param.asType();
+        boolean readable = type.getKind().isPrimitive()
+                || (type.getKind() == TypeKind.DECLARED
+                        && (QUERY_PARAMETER_TYPES.contains(
+                                ((TypeElement) ((DeclaredType) type).asElement()).getQualifiedName().toString())
+                            || ((DeclaredType) type).asElement().getKind() == ElementKind.ENUM));
+        if (!readable) {
+            error(DiagnosticId.QUERY_PARAMETER_TYPE_UNSUPPORTED,
+                    where + " is bound from the query string but its type " + type + " has no"
+                            + " conversion from text. Use a primitive or its box, String, BigDecimal,"
+                            + " UUID, LocalDate, LocalDateTime, Instant, OffsetDateTime or an enum.",
+                    param, queryParam);
+        }
+    }
 
-        // Default `required = true` mirrors @ActionParam.required's annotation
-        // default (verified against exeris-sdk-annotations:ActionParam).
-        return ActionParamMetadata.builder(name, type)
-                .displayName(getString(values, "displayName", null))
-                .description(getString(values, "description", null))
-                .required(getBoolean(values, "required", true))
-                .build();
+    private ActionParamMetadata extractActionParamMetadata(
+            VariableElement param, AnnotationMirror actionParamMirror, AnnotationMirror queryParamMirror) {
+        Map<String, Object> actionValues = actionParamMirror != null
+                ? extractAnnotationValues(actionParamMirror)
+                : null;
+        if (actionParamMirror != null) {
+            warnInertAttributes("ActionParam", actionValues, param, actionParamMirror);
+        }
+
+        Map<String, Object> queryValues = queryParamMirror != null
+                ? extractAnnotationValues(queryParamMirror)
+                : null;
+        if (queryParamMirror != null) {
+            warnInertAttributes("QueryParam", queryValues, param, queryParamMirror);
+        }
+
+        String declaredName = actionValues != null ? getString(actionValues, "name", null) : null;
+        // The name becomes a request-record component, a handler local and a TS method parameter,
+        // so a declared one must be a Java name; a refused one falls back to the parameter's own.
+        boolean namedValidly = declaredName == null || declaredName.isBlank() || SourceVersion.isName(declaredName);
+        if (!namedValidly) {
+            error(DiagnosticId.ACTION_PARAM_NAME_NOT_A_NAME,
+                    "Parameter '" + param.getSimpleName() + "': @ActionParam(name = \"" + declaredName
+                            + "\") is not a Java name, and the generated handler and client use it as one."
+                            + " Use a Java identifier, or leave name unset to take the parameter's.",
+                    param, actionParamMirror);
+        }
+        String name = (namedValidly && declaredName != null && !declaredName.isBlank())
+                ? declaredName
+                : param.getSimpleName().toString();
+        String type = param.asType().toString();
+
+        ActionParamMetadata.Builder builder = ActionParamMetadata.builder(name, type);
+
+        if (actionValues != null && actionValues.containsKey("required")) {
+            builder.required((Boolean) actionValues.get("required"));
+        } else if (queryValues != null && queryValues.containsKey("required")) {
+            builder.required((Boolean) queryValues.get("required"));
+        } else {
+            builder.required(true);
+        }
+
+        if (actionValues != null && actionValues.containsKey("label")) {
+            String label = getString(actionValues, "label", null);
+            if (label != null && !label.isBlank()) {
+                builder.displayName(label);
+            }
+        }
+
+        String actionDesc = actionValues != null ? getString(actionValues, "description", null) : null;
+        String queryDesc = queryValues != null ? getString(queryValues, "description", null) : null;
+        if (actionDesc != null && !actionDesc.isBlank()) {
+            builder.description(actionDesc);
+        } else if (queryDesc != null && !queryDesc.isBlank()) {
+            builder.description(queryDesc);
+        }
+
+        String actionDefault = actionValues != null ? getString(actionValues, "defaultValue", null) : null;
+        String queryDefault = queryValues != null ? getString(queryValues, "defaultValue", null) : null;
+        if (actionDefault != null && !actionDefault.isBlank()) {
+            builder.defaultValue(actionDefault);
+        } else if (queryDefault != null && !queryDefault.isBlank()) {
+            builder.defaultValue(queryDefault);
+        }
+
+        if (queryParamMirror != null) {
+            builder.bindingSource(ParamSource.QUERY);
+            String qKey = getString(queryValues, "value", null);
+            if (qKey != null) {
+                builder.queryKey(qKey);
+            }
+        }
+
+        return builder.build();
     }
 
     private List<DomainEventMetadata> extractEventsMetadata(TypeElement element) {

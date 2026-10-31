@@ -110,6 +110,16 @@ describe('ActionParamMetadataSchema', () => {
     });
     expect(result).toMatchObject({ description: 'maximum results', defaultValue: '50', required: true });
   });
+
+  it('accepts bindingSource and queryKey', () => {
+    const result = ActionParamMetadataSchema.parse({
+      name: 'term',
+      type: 'String',
+      bindingSource: 'QUERY',
+      queryKey: 'q',
+    });
+    expect(result).toMatchObject({ name: 'term', type: 'String', bindingSource: 'QUERY', queryKey: 'q' });
+  });
 });
 
 describe('ActionMetadataSchema', () => {

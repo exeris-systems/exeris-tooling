@@ -160,11 +160,11 @@ public enum DiagnosticId {
             "A streaming action's result-frame name is reserved or names an event the action triggers."),
 
     /**
-     * A parameter of an {@code @Action} method carries no {@code @ActionParam}. The generated
-     * handler cannot bind an unannotated parameter from the action request body.
+     * A parameter of an {@code @Action} method carries neither {@code @ActionParam} nor {@code @QueryParam}.
+     * The generated handler cannot bind an unannotated parameter from the action request body or query string.
      */
     ACTION_PARAMETER_WITHOUT_ACTION_PARAM("EXT-PROC-1020",
-            "A parameter of an @Action method carries no @ActionParam annotation."),
+            "A parameter of an @Action method carries neither @ActionParam nor @QueryParam annotation."),
 
     /**
      * An {@code @ExerisDomain} type carries {@code @PrimaryKey} with a {@code strategy} other than
@@ -173,6 +173,27 @@ public enum DiagnosticId {
      */
     PRIMARY_KEY_STRATEGY_REFUSED("EXT-PROC-1021",
             "@PrimaryKey declares a generation strategy other than UUID or UUID_DATABASE."),
+
+    /**
+     * An {@code @Action} parameter carrying {@code @QueryParam} has a type the generated handler
+     * cannot convert from a query-string value.
+     */
+    QUERY_PARAMETER_TYPE_UNSUPPORTED("EXT-PROC-1022",
+            "An @Action parameter bound from the query string has a type with no conversion from text."),
+
+    /**
+     * A streaming {@code @Action} declares a {@code @QueryParam} parameter; a streaming action reads
+     * its parameters from the request body only.
+     */
+    QUERY_PARAMETER_ON_STREAMING_ACTION("EXT-PROC-1023",
+            "A streaming @Action declares a @QueryParam parameter; it takes body parameters only."),
+
+    /**
+     * {@code @ActionParam(name)} declares a name that is not a Java name; the generated handler and
+     * client use the parameter name as a record component, a local and a method parameter.
+     */
+    ACTION_PARAM_NAME_NOT_A_NAME("EXT-PROC-1024",
+            "@ActionParam(name) is not a Java name."),
 
     // -----------------------------------------------------------------------
     // EXT-PROC-11xx — warnings on an ordinary build (javac WARNING)
