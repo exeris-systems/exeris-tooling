@@ -174,6 +174,20 @@ public enum DiagnosticId {
     PRIMARY_KEY_STRATEGY_REFUSED("EXT-PROC-1021",
             "@PrimaryKey declares a generation strategy other than UUID or UUID_DATABASE."),
 
+    /**
+     * An {@code @Action} parameter carrying {@code @QueryParam} has a type the generated handler
+     * cannot convert from a query-string value.
+     */
+    QUERY_PARAMETER_TYPE_UNSUPPORTED("EXT-PROC-1022",
+            "An @Action parameter bound from the query string has a type with no conversion from text."),
+
+    /**
+     * A streaming {@code @Action} declares a {@code @QueryParam} parameter; a streaming action reads
+     * its parameters from the request body only.
+     */
+    QUERY_PARAMETER_ON_STREAMING_ACTION("EXT-PROC-1023",
+            "A streaming @Action declares a @QueryParam parameter; it takes body parameters only."),
+
     // -----------------------------------------------------------------------
     // EXT-PROC-11xx — warnings on an ordinary build (javac WARNING)
     // -----------------------------------------------------------------------

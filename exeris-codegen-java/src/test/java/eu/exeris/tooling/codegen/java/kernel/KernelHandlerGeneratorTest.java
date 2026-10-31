@@ -1060,7 +1060,7 @@ class KernelHandlerGeneratorTest {
         assertThat(handler).contains("if (raw_limit == null) {");
         assertThat(handler).contains("raw_limit = \"50\";");
         assertThat(handler).contains("queryLimit = Integer.parseInt(raw_limit);");
-        assertThat(handler).contains("catch (IllegalArgumentException e) {");
+        assertThat(handler).contains("catch (IllegalArgumentException | DateTimeParseException e) {");
         assertThat(handler).contains("exchange.respond(HttpStatus.BAD_REQUEST);");
         assertThat(handler).contains("entity.searchOrders(queryTerm, queryLimit);");
     }
@@ -1085,6 +1085,26 @@ class KernelHandlerGeneratorTest {
         assertThat(handler).contains("if (raw_grade != null && raw_grade.length() != 1) {");
         assertThat(handler).contains("queryGrade = raw_grade.charAt(0);");
         assertThat(handler).contains("entity.lookup(queryQuery, queryGrade);");
+    }
+
+    @Test
+    @DisplayName("a java.time query parameter is read with its own parse, and a malformed one answers 400")
+    void javaTimeQueryParamIsParsed() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .actions(List.of(ActionMetadata.builder("since").methodName("since")
+                        .params(List.of(
+                                ActionParamMetadata.builder("from", "java.time.Instant").bindingSource(ParamSource.QUERY).build(),
+                                ActionParamMetadata.builder("at", "java.time.LocalDateTime").bindingSource(ParamSource.QUERY)
+                                        .required(false).build()))
+                        .build()))
+                .build();
+
+        String handler = new KernelHandlerGenerator().generate(metadata).content();
+
+        assertThat(handler).contains("queryFrom = Instant.parse(raw_from);");
+        assertThat(handler).contains("queryAt = LocalDateTime.parse(raw_at);");
+        assertThat(handler).contains("catch (IllegalArgumentException | DateTimeParseException e) {");
     }
 
     @Test

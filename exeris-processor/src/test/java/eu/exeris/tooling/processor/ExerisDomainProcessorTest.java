@@ -1158,6 +1158,58 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
+        @DisplayName("a @QueryParam parameter of a type with no text conversion is refused with EXT-PROC-1022")
+        void queryParamOfUnreadableTypeIsRefused() {
+            JavaFileObject source = JavaFileObjects.forSourceString("com.example.Drone", """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.QueryParam;
+
+                    @ExerisDomain(module = "fleet", path = "/drones")
+                    public class Drone {
+                        private java.util.UUID id;
+
+                        @Action(name = "tag", label = "Tag")
+                        public void tag(@QueryParam("tags") java.util.List<String> tags,
+                                        @QueryParam("since") java.time.Instant since) {
+                        }
+                    }
+                    """);
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation).hadErrorContaining("[Exeris] EXT-PROC-1022: Entity 'Drone', action method 'tag': parameter 'tags'");
+        }
+
+        @Test
+        @DisplayName("a @QueryParam parameter on a streaming action is refused with EXT-PROC-1023")
+        void queryParamOnStreamingActionIsRefused() {
+            JavaFileObject source = JavaFileObjects.forSourceString("com.example.Drone", """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.QueryParam;
+
+                    @ExerisDomain(module = "fleet", path = "/drones")
+                    public class Drone {
+                        private java.util.UUID id;
+
+                        @Action(name = "track", label = "Track", streaming = true)
+                        public void track(@QueryParam("q") String term) {
+                        }
+                    }
+                    """);
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining("[Exeris] EXT-PROC-1023: Entity 'Drone', action method 'track': parameter 'term'");
+        }
+
+        @Test
         @DisplayName("an unannotated parameter of an @Action method is refused with EXT-PROC-1020")
         void unannotatedParameterIsRefused() {
             JavaFileObject source = JavaFileObjects.forSourceString(

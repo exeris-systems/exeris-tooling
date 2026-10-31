@@ -932,6 +932,13 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     /** The one type a primary key may have (ADR-104), and one of the two a shared-scope key may. */
     private static final String UUID_FQN = "java.util.UUID";
 
+    /** The declared types a generated handler converts from a query-string value; enums as well. */
+    private static final Set<String> QUERY_PARAMETER_TYPES = Set.of(
+            "java.lang.String", "java.lang.Integer", "java.lang.Long", "java.lang.Short", "java.lang.Byte",
+            "java.lang.Boolean", "java.lang.Float", "java.lang.Double", "java.lang.Character",
+            "java.math.BigDecimal", "java.util.UUID", "java.time.LocalDate", "java.time.LocalDateTime",
+            "java.time.Instant", "java.time.OffsetDateTime");
+
     /** The {@code @ExerisDomain} attribute naming the primary key field. */
     private static final String PRIMARY_KEY_FIELD = "primaryKeyField";
 
@@ -2815,6 +2822,10 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             AnnotationMirror actionParamMirror = findAnnotation(param, "eu.exeris.sdk.annotation.ActionParam");
             AnnotationMirror queryParamMirror = findAnnotation(param, "eu.exeris.sdk.annotation.QueryParam");
             if (actionParamMirror != null || queryParamMirror != null) {
+                if (queryParamMirror != null) {
+                    refuseUnreadableQueryParam(entity, method, param, queryParamMirror,
+                            Boolean.TRUE.equals(values.get("streaming")));
+                }
                 params.add(extractActionParamMetadata(param, actionParamMirror, queryParamMirror));
             } else {
                 error(DiagnosticId.ACTION_PARAMETER_WITHOUT_ACTION_PARAM,
@@ -2890,6 +2901,39 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "reserve " + RESERVED_FRAME_NAMES + ", and a stream frame carrying this event "
                             + "would be read as the reserved one. Rename the event.",
                     element, annotation);
+        }
+    }
+
+    /**
+     * Refuses a {@code @QueryParam} action parameter the generated handler could not read: one on a
+     * streaming action, whose stream handler decodes its parameters from the body only, and one
+     * whose type has no conversion from a query-string value.
+     */
+    private void refuseUnreadableQueryParam(TypeElement entity, ExecutableElement method,
+                                            VariableElement param, AnnotationMirror queryParam,
+                                            boolean streaming) {
+        String where = "Entity '" + entity.getSimpleName() + "', action method '" + method.getSimpleName()
+                + "': parameter '" + param.getSimpleName() + "'";
+        if (streaming) {
+            error(DiagnosticId.QUERY_PARAMETER_ON_STREAMING_ACTION,
+                    where + " carries @QueryParam on a streaming action, whose stream handler reads"
+                            + " its parameters from the request body only. Bind it with @ActionParam"
+                            + " alone, or make the action respond once.",
+                    param, queryParam);
+            return;
+        }
+        TypeMirror type = param.asType();
+        boolean readable = type.getKind().isPrimitive()
+                || (type.getKind() == TypeKind.DECLARED
+                        && (QUERY_PARAMETER_TYPES.contains(
+                                ((TypeElement) ((DeclaredType) type).asElement()).getQualifiedName().toString())
+                            || ((DeclaredType) type).asElement().getKind() == ElementKind.ENUM));
+        if (!readable) {
+            error(DiagnosticId.QUERY_PARAMETER_TYPE_UNSUPPORTED,
+                    where + " is bound from the query string but its type " + type + " has no"
+                            + " conversion from text. Use a primitive or its box, String, BigDecimal,"
+                            + " UUID, LocalDate, LocalDateTime, Instant, OffsetDateTime or an enum.",
+                    param, queryParam);
         }
     }
 

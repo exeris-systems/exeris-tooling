@@ -98,6 +98,10 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
     private static final ClassName UUID = ClassName.get("java.util", "UUID");
     private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
     private static final ClassName BIG_DECIMAL = ClassName.get("java.math", "BigDecimal");
+    /** The java.time types a query parameter is read with their own {@code parse(CharSequence)}. */
+    private static final java.util.Set<String> PARSED_TIME_TYPES = java.util.Set.of(
+            "java.time.LocalDateTime", "java.time.Instant", "java.time.OffsetDateTime");
+
     private static final ClassName ILLEGAL_ARGUMENT_EXCEPTION =
             ClassName.get("java.lang", "IllegalArgumentException");
     private static final ClassName RUNTIME_EXCEPTION =
@@ -695,7 +699,10 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
             for (ActionParamMetadata p : queryParams) {
                 appendQueryParamRead(method, p);
             }
-            method.nextControlFlow("catch ($T e)", ILLEGAL_ARGUMENT_EXCEPTION)
+            // A java.time parse failure is a DateTimeParseException, which is not an
+            // IllegalArgumentException; both are the caller's malformed value.
+            method.nextControlFlow("catch ($T | $T e)", ILLEGAL_ARGUMENT_EXCEPTION,
+                            ClassName.get("java.time.format", "DateTimeParseException"))
                     .addStatement("exchange.respond($T.BAD_REQUEST)", HTTP_STATUS)
                     .addStatement("return")
                     .endControlFlow();
@@ -815,6 +822,9 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         String type = p.type();
         if (isCharType(type)) {
             return CodeBlock.of("$L.charAt(0)", raw);
+        }
+        if (PARSED_TIME_TYPES.contains(type)) {
+            return CodeBlock.of("$T.parse($L)", typeNameOf(type), raw);
         }
         DomainTypeKind kind = DomainTypeKind.of(type);
         return switch (kind) {

@@ -751,7 +751,8 @@ class KernelCodegenCompileTest {
                 .contains("queryParam(rawQuery, \"limit\")")
                 .contains("Integer.parseInt(raw_limit)")
                 .contains("String raw_query = queryParam(rawQuery, \"query\");")
-                .contains("queryGrade = raw_grade.charAt(0);");
+                .contains("queryGrade = raw_grade.charAt(0);")
+                .contains("querySince = Instant.parse(raw_since);");
 
         List<String> files = new ArrayList<>();
         try (Stream<Path> tree = Files.walk(generatedMain)) {
@@ -801,7 +802,9 @@ class KernelCodegenCompileTest {
                     public void lookup(
                             @QueryParam("query") String query,
                             @QueryParam("params") String params,
-                            @QueryParam(value = "grade", required = false) char grade) {
+                            @QueryParam(value = "grade", required = false) char grade,
+                            @QueryParam(value = "since", required = false) java.time.Instant since,
+                            @QueryParam(value = "at", required = false) java.time.LocalDateTime at) {
                     }
 
                     @Action(name = "filter", label = "Filter and tag")
