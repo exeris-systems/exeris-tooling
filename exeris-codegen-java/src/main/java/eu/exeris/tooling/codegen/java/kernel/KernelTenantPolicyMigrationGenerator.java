@@ -51,7 +51,7 @@ import java.util.Optional;
  *
  * @implNote Emission is a Java text block (ADR-015).
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public class KernelTenantPolicyMigrationGenerator implements KernelArtifactGenerator {
 
@@ -96,6 +96,11 @@ public class KernelTenantPolicyMigrationGenerator implements KernelArtifactGener
 
     /** The CREATE-migration generator, consulted for the column's name and SQL type. */
     private final KernelFlywayGenerator tableMigration = new KernelFlywayGenerator();
+
+    /** Creates the generator; it holds no state beyond the CREATE-migration generator it consults. */
+    public KernelTenantPolicyMigrationGenerator() {
+        // The CREATE-migration generator is initialised at its declaration.
+    }
 
     /**
      * The tenant-policy migration of a {@code TENANT} or {@code UNIVERSE} entity.
