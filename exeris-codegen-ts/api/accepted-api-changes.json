@@ -292,5 +292,11 @@
     "since": "0.11",
     "adr": "ADR-104",
     "justification": "The processor reads the field-level @PrimaryKey marker as the SDK reader does, so the marked UUID field names the key the generated code identifies a row by, as primaryKeyField does. strategy SEQUENCE, IDENTITY and NONE are refused (EXT-PROC-1021). An entity without the marker, or with it on its id field, generates as before. docs/migration/0.11.0/java-05-primary-key-marker.md carries the step."
+  },
+  {
+    "signature": "db/migration: + V5<nnnnnn>__tenant_policy_<table>.sql per TENANT and UNIVERSE entity; a tenant-less read raises 22P02 (EX-PERS-5003), a write with a foreign shared-scope tag is refused with 42501",
+    "since": "0.11",
+    "adr": "ADR-059",
+    "justification": "The generated tenant policy reads the tenant key with the unguarded cast and, for a shared-scope table, pins the scope tag in WITH CHECK, as kernel ADR-012 §4c.2 and §4c.3 rule. The policy moves forward in a tier-5 migration, so an applied CREATE migration keeps its checksum. Code that read a tenant table with no tenant bound got an empty result and gets EX-PERS-5003. GLOBAL entities and H2 are unaffected. docs/migration/0.11.0/java-07-tenant-policy-raises-and-pins-scope.md carries the step."
   }
 ]

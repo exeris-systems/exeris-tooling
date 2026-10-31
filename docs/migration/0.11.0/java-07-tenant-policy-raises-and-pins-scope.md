@@ -11,6 +11,8 @@ last-verified: 2026-10-30
 
 Regenerating the application emits a forward Flyway migration for each tenant-partitioned table
 (`KernelTenantPolicyMigrationGenerator`): `V5<nnnnnn>__tenant_policy_<table>.sql`.
+A `GLOBAL` entity gets no such file, and on H2, where the migrations' row-level security does not run,
+nothing changes.
 
 The initial CREATE table migration (`V1...` or `V2...`) remains byte-identical, so databases that have
 already applied it do not suffer Flyway checksum verification errors. On application startup, Flyway

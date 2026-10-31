@@ -49,8 +49,7 @@ import java.util.Optional;
  *       or not.</li>
  * </ul>
  *
- * @implNote Emission is a Java text block (ADR-015). Returns {@code null} for entities that are
- *     not tenant-partitioned (e.g. {@code GLOBAL}).
+ * @implNote Emission is a Java text block (ADR-015).
  *
  * @since 0.11.0
  */
@@ -98,6 +97,13 @@ public class KernelTenantPolicyMigrationGenerator implements KernelArtifactGener
     /** The CREATE-migration generator, consulted for the column's name and SQL type. */
     private final KernelFlywayGenerator tableMigration = new KernelFlywayGenerator();
 
+    /**
+     * The tenant-policy migration of a {@code TENANT} or {@code UNIVERSE} entity.
+     *
+     * @return the {@code V5<nnnnnn>__tenant_policy_<table>} migration, or {@code null} — the
+     *     registry's "nothing to emit" — for an entity that is not tenant-partitioned
+     *     ({@code GLOBAL})
+     */
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
         if (!DataScopeSupport.isTenantPartitioned(metadata)) {
