@@ -19,7 +19,6 @@ class TckFacetRatchetTest {
     private static final Set<Facet> CEILING = EnumSet.of(
             Facet.SAGA_COMPENSATION,
             Facet.SAGA_TRIGGER,
-            Facet.ACTION_RESULT_TYPE,
             Facet.ROUTE_ACCESS,
             Facet.NAV_MENU,
             Facet.TABS,

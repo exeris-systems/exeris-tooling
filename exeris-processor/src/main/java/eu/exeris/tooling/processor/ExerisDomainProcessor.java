@@ -57,9 +57,14 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.NoType;
+import javax.lang.model.type.PrimitiveType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.type.TypeVariable;
+import javax.lang.model.type.WildcardType;
 import javax.lang.model.util.ElementFilter;
+import javax.lang.model.util.SimpleTypeVisitor14;
 import javax.tools.Diagnostic;
 import javax.tools.FileObject;
 import javax.tools.StandardLocation;
@@ -72,8 +77,10 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -2775,7 +2782,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 // Carry the real JVM method name so the handler generator can emit
                 // server-side dispatch to the actual aggregate method. This is distinct
                 // from `name` (the @Action identity), which may differ.
-                .methodName(method.getSimpleName().toString());
+                .methodName(method.getSimpleName().toString())
+                .resultType(actionResultType(method.getReturnType()));
 
         // @Action attribute surface (see exeris-sdk-annotations Action.java).
         // Each check below is verified live against the SDK declaration
@@ -2841,6 +2849,92 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         builder.params(params);
 
         return builder.build();
+    }
+
+    /**
+     * Extracts an action method's return type into canonical form: fully qualified,
+     * nested types joined by {@code .}, generic arguments joined by {@code ,} with no space,
+     * primitives as keywords, {@code void} for void, and type variables by simple name,
+     * with type-use annotations omitted.
+     */
+    static String actionResultType(TypeMirror returnType) {
+        return ResultTypeVisitor.INSTANCE.visit(returnType, null);
+    }
+
+    private static final class ResultTypeVisitor extends SimpleTypeVisitor14<String, Void> {
+        private static final ResultTypeVisitor INSTANCE = new ResultTypeVisitor();
+        private static final Pattern TYPE_ANNOTATION = Pattern.compile(
+                "@(?:[\\w.]+\\.)?[\\w]+(?:\\([^()]*\\))?\\s*");
+
+        @Override
+        public String visitPrimitive(PrimitiveType t, Void p) {
+            return t.getKind().name().toLowerCase(Locale.ROOT);
+        }
+
+        @Override
+        public String visitNoType(NoType t, Void p) {
+            if (t.getKind() == TypeKind.VOID) {
+                return "void";
+            }
+            return stripTypeAnnotations(t.toString());
+        }
+
+        @Override
+        public String visitArray(ArrayType t, Void p) {
+            return visit(t.getComponentType(), p) + "[]";
+        }
+
+        @Override
+        public String visitDeclared(DeclaredType t, Void p) {
+            if (!(t.asElement() instanceof TypeElement element)) {
+                return stripTypeAnnotations(t.toString());
+            }
+            StringBuilder sb = new StringBuilder();
+            if (t.getEnclosingType() instanceof DeclaredType enc
+                    && enc.getKind() == TypeKind.DECLARED
+                    && !enc.getTypeArguments().isEmpty()) {
+                sb.append(visit(enc, p)).append('.').append(element.getSimpleName());
+            } else {
+                sb.append(element.getQualifiedName().toString());
+            }
+            List<? extends TypeMirror> args = t.getTypeArguments();
+            if (!args.isEmpty()) {
+                sb.append('<');
+                for (int i = 0; i < args.size(); i++) {
+                    if (i > 0) {
+                        sb.append(',');
+                    }
+                    sb.append(visit(args.get(i), p));
+                }
+                sb.append('>');
+            }
+            return sb.toString();
+        }
+
+        @Override
+        public String visitTypeVariable(TypeVariable t, Void p) {
+            return t.asElement().getSimpleName().toString();
+        }
+
+        @Override
+        public String visitWildcard(WildcardType t, Void p) {
+            if (t.getExtendsBound() != null) {
+                return "? extends " + visit(t.getExtendsBound(), p);
+            }
+            if (t.getSuperBound() != null) {
+                return "? super " + visit(t.getSuperBound(), p);
+            }
+            return "?";
+        }
+
+        @Override
+        protected String defaultAction(TypeMirror e, Void p) {
+            return stripTypeAnnotations(e.toString());
+        }
+
+        private static String stripTypeAnnotations(String s) {
+            return TYPE_ANNOTATION.matcher(s).replaceAll("");
+        }
     }
 
     /**

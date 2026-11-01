@@ -41,7 +41,6 @@ final class TckCorpusProducer {
     static final Set<Facet> UNSUPPORTED = Collections.unmodifiableSet(EnumSet.of(
             Facet.SAGA_COMPENSATION,
             Facet.SAGA_TRIGGER,
-            Facet.ACTION_RESULT_TYPE,
             Facet.ROUTE_ACCESS,
             Facet.NAV_MENU,
             Facet.TABS,
