@@ -12,7 +12,9 @@ last-verified: 2026-11-01
 The processor writes the eight `GraphEdgeMetadata` components SDK 0.13 adds, each only when the
 source declares it. A field may now carry more than one `@GraphEdge`: each edge is named after the
 field and its relation type (`relatedId` + `SIMILAR_TO` → `relatedIdSimilarTo`) and shares the
-field. `EXT-PROC-1013`, which refused that declaration, is retired.
+field. `EXT-PROC-1013`, which refused that declaration, is retired: the constant
+`DiagnosticId.GRAPH_EDGE_REPEATED_ON_FIELD` leaves `exeris-diagnostics`, and the number is never
+allocated again. Code that referenced the constant drops the reference; there is no replacement.
 
 A regenerated `*GraphSync`:
 
