@@ -238,6 +238,17 @@ public final class KernelHandlerTestGenerator {
         addMissingReferenceTests(type, metadata, build, referenceNotFound,
                 new Scaffold(entityType, handlerType, exchangeType, bodyType, stubType, basePath,
                         KernelValidationRules.onEitherBody(metadata), Map.of(), tenantScoped));
+        Optional<Map<String, CodeBlock>> updateBaseline = baselineFor(KernelValidationRules.onUpdate(metadata));
+        for (MethodSpec stateCase : KernelHandlerStateTests.cases(metadata, entityType, handlerType,
+                exchangeType, bodyType, stubType, basePath, tenantScoped, updateBaseline.orElse(null))) {
+            type.addMethod(stateCase);
+        }
+        if (metadata.hasActions()) {
+            for (MethodSpec actionCase : KernelHandlerActionTests.cases(metadata, entityType, handlerType,
+                    exchangeType, bodyType, stubType, basePath, tenantScoped)) {
+                type.addMethod(actionCase);
+            }
+        }
         if (tenantScoped) {
             type.addMethod(MethodSpec.methodBuilder(AS_TENANT)
                     .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
@@ -1236,6 +1247,12 @@ public final class KernelHandlerTestGenerator {
                         .addJavadoc("a test that says nothing is testing the path that found\n")
                         .addJavadoc("something; set it false to take the other branch.\n")
                         .build());
+        if (metadata.softDelete()) {
+            stub.addField(FieldSpec.builder(TypeName.BOOLEAN, "rowDeleted")
+                    .addJavadoc("Whether the row is soft-deleted. When true, or when {@code byId} holds a deleted\n")
+                    .addJavadoc("entity, {@code findById} answers empty, the way the database filter excludes it.\n")
+                    .build());
+        }
         if (refuses) {
             stub.addField(FieldSpec.builder(RuntimeException.class, "refusal")
                             .addJavadoc("A caller-fault refusal {@code save} and {@code update} raise instead\n")
@@ -1256,36 +1273,61 @@ public final class KernelHandlerTestGenerator {
         MethodSpec.Builder delete = MethodSpec.methodBuilder("delete")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
-                .addParameter(UUID, "id")
-                .beginControlFlow("if (!rowExists)")
-                .addStatement("throw new $T(id)", notFound)
-                .endControlFlow();
+                .addParameter(UUID, "id");
+        if (metadata.softDelete()) {
+            delete.beginControlFlow("if (!rowExists || rowDeleted)")
+                    .addStatement("throw new $T(id)", notFound)
+                    .endControlFlow();
+        } else {
+            delete.beginControlFlow("if (!rowExists)")
+                    .addStatement("throw new $T(id)", notFound)
+                    .endControlFlow();
+        }
         if (foreignKeys.stillReferenced() != null) {
             delete.beginControlFlow("if (referenced)")
                     .addStatement("throw new $T(id, null)", foreignKeys.stillReferenced())
                     .endControlFlow();
         }
         delete.addStatement("this.deleted = id");
+        MethodSpec.Builder findPage = MethodSpec.methodBuilder("findPage")
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(KernelListQueryGenerator.pageType(metadata))
+                .addParameter(KernelListQueryGenerator.listQueryType(metadata), "query")
+                .addStatement("this.listQuery = query");
+        if (metadata.softDelete()) {
+            String getter = "is" + KernelHandlerStateTests.capitalize(
+                    KernelHandlerStateTests.softDeleteField(metadata));
+            ClassName pageType = KernelListQueryGenerator.pageType(metadata);
+            findPage.beginControlFlow("if (this.page != null && this.page.content() != null\n"
+                            + "        && this.page.content().stream().anyMatch(e -> e.$L()))", getter)
+                    .addStatement("var live = this.page.content().stream()\n"
+                            + "        .filter(e -> !e.$L()).toList()", getter)
+                    .addStatement("return $T.of(live, (long) live.size(), this.page.number(), this.page.size())",
+                            pageType)
+                    .endControlFlow();
+        }
+        findPage.addStatement("return page");
+        MethodSpec.Builder findById = MethodSpec.methodBuilder("findById")
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(optionalOfEntity)
+                .addParameter(UUID, "id")
+                .addStatement("this.lookedUp = id");
+        if (metadata.softDelete()) {
+            String getter = "is" + KernelHandlerStateTests.capitalize(
+                    KernelHandlerStateTests.softDeleteField(metadata));
+            findById.beginControlFlow("if (rowDeleted || (byId.isPresent() && byId.get().$L()))", getter)
+                    .addStatement("return $T.empty()", OPTIONAL)
+                    .endControlFlow();
+        }
+        findById.addStatement("return byId");
         stub
                 .addMethod(MethodSpec.constructorBuilder()
                         .addStatement("super(($T) null)", repositoryType)
                         .build())
-                .addMethod(MethodSpec.methodBuilder("findPage")
-                        .addAnnotation(Override.class)
-                        .addModifiers(Modifier.PUBLIC)
-                        .returns(KernelListQueryGenerator.pageType(metadata))
-                        .addParameter(KernelListQueryGenerator.listQueryType(metadata), "query")
-                        .addStatement("this.listQuery = query")
-                        .addStatement("return page")
-                        .build())
-                .addMethod(MethodSpec.methodBuilder("findById")
-                        .addAnnotation(Override.class)
-                        .addModifiers(Modifier.PUBLIC)
-                        .returns(optionalOfEntity)
-                        .addParameter(UUID, "id")
-                        .addStatement("this.lookedUp = id")
-                        .addStatement("return byId")
-                        .build())
+                .addMethod(findPage.build())
+                .addMethod(findById.build())
                 .addMethod(delete.build())
                 // save/update are overridden so a guard that stopped short-circuiting is reported
                 // as a failed assertion on a recorder, not as an NPE from the null repository.
@@ -1307,12 +1349,13 @@ public final class KernelHandlerTestGenerator {
                         .addStatement("this.saved = entity")
                         .addStatement("return entity")
                         .build())
-                .addMethod(stubUpdate("update", entityType, refuses, conflict != null ? conflict : notFound));
+                .addMethod(stubUpdate("update", entityType, refuses,
+                        conflict != null ? conflict : notFound, metadata.softDelete()));
         // The update route calls updateFromRequest when the entity has one; the double records it
         // the same way, so the route's cases do not depend on which of the two it calls.
         if (KernelRepositoryGenerator.hasRequestUpdate(metadata)) {
             stub.addMethod(stubUpdate(KernelRepositoryGenerator.UPDATE_FROM_REQUEST_METHOD, entityType, refuses,
-                    conflict != null ? conflict : notFound));
+                    conflict != null ? conflict : notFound, metadata.softDelete()));
         }
         return stub.build();
     }
@@ -1326,20 +1369,26 @@ public final class KernelHandlerTestGenerator {
 
     /** One of the double's update overrides: refuse, reject a missing row, or record the id. */
     private static MethodSpec stubUpdate(String name, ClassName entityType, boolean refuses,
-                                         ClassName rejection) {
-        return MethodSpec.methodBuilder(name)
+                                         ClassName rejection, boolean softDelete) {
+        MethodSpec.Builder update = MethodSpec.methodBuilder(name)
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(entityType)
                 .addParameter(UUID, "id")
                 .addParameter(entityType, "entity")
-                .addCode(refusalCheck(refuses))
-                .beginControlFlow("if (!rowExists)")
-                .addStatement("throw new $T(id)", rejection)
-                .endControlFlow()
-                .addStatement("this.updatedId = id")
-                .addStatement("return entity")
-                .build();
+                .addCode(refusalCheck(refuses));
+        if (softDelete) {
+            update.beginControlFlow("if (!rowExists || rowDeleted)")
+                    .addStatement("throw new $T(id)", rejection)
+                    .endControlFlow();
+        } else {
+            update.beginControlFlow("if (!rowExists)")
+                    .addStatement("throw new $T(id)", rejection)
+                    .endControlFlow();
+        }
+        update.addStatement("this.updatedId = id")
+                .addStatement("return entity");
+        return update.build();
     }
 
     /** The stub's "refuse instead of writing" branch, or nothing when it cannot refuse. */

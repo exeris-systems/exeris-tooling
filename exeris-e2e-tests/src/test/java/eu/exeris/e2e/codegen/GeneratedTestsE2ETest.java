@@ -235,8 +235,12 @@ class GeneratedTestsE2ETest {
             // + 12 foreign-key cases (ADR-076 Amendment 1): Voucher references itself, so its
             // repository gets the two missing-reference refusals, the unrelated violation and the
             // refused delete, and its handler the two 422s and the 409; Payment references Voucher,
-            // so it gets the three repository cases and the two 422s, and no delete case.
-            assertThat(summary.getTestsSucceededCount()).isEqualTo(226);
+            // so it gets the three repository cases and the two 422s, and no delete case
+            // + 4 OrderHandlerTest action cases (reassign: success, missing row, undecodable body,
+            // missing required query parameter) + 6 InvoiceHandlerTest cases (a stale update's 409,
+            // a soft-deleted row's 404 on get and its absence from the list, and send: success,
+            // missing row, a stale version's 409).
+            assertThat(summary.getTestsSucceededCount()).isEqualTo(236);
         }
     }
 
@@ -319,9 +323,12 @@ class GeneratedTestsE2ETest {
                 """
                 package com.shop.domain;
 
+                import eu.exeris.sdk.annotation.Action;
+                import eu.exeris.sdk.annotation.ActionParam;
                 import eu.exeris.sdk.annotation.ExerisDomain;
                 import eu.exeris.sdk.annotation.Field;
                 import eu.exeris.sdk.annotation.DomainEvent;
+                import eu.exeris.sdk.annotation.QueryParam;
                 import eu.exeris.sdk.annotation.Saga;
                 import eu.exeris.sdk.annotation.SagaStep;
                 import eu.exeris.sdk.annotation.Validation;
@@ -473,6 +480,10 @@ class GeneratedTestsE2ETest {
                     @SagaStep(order = 2, name = "ship", service = "logistics",
                             command = "Ship")
                     public void ship() {}
+
+                    @Action(name = "reassign", label = "Reassign")
+                    public void reassign(@ActionParam(name = "assignee", label = "Assignee") String assignee,
+                                         @QueryParam(value = "notify", required = true) boolean notify) {}
                 }
                 """);
         // A second entity carrying every system-column flag. Order covers the domain columns;
@@ -483,6 +494,7 @@ class GeneratedTestsE2ETest {
                 """
                 package com.shop.domain;
 
+                import eu.exeris.sdk.annotation.Action;
                 import eu.exeris.sdk.annotation.ExerisDomain;
                 import eu.exeris.sdk.annotation.Field;
 
@@ -600,6 +612,9 @@ class GeneratedTestsE2ETest {
                     public void setVersion(Long version) {
                         this.version = version;
                     }
+
+                    @Action(name = "send", label = "Send")
+                    public void send() {}
                 }
                 """);
         // Owned by organizationId, readable across worldId. The system block is left

@@ -1,11 +1,16 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
+import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
+import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.ParamSource;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -419,5 +424,84 @@ class KernelHandlerTestGeneratorTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("com.example.order")
                 .hasMessageContaining(".domain");
+    }
+
+    @Test
+    @DisplayName("a versioned entity emits a stale update case answering 409")
+    void versionedEntityEmitsStalePutTest() {
+        DomainMetadata versioned = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").versioned(true)
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                .build();
+        String source = new KernelHandlerTestGenerator().generate(versioned, "com.example").content();
+
+        assertThat(source)
+                .contains("void handleUpdateRespondsConflictOnStaleVersion()")
+                .contains("service.rowExists = false;")
+                .contains("RecordingHttpExchange.put(\"/orders/00000000-0000-4000-8000-000000000001\", body)")
+                .contains("assertThat(exchange.status()).isEqualTo(HttpStatus.CONFLICT)")
+                .contains("assertThat(service.updatedId).isNull()");
+    }
+
+    @Test
+    @DisplayName("a soft-delete entity emits cases proving deleted rows are excluded from list and answer 404")
+    void softDeleteEntityEmitsSoftDeleteCases() {
+        DomainMetadata softDelete = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").softDelete(true)
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                .build();
+        String source = new KernelHandlerTestGenerator().generate(softDelete, "com.example").content();
+
+        assertThat(source)
+                .contains("void handleGetByIdRespondsNotFoundWhenRowIsSoftDeleted()")
+                .contains("void handleGetAllExcludesSoftDeletedRows()")
+                .contains("void handleUpdateRespondsNotFoundWhenRowIsSoftDeleted()")
+                .contains("found.setDeleted(true);")
+                .contains("service.rowDeleted = true;")
+                .contains("assertThat(exchange.status()).isEqualTo(HttpStatus.NOT_FOUND)");
+    }
+
+    @Test
+    @DisplayName("an action emits respond-once success, 404, 400 for undecodable body and 400 for missing query param")
+    void actionEmitsRespondOnceCases() {
+        ActionMetadata action = ActionMetadata.builder("reassign")
+                .params(List.of(
+                        ActionParamMetadata.builder("assignee", "String")
+                                .bindingSource(ParamSource.BODY).build(),
+                        ActionParamMetadata.builder("notify", "boolean")
+                                .bindingSource(ParamSource.QUERY).required(true).build()))
+                .build();
+        DomainMetadata domain = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .actions(List.of(action))
+                .build();
+        String source = new KernelHandlerTestGenerator().generate(domain, "com.example").content();
+
+        assertThat(source)
+                .contains("void handleReassignRespondsOkWithUpdatedEntity()")
+                .contains("void handleReassignRespondsNotFoundWhenRowIsAbsent()")
+                .contains("void handleReassignRespondsBadRequestOnAnUndecodableBody()")
+                .contains("void handleReassignRespondsBadRequestWhenRequiredQueryParameterIsMissing()")
+                .contains("OrderHandler.ReassignRequest")
+                .contains("RecordingHttpExchange.post(\"/orders/00000000-0000-4000-8000-000000000001/actions/"
+                        + "reassign?notify=true\", body)")
+                .contains("RecordingHttpExchange.post(\"/orders/00000000-0000-4000-8000-000000000001/actions/"
+                        + "reassign\", body)");
+    }
+
+    @Test
+    @DisplayName("an action on a versioned entity emits a stale version conflict case answering 409")
+    void versionedActionEmitsStaleVersionConflict() {
+        ActionMetadata action = ActionMetadata.builder("send").build();
+        DomainMetadata domain = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").versioned(true)
+                .actions(List.of(action))
+                .build();
+        String source = new KernelHandlerTestGenerator().generate(domain, "com.example").content();
+
+        assertThat(source)
+                .contains("void handleSendRespondsConflictOnStaleVersion()")
+                .contains("service.rowExists = false;")
+                .contains("assertThat(exchange.status()).isEqualTo(HttpStatus.CONFLICT)");
     }
 }
