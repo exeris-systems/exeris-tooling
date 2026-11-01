@@ -1153,10 +1153,11 @@ class KernelHandlerGeneratorTest {
 
         String handler = new KernelHandlerGenerator().generate(metadata).content();
 
-        assertThat(handler).contains("String query_fooBar;");
-        assertThat(handler).contains("String query_FooBar;");
-        assertThat(handler).contains("String raw_fooBar = queryParam(rawQuery, \"fooBar\");");
-        assertThat(handler).contains("String raw_FooBar = queryParam(rawQuery, \"FooBar\");");
-        assertThat(handler).contains("entity.filter(query_fooBar, query_FooBar);");
+        assertThat(handler)
+                .contains("String query_fooBar;")
+                .contains("String query_FooBar;")
+                .contains("String raw_fooBar = queryParam(rawQuery, \"fooBar\");")
+                .contains("String raw_FooBar = queryParam(rawQuery, \"FooBar\");")
+                .contains("entity.filter(query_fooBar, query_FooBar);");
     }
 }

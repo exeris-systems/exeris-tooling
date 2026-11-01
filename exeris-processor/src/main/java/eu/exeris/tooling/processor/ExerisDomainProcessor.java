@@ -57,14 +57,11 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
-import javax.lang.model.type.NoType;
-import javax.lang.model.type.PrimitiveType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.type.TypeVariable;
 import javax.lang.model.type.WildcardType;
 import javax.lang.model.util.ElementFilter;
-import javax.lang.model.util.SimpleTypeVisitor14;
 import javax.tools.Diagnostic;
 import javax.tools.FileObject;
 import javax.tools.StandardLocation;
@@ -938,6 +935,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
     /** The one type a primary key may have (ADR-104), and one of the two a shared-scope key may. */
     private static final String UUID_FQN = "java.util.UUID";
+
+    /** A type-use annotation as {@code TypeMirror.toString()} renders it, with its arguments. */
+    private static final Pattern TYPE_USE_ANNOTATION = Pattern.compile("@(?:[\\w.]+\\.)?\\w+(?:\\([^()]*\\))?\\s*");
 
     /** The declared types a generated handler converts from a query-string value; enums as well. */
     private static final Set<String> QUERY_PARAMETER_TYPES = Set.of(
@@ -2858,83 +2858,51 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * with type-use annotations omitted.
      */
     static String actionResultType(TypeMirror returnType) {
-        return ResultTypeVisitor.INSTANCE.visit(returnType, null);
+        return resultTypeName(returnType);
     }
 
-    private static final class ResultTypeVisitor extends SimpleTypeVisitor14<String, Void> {
-        private static final ResultTypeVisitor INSTANCE = new ResultTypeVisitor();
-        private static final Pattern TYPE_ANNOTATION = Pattern.compile(
-                "@(?:[\\w.]+\\.)?[\\w]+(?:\\([^()]*\\))?\\s*");
+    /** One type in the result-type form; recursive over arrays, type arguments and wildcards. */
+    private static String resultTypeName(TypeMirror type) {
+        return switch (type.getKind()) {
+            case VOID -> "void";
+            case BOOLEAN, BYTE, SHORT, INT, LONG, CHAR, FLOAT, DOUBLE ->
+                    type.getKind().name().toLowerCase(Locale.ROOT);
+            case ARRAY -> resultTypeName(((ArrayType) type).getComponentType()) + "[]";
+            case TYPEVAR -> ((TypeVariable) type).asElement().getSimpleName().toString();
+            case WILDCARD -> wildcardName((WildcardType) type);
+            case DECLARED -> declaredName((DeclaredType) type);
+            default -> TYPE_USE_ANNOTATION.matcher(type.toString()).replaceAll("");
+        };
+    }
 
-        @Override
-        public String visitPrimitive(PrimitiveType t, Void p) {
-            return t.getKind().name().toLowerCase(Locale.ROOT);
+    private static String declaredName(DeclaredType type) {
+        if (!(type.asElement() instanceof TypeElement element)) {
+            return TYPE_USE_ANNOTATION.matcher(type.toString()).replaceAll("");
         }
+        StringBuilder name = new StringBuilder();
+        if (type.getEnclosingType() instanceof DeclaredType enclosing
+                && enclosing.getKind() == TypeKind.DECLARED
+                && !enclosing.getTypeArguments().isEmpty()) {
+            name.append(declaredName(enclosing)).append('.').append(element.getSimpleName());
+        } else {
+            name.append(element.getQualifiedName());
+        }
+        List<? extends TypeMirror> arguments = type.getTypeArguments();
+        if (!arguments.isEmpty()) {
+            name.append(arguments.stream().map(ExerisDomainProcessor::resultTypeName)
+                    .collect(Collectors.joining(",", "<", ">")));
+        }
+        return name.toString();
+    }
 
-        @Override
-        public String visitNoType(NoType t, Void p) {
-            if (t.getKind() == TypeKind.VOID) {
-                return "void";
-            }
-            return stripTypeAnnotations(t.toString());
+    private static String wildcardName(WildcardType type) {
+        if (type.getExtendsBound() != null) {
+            return "? extends " + resultTypeName(type.getExtendsBound());
         }
-
-        @Override
-        public String visitArray(ArrayType t, Void p) {
-            return visit(t.getComponentType(), p) + "[]";
+        if (type.getSuperBound() != null) {
+            return "? super " + resultTypeName(type.getSuperBound());
         }
-
-        @Override
-        public String visitDeclared(DeclaredType t, Void p) {
-            if (!(t.asElement() instanceof TypeElement element)) {
-                return stripTypeAnnotations(t.toString());
-            }
-            StringBuilder sb = new StringBuilder();
-            if (t.getEnclosingType() instanceof DeclaredType enc
-                    && enc.getKind() == TypeKind.DECLARED
-                    && !enc.getTypeArguments().isEmpty()) {
-                sb.append(visit(enc, p)).append('.').append(element.getSimpleName());
-            } else {
-                sb.append(element.getQualifiedName().toString());
-            }
-            List<? extends TypeMirror> args = t.getTypeArguments();
-            if (!args.isEmpty()) {
-                sb.append('<');
-                for (int i = 0; i < args.size(); i++) {
-                    if (i > 0) {
-                        sb.append(',');
-                    }
-                    sb.append(visit(args.get(i), p));
-                }
-                sb.append('>');
-            }
-            return sb.toString();
-        }
-
-        @Override
-        public String visitTypeVariable(TypeVariable t, Void p) {
-            return t.asElement().getSimpleName().toString();
-        }
-
-        @Override
-        public String visitWildcard(WildcardType t, Void p) {
-            if (t.getExtendsBound() != null) {
-                return "? extends " + visit(t.getExtendsBound(), p);
-            }
-            if (t.getSuperBound() != null) {
-                return "? super " + visit(t.getSuperBound(), p);
-            }
-            return "?";
-        }
-
-        @Override
-        protected String defaultAction(TypeMirror e, Void p) {
-            return stripTypeAnnotations(e.toString());
-        }
-
-        private static String stripTypeAnnotations(String s) {
-            return TYPE_ANNOTATION.matcher(s).replaceAll("");
-        }
+        return "?";
     }
 
     /**

@@ -1200,13 +1200,14 @@ class ExerisDomainProcessorTest {
                 resultTypes.put(action.path("name").asText(), action.path("resultType").asText());
             }
 
-            assertThat(resultTypes).containsEntry("submit", "void");
-            assertThat(resultTypes).containsEntry("customer", "com.example.Customer");
-            assertThat(resultTypes).containsEntry("receipt", "com.example.Order.Receipt");
-            assertThat(resultTypes).containsEntry("receipts", "java.util.List<com.example.Order.Receipt>");
-            assertThat(resultTypes).containsEntry("lineCount", "int");
-            assertThat(resultTypes).containsEntry("annotated", "java.lang.String");
-            assertThat(resultTypes).containsEntry("annotatedNested", "java.util.List<com.example.Order.Receipt>");
+            assertThat(resultTypes)
+                    .containsEntry("submit", "void")
+                    .containsEntry("customer", "com.example.Customer")
+                    .containsEntry("receipt", "com.example.Order.Receipt")
+                    .containsEntry("receipts", "java.util.List<com.example.Order.Receipt>")
+                    .containsEntry("lineCount", "int")
+                    .containsEntry("annotated", "java.lang.String")
+                    .containsEntry("annotatedNested", "java.util.List<com.example.Order.Receipt>");
         }
 
         @Test
