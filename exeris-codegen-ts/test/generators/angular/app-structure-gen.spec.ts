@@ -668,3 +668,133 @@ describe('generateAppStructure — @View route assembly', () => {
     expect(routes.content).not.toContain('...');
   });
 });
+
+// ---------- @NavMenu sidebar navigation ----------
+
+describe('generateAppStructure — @NavMenu sidebar', () => {
+  it('none declared → shell output is byte-identical to legacy call', () => {
+    const list = [domain({ entityName: 'Order' }), domain({ entityName: 'Product' })];
+    const comp = fileAt(generateAppStructure(list, [], cfg()), 'src/app/app.component.ts')!;
+    expect(comp.content).not.toContain('data-testid="nav-group-');
+    expect(comp.content).toContain('routerLink="/orders"');
+    expect(comp.content).toContain('routerLink="/products"');
+  });
+
+  it('drops template metacharacters from declared labels and icons', () => {
+    const d1 = domain({
+      entityName: 'Order',
+      navMenu: { group: 'Sa`les', groupIcon: '<b>', label: 'Or${x}ders', icon: '{{x}}' },
+    });
+    const comp = fileAt(generateAppStructure([d1], [], cfg()), 'src/app/app.component.ts')!;
+    expect(comp.content).not.toContain('Sa`les');
+    expect(comp.content).not.toContain('<b>');
+    expect(comp.content).not.toContain('${x}');
+    expect(comp.content).not.toContain('{{x}}');
+    expect(comp.content).toContain('Orxders');
+  });
+
+  it('groups entities by group, ordered by groupOrder then group name, with groupIcon on heading', () => {
+    const d1 = domain({
+      entityName: 'Order',
+      navMenu: { group: 'Sales', groupOrder: 2, groupIcon: '💰', label: 'Orders' },
+    });
+    const d2 = domain({
+      entityName: 'Customer',
+      navMenu: { group: 'CRM', groupOrder: 1, groupIcon: '👥', label: 'Customers' },
+    });
+    const d3 = domain({
+      entityName: 'Invoice',
+      navMenu: { group: 'Sales', groupOrder: 2, label: 'Invoices' },
+    });
+    const comp = fileAt(generateAppStructure([d1, d2, d3], [], cfg()), 'src/app/app.component.ts')!;
+
+    // CRM (groupOrder 1) comes before Sales (groupOrder 2)
+    const crmIdx = comp.content.indexOf('data-testid="nav-group-CRM"');
+    const salesIdx = comp.content.indexOf('data-testid="nav-group-Sales"');
+    expect(crmIdx).toBeGreaterThan(-1);
+    expect(salesIdx).toBeGreaterThan(-1);
+    expect(crmIdx).toBeLessThan(salesIdx);
+
+    // Group icons rendered on group heading
+    expect(comp.content).toContain('<span class="mr-3 text-xl">👥</span>CRM');
+    expect(comp.content).toContain('<span class="mr-3 text-xl">💰</span>Sales');
+  });
+
+  it('orders entities within a group by order then entity name, and uses custom label and icon', () => {
+    const d1 = domain({
+      entityName: 'Invoice',
+      navMenu: { group: 'Sales', order: 2, icon: '📄', label: 'Billings' },
+    });
+    const d2 = domain({
+      entityName: 'Order',
+      navMenu: { group: 'Sales', order: 1, icon: '🛒', label: 'Client Orders' },
+    });
+    const d3 = domain({
+      entityName: 'Quote',
+      navMenu: { group: 'Sales', order: 2, icon: '📝', label: 'Quotes' },
+    });
+    const comp = fileAt(generateAppStructure([d1, d2, d3], [], cfg()), 'src/app/app.component.ts')!;
+
+    const orderIdx = comp.content.indexOf('Client Orders');
+    const invoiceIdx = comp.content.indexOf('Billings');
+    const quoteIdx = comp.content.indexOf('Quotes');
+
+    // Order (order 1) before Invoice (order 2, name Invoice < Quote) before Quote (order 2)
+    expect(orderIdx).toBeLessThan(invoiceIdx);
+    expect(invoiceIdx).toBeLessThan(quoteIdx);
+
+    // Custom labels and icons rendered
+    expect(comp.content).toContain('<span class="mr-3 text-xl">🛒</span>');
+    expect(comp.content).toContain('Client Orders');
+    expect(comp.content).toContain('<span class="mr-3 text-xl">📄</span>');
+    expect(comp.content).toContain('Billings');
+  });
+
+  it('hidden = true leaves the entity out of the sidebar while keeping its routes', () => {
+    const visible = domain({
+      entityName: 'Order',
+      navMenu: { group: 'Sales', label: 'Orders' },
+    });
+    const hidden = domain({
+      entityName: 'AuditLog',
+      navMenu: { hidden: true, group: 'Internal' },
+    });
+    const files = generateAppStructure([visible, hidden], [], cfg());
+    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+
+    // Not in sidebar
+    expect(comp.content).toContain('routerLink="/orders"');
+    expect(comp.content).not.toContain('routerLink="/audit-logs"');
+    expect(comp.content).not.toContain('Audit Logs');
+    expect(comp.content).not.toContain('AuditLogs');
+
+    // Routes stay in app.routes.ts
+    expect(routes.content).toContain("path: 'audit-logs'");
+  });
+
+  it('places entities without navMenu and ungrouped entities in an ungrouped section first', () => {
+    const ungroupedNoNav = domain({
+      entityName: 'Product',
+    });
+    const ungroupedWithNav = domain({
+      entityName: 'Category',
+      navMenu: { order: 1, label: 'Categories' },
+    });
+    const grouped = domain({
+      entityName: 'Order',
+      navMenu: { group: 'Sales', order: 1, label: 'Orders' },
+    });
+    const comp = fileAt(generateAppStructure([ungroupedNoNav, ungroupedWithNav, grouped], [], cfg()), 'src/app/app.component.ts')!;
+
+    const catIdx = comp.content.indexOf('Categories');
+    const prodIdx = comp.content.indexOf('Products');
+    const groupIdx = comp.content.indexOf('data-testid="nav-group-Sales"');
+    const orderIdx = comp.content.indexOf('Orders\n            </a>');
+
+    // Ungrouped items appear before the Sales group
+    expect(catIdx).toBeLessThan(groupIdx);
+    expect(prodIdx).toBeLessThan(groupIdx);
+    expect(groupIdx).toBeLessThan(orderIdx);
+  });
+});

@@ -27,6 +27,38 @@ import type { RelationshipMetadata } from '../../models/domain-model.js';
 import { entityExitRoute, entityViews } from './entity-views.js';
 import { fileHeaderLines } from '../file-header.js';
 
+function renderDetailSection(params: {
+  isCollapsible: boolean;
+  collapsed?: boolean;
+  testId?: string;
+  heading: string;
+  description?: string;
+  fieldsMember: string;
+  mtClass: string;
+  renderDlRows: (member: string) => string[];
+  ariaLabelledBy?: string;
+}): string[] {
+  const lines: string[] = [];
+  const testIdAttr = params.testId ? ` data-testid="${params.testId}"` : '';
+  const ariaAttr = params.ariaLabelledBy ? ` aria-labelledby="${params.ariaLabelledBy}"` : '';
+  if (params.isCollapsible) {
+    lines.push(`        <details${testIdAttr}${params.collapsed ? '' : ' open'} class="exeris-card overflow-hidden${params.mtClass}">`);
+    lines.push(`          <summary class="exeris-card-header text-sm font-medium text-gray-500 dark:text-gray-400 cursor-pointer">${params.heading}</summary>`);
+  } else {
+    lines.push(`        <section${testIdAttr}${ariaAttr} class="exeris-card overflow-hidden${params.mtClass}">`);
+    const idAttr = params.ariaLabelledBy ? ` id="${params.ariaLabelledBy}"` : '';
+    lines.push(`          <h2${idAttr} class="exeris-card-header text-sm font-medium text-gray-500 dark:text-gray-400">${params.heading}</h2>`);
+  }
+  if (params.description) {
+    lines.push(`          <p class="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">${tsTemplateText(params.description)}</p>`);
+  }
+  lines.push(`          <dl class="divide-y divide-gray-200 dark:divide-gray-700">`);
+  lines.push(...params.renderDlRows(params.fieldsMember));
+  lines.push(`          </dl>`);
+  lines.push(params.isCollapsible ? `        </details>` : `        </section>`);
+  return lines;
+}
+
 export class DetailGenerator implements CodeGenerator {
   readonly name = 'DetailGenerator';
   readonly artifactType = 'DETAIL' as const;
@@ -118,6 +150,17 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`}`);
     lines.push(``);
 
+    const hasTabs = (domain.uiMetadata?.tabs?.length ?? 0) > 0;
+    const sortedTabs = hasTabs
+      ? domain.uiMetadata!.tabs!.map((tab, index) => ({
+          tab,
+          index,
+          order: tab.order ?? 999,
+        }))
+          .sort((a, b) => a.order - b.order || a.index - b.index)
+          .map(({ tab }) => tab)
+      : [];
+
     const hasGroups = (domain.uiMetadata?.groups?.length ?? 0) > 0;
     const sortedGroups = hasGroups
       ? [...domain.uiMetadata!.groups!].sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
@@ -153,7 +196,70 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`];`);
     lines.push(``);
 
-    if (hasGroups) {
+    const tabClassProperties: Array<{ member: string; constName: string }> = [];
+    if (hasTabs) {
+      const emitConst = (constName: string, member: string, fields: FieldRenderModel[]): void => {
+        tabClassProperties.push({ member, constName });
+        lines.push(`const ${constName}: FieldDisplay[] = [`);
+        for (const field of fields) {
+          lines.push(fieldDisplayEntry(field));
+        }
+        lines.push(`];`);
+        lines.push(``);
+      };
+
+      for (const t of sortedTabs) {
+        const tabName = t.name ?? '';
+        const tFields = (t.fields ?? []).map((fn) => displayFields.find((df) => df.name === fn)).filter((f): f is FieldRenderModel => f !== undefined);
+        if (hasGroups) {
+          for (const g of sortedGroups) {
+            const gFields = (g.fields ?? []).filter((fn) => (t.fields ?? []).includes(fn)).map((fn) => displayFields.find((df) => df.name === fn)).filter((f): f is FieldRenderModel => f !== undefined);
+            if (gFields.length > 0) {
+              const constName = `TAB_${testIdSegment(tabName).replace(/-/g, '_').toUpperCase()}_GROUP_${DslMapper.toKebabCase(g.name).replace(/-/g, '_').toUpperCase()}_FIELDS`;
+              const member = `tab${DslMapper.toTypeName(tabName)}Group${DslMapper.toTypeName(g.name)}Fields`;
+              emitConst(constName, member, gFields);
+            }
+          }
+          const tabUngrouped = tFields.filter((f) => !sortedGroups.some((g) => g.fields.includes(f.name)));
+          if (tabUngrouped.length > 0) {
+            const constName = `TAB_${testIdSegment(tabName).replace(/-/g, '_').toUpperCase()}_UNGROUPED_FIELDS`;
+            const member = `tab${DslMapper.toTypeName(tabName)}UngroupedFields`;
+            emitConst(constName, member, tabUngrouped);
+          }
+        } else {
+          if (tFields.length > 0) {
+            const constName = `TAB_${testIdSegment(tabName).replace(/-/g, '_').toUpperCase()}_FIELDS`;
+            const member = `tab${DslMapper.toTypeName(tabName)}Fields`;
+            emitConst(constName, member, tFields);
+          }
+        }
+      }
+
+      const allTabbedNames = new Set(sortedTabs.flatMap((t) => t.fields ?? []));
+      const untabbedDisplayFields = displayFields.filter((f) => !allTabbedNames.has(f.name));
+      if (untabbedDisplayFields.length > 0) {
+        if (hasGroups) {
+          for (const g of sortedGroups) {
+            const gUntabbed = (g.fields ?? []).filter((fn) => !allTabbedNames.has(fn)).map((fn) => displayFields.find((df) => df.name === fn)).filter((f): f is FieldRenderModel => f !== undefined);
+            if (gUntabbed.length > 0) {
+              const constName = `UNTABBED_GROUP_${DslMapper.toKebabCase(g.name).replace(/-/g, '_').toUpperCase()}_FIELDS`;
+              const member = `untabbedGroup${DslMapper.toTypeName(g.name)}Fields`;
+              emitConst(constName, member, gUntabbed);
+            }
+          }
+          const untabbedUngrouped = untabbedDisplayFields.filter((f) => !sortedGroups.some((g) => g.fields.includes(f.name)));
+          if (untabbedUngrouped.length > 0) {
+            const constName = `UNTABBED_FIELDS`;
+            const member = `untabbedFields`;
+            emitConst(constName, member, untabbedUngrouped);
+          }
+        } else {
+          const constName = `UNTABBED_FIELDS`;
+          const member = `untabbedFields`;
+          emitConst(constName, member, untabbedDisplayFields);
+        }
+      }
+    } else if (hasGroups) {
       for (const g of sortedGroups) {
         const constName = `GROUP_${DslMapper.toKebabCase(g.name).replace(/-/g, '_').toUpperCase()}_FIELDS`;
         lines.push(`const ${constName}: FieldDisplay[] = [`);
@@ -248,46 +354,108 @@ export class DetailGenerator implements CodeGenerator {
       return rows;
     };
 
-    if (!hasGroups) {
-      lines.push(`        <section aria-labelledby="details-title" class="exeris-card overflow-hidden">`);
-      lines.push(`          <h2 id="details-title" class="exeris-card-header text-sm font-medium text-gray-500 dark:text-gray-400">Details</h2>`);
-      lines.push(`          <dl class="divide-y divide-gray-200 dark:divide-gray-700">`);
-      lines.push(...renderDlRows('displayFields'));
-      lines.push(`          </dl>`);
-      lines.push(`        </section>`);
-    } else {
-      let isFirst = true;
-      for (const g of sortedGroups) {
-        const heading = tsTemplateText(g.label || g.name);
-        const member = `group${DslMapper.toTypeName(g.name)}Fields`;
-        const isCollapsible = g.collapsible === true;
-        const mtClass = isFirst ? '' : ' mt-8';
-        isFirst = false;
-
-        if (isCollapsible) {
-          lines.push(`        <details data-testid="group-${testIdSegment(g.name)}"${g.collapsed ? '' : ' open'} class="exeris-card overflow-hidden${mtClass}">`);
-          lines.push(`          <summary class="exeris-card-header text-sm font-medium text-gray-500 dark:text-gray-400 cursor-pointer">${heading}</summary>`);
-        } else {
-          lines.push(`        <section data-testid="group-${testIdSegment(g.name)}" class="exeris-card overflow-hidden${mtClass}">`);
-          lines.push(`          <h2 class="exeris-card-header text-sm font-medium text-gray-500 dark:text-gray-400">${heading}</h2>`);
-        }
-        if (g.description) {
-          lines.push(`          <p class="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">${tsTemplateText(g.description)}</p>`);
-        }
-        lines.push(`          <dl class="divide-y divide-gray-200 dark:divide-gray-700">`);
-        lines.push(...renderDlRows(member));
-        lines.push(`          </dl>`);
-        lines.push(isCollapsible ? `        </details>` : `        </section>`);
-      }
-
-      if (ungroupedFields.length > 0) {
-        const mtClass = isFirst ? '' : ' mt-8';
-        lines.push(`        <section aria-labelledby="details-title" class="exeris-card overflow-hidden${mtClass}">`);
+    if (!hasTabs) {
+      if (!hasGroups) {
+        lines.push(`        <section aria-labelledby="details-title" class="exeris-card overflow-hidden">`);
         lines.push(`          <h2 id="details-title" class="exeris-card-header text-sm font-medium text-gray-500 dark:text-gray-400">Details</h2>`);
         lines.push(`          <dl class="divide-y divide-gray-200 dark:divide-gray-700">`);
-        lines.push(...renderDlRows('ungroupedFields'));
+        lines.push(...renderDlRows('displayFields'));
         lines.push(`          </dl>`);
         lines.push(`        </section>`);
+      } else {
+        let isFirst = true;
+        for (const g of sortedGroups) {
+          const heading = tsTemplateText(g.label || g.name);
+          const member = `group${DslMapper.toTypeName(g.name)}Fields`;
+          const isCollapsible = g.collapsible === true;
+          const mtClass = isFirst ? '' : ' mt-8';
+          isFirst = false;
+
+          if (isCollapsible) {
+            lines.push(`        <details data-testid="group-${testIdSegment(g.name)}"${g.collapsed ? '' : ' open'} class="exeris-card overflow-hidden${mtClass}">`);
+            lines.push(`          <summary class="exeris-card-header text-sm font-medium text-gray-500 dark:text-gray-400 cursor-pointer">${heading}</summary>`);
+          } else {
+            lines.push(`        <section data-testid="group-${testIdSegment(g.name)}" class="exeris-card overflow-hidden${mtClass}">`);
+            lines.push(`          <h2 class="exeris-card-header text-sm font-medium text-gray-500 dark:text-gray-400">${heading}</h2>`);
+          }
+          if (g.description) {
+            lines.push(`          <p class="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">${tsTemplateText(g.description)}</p>`);
+          }
+          lines.push(`          <dl class="divide-y divide-gray-200 dark:divide-gray-700">`);
+          lines.push(...renderDlRows(member));
+          lines.push(`          </dl>`);
+          lines.push(isCollapsible ? `        </details>` : `        </section>`);
+        }
+
+        if (ungroupedFields.length > 0) {
+          const mtClass = isFirst ? '' : ' mt-8';
+          lines.push(`        <section aria-labelledby="details-title" class="exeris-card overflow-hidden${mtClass}">`);
+          lines.push(`          <h2 id="details-title" class="exeris-card-header text-sm font-medium text-gray-500 dark:text-gray-400">Details</h2>`);
+          lines.push(`          <dl class="divide-y divide-gray-200 dark:divide-gray-700">`);
+          lines.push(...renderDlRows('ungroupedFields'));
+          lines.push(`          </dl>`);
+          lines.push(`        </section>`);
+        }
+      }
+    } else {
+      lines.push('        <div role="tablist" aria-label="Detail Tabs" class="flex border-b border-gray-200 dark:border-gray-700 mb-6 gap-2">');
+      for (const t of sortedTabs) {
+        const tabName = t.name ?? '';
+        const tabLabel = tsTemplateText(t.label || t.name || '');
+        const iconSpan = t.icon ? `<span class="mr-2">${tsTemplateText(t.icon)}</span>` : '';
+        lines.push(`          <button type="button" role="tab" id="tab-${testIdSegment(tabName)}" aria-controls="panel-${testIdSegment(tabName)}" [attr.aria-selected]="activeTab() === '${tsSingleQuoted(tabName)}'" (click)="activeTab.set('${tsSingleQuoted(tabName)}')" data-testid="tab-${testIdSegment(tabName)}" class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors cursor-pointer" [class]="activeTab() === '${tsSingleQuoted(tabName)}' ? 'border-exeris-primary text-exeris-primary font-semibold' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:border-gray-300'">${iconSpan}${tabLabel}</button>`);
+      }
+      lines.push('        </div>');
+
+      const allTabbedNames = new Set(sortedTabs.flatMap((t) => t.fields ?? []));
+      for (const t of sortedTabs) {
+        const tabName = t.name ?? '';
+        lines.push(`        <div role="tabpanel" id="panel-${testIdSegment(tabName)}" aria-labelledby="tab-${testIdSegment(tabName)}" [hidden]="activeTab() !== '${tsSingleQuoted(tabName)}'" data-testid="tabpanel-${testIdSegment(tabName)}">`);
+        let isFirstInTab = true;
+        if (!hasGroups) {
+          const tFields = (t.fields ?? []).map((fn) => displayFields.find((df) => df.name === fn)).filter((f): f is FieldRenderModel => f !== undefined);
+          if (tFields.length > 0) {
+            const member = `tab${DslMapper.toTypeName(tabName)}Fields`;
+            lines.push(...renderDetailSection({ isCollapsible: false, heading: 'Details', ariaLabelledBy: 'details-title', fieldsMember: member, mtClass: '', renderDlRows }));
+          }
+        } else {
+          for (const g of sortedGroups) {
+            const gFields = (g.fields ?? []).filter((fn) => (t.fields ?? []).includes(fn)).map((fn) => displayFields.find((df) => df.name === fn)).filter((f): f is FieldRenderModel => f !== undefined);
+            if (gFields.length === 0) continue;
+            const heading = tsTemplateText(g.label || g.name);
+            const member = `tab${DslMapper.toTypeName(tabName)}Group${DslMapper.toTypeName(g.name)}Fields`;
+            const mtClass = isFirstInTab ? '' : ' mt-8';
+            isFirstInTab = false;
+            lines.push(...renderDetailSection({ isCollapsible: g.collapsible === true, collapsed: g.collapsed, testId: 'group-' + testIdSegment(g.name), heading, description: g.description, fieldsMember: member, mtClass, renderDlRows }));
+          }
+          const tFields = (t.fields ?? []).map((fn) => displayFields.find((df) => df.name === fn)).filter((f): f is FieldRenderModel => f !== undefined);
+          const tabUngrouped = tFields.filter((f) => !sortedGroups.some((g) => g.fields.includes(f.name)));
+          if (tabUngrouped.length > 0) {
+            const member = `tab${DslMapper.toTypeName(tabName)}UngroupedFields`;
+            const mtClass = isFirstInTab ? '' : ' mt-8';
+            lines.push(...renderDetailSection({ isCollapsible: false, heading: 'Details', ariaLabelledBy: 'details-title', fieldsMember: member, mtClass, renderDlRows }));
+          }
+        }
+        lines.push('        </div>');
+      }
+
+      const untabbedDisplayFields = displayFields.filter((f) => !allTabbedNames.has(f.name));
+      if (untabbedDisplayFields.length > 0) {
+        if (!hasGroups) {
+          lines.push(...renderDetailSection({ isCollapsible: false, heading: 'Details', ariaLabelledBy: 'details-title', fieldsMember: 'untabbedFields', mtClass: ' mt-8', renderDlRows }));
+        } else {
+          for (const g of sortedGroups) {
+            const gUntabbed = (g.fields ?? []).filter((fn) => !allTabbedNames.has(fn)).map((fn) => displayFields.find((df) => df.name === fn)).filter((f): f is FieldRenderModel => f !== undefined);
+            if (gUntabbed.length === 0) continue;
+            const heading = tsTemplateText(g.label || g.name);
+            const member = `untabbedGroup${DslMapper.toTypeName(g.name)}Fields`;
+            lines.push(...renderDetailSection({ isCollapsible: g.collapsible === true, collapsed: g.collapsed, testId: 'group-' + testIdSegment(g.name), heading, description: g.description, fieldsMember: member, mtClass: ' mt-8', renderDlRows }));
+          }
+          const untabbedUngrouped = untabbedDisplayFields.filter((f) => !sortedGroups.some((g) => g.fields.includes(f.name)));
+          if (untabbedUngrouped.length > 0) {
+            lines.push(...renderDetailSection({ isCollapsible: false, heading: 'Details', ariaLabelledBy: 'details-title', fieldsMember: 'untabbedFields', mtClass: ' mt-8', renderDlRows }));
+          }
+        }
       }
     }
     if (related.length > 0) {
@@ -360,7 +528,12 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(``);
     lines.push(`  readonly id = input.required<string>();`);
     lines.push(`  readonly displayFields = DISPLAY_FIELDS;`);
-    if (hasGroups) {
+    if (hasTabs) {
+      lines.push(`  readonly activeTab = signal<string>('${tsSingleQuoted(sortedTabs[0].name ?? '')}');`);
+      for (const prop of tabClassProperties) {
+        lines.push(`  readonly ${prop.member} = ${prop.constName};`);
+      }
+    } else if (hasGroups) {
       for (const g of sortedGroups) {
         const member = `group${DslMapper.toTypeName(g.name)}Fields`;
         const constName = `GROUP_${DslMapper.toKebabCase(g.name).replace(/-/g, '_').toUpperCase()}_FIELDS`;

@@ -53,6 +53,14 @@ const d = (o) => parseOffered({ packageName: 'com.shop', ...o });
 const domains = [
   d({
     entityName: 'Order',
+    navMenu: {
+      group: 'Sales',
+      groupOrder: 1,
+      groupIcon: '💼',
+      order: 1,
+      label: 'Orders',
+      icon: '📋',
+    },
     fields: [
       { name: 'id', type: 'java.util.UUID' },
       // dataType exercises the detail view's currency branch, and the audit stamps exercise
@@ -299,6 +307,25 @@ const domains = [
       groups: [
         { name: 'parcel', label: 'Parcel', order: 2, collapsible: true, collapsed: true, gridSpan: 12, fields: ['weightGrams'] },
         { name: 'carriage', label: 'Carriage', description: 'Who carries it.', order: 1, collapsible: false, gridSpan: 12, fields: ['carrier', 'trackingCode'] },
+      ],
+    },
+  }),
+  // Consignment lays its fields out in @Tab strips: two tabs by order with icons,
+  // and a field in no tab after the tab strip, in the form and the detail view.
+  d({
+    entityName: 'Consignment',
+    fields: [
+      { name: 'id', type: 'java.util.UUID' },
+      { name: 'reference', type: 'String', required: true, inCreate: true, inUpdate: true },
+      { name: 'sender', type: 'String', required: true, inCreate: true, inUpdate: true },
+      { name: 'recipient', type: 'String', required: true, inCreate: true, inUpdate: true },
+      { name: 'instructions', type: 'String', inCreate: true, inUpdate: true },
+    ],
+    uiMetadata: {
+      listView: true, detailView: true, createForm: true, editForm: true,
+      tabs: [
+        { name: 'parties', label: 'Parties', order: 1, icon: '👥', fields: ['sender', 'recipient'] },
+        { name: 'details', label: 'Details', order: 2, icon: '📋', fields: ['reference'] },
       ],
     },
   }),

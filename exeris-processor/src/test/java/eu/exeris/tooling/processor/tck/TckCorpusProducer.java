@@ -40,8 +40,6 @@ final class TckCorpusProducer {
      */
     static final Set<Facet> UNSUPPORTED = Collections.unmodifiableSet(EnumSet.of(
             Facet.ROUTE_ACCESS,
-            Facet.NAV_MENU,
-            Facet.TABS,
             Facet.BLOBS));
 
     private static final Pattern PACKAGE = Pattern.compile("^package\\s+([\\w.]+)\\s*;", Pattern.MULTILINE);

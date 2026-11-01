@@ -3,7 +3,7 @@
  * Generates Angular 22+ form components with Signals from domain metadata.
  */
 
-import type { DomainMetadata } from '../../models/domain-model.js';
+import type { DomainMetadata, UIGroupMetadata } from '../../models/domain-model.js';
 import { modelTypeName } from '../../models/model-naming.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import type { GeneratorConfig } from '../../config.js';
@@ -159,54 +159,136 @@ export class FormGenerator implements CodeGenerator {
     // The form validates itself, so the browser's own validation of the bound attributes is off.
     lines.push('    <form (submit)="onSubmit($event)" novalidate class="space-y-6">');
 
+    const hasTabs = (domain.uiMetadata?.tabs?.length ?? 0) > 0;
+    const sortedTabs = hasTabs
+      ? domain.uiMetadata!.tabs!.map((tab, index) => ({
+          tab,
+          index,
+          order: tab.order ?? 999,
+        }))
+          .sort((a, b) => a.order - b.order || a.index - b.index)
+          .map(({ tab }) => tab)
+      : [];
+
     const hasGroups = (domain.uiMetadata?.groups?.length ?? 0) > 0;
-    if (!hasGroups) {
-      for (const f of createFields) {
-        lines.push(...this.renderFormControl(f));
-      }
-      for (const f of computedFields) {
-        lines.push(...this.renderComputedField(f));
-      }
-    } else {
-      const sortedGroups = [...domain.uiMetadata!.groups!].sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
-      const groupedFieldNames = new Set<string>();
-
-      for (const g of sortedGroups) {
-        const heading = tsTemplateText(g.label || g.name);
-        const isCollapsible = g.collapsible === true;
-        if (isCollapsible) {
-          lines.push(`      <details data-testid="group-${testIdSegment(g.name)}"${g.collapsed ? '' : ' open'} class="space-y-4">`);
-          lines.push(`        <summary class="cursor-pointer text-lg font-medium text-gray-900 dark:text-white">${heading}</summary>`);
-        } else {
-          lines.push(`      <section data-testid="group-${testIdSegment(g.name)}" class="space-y-4">`);
-          lines.push(`        <h3 class="text-lg font-medium text-gray-900 dark:text-white">${heading}</h3>`);
-        }
-        if (g.description) {
-          lines.push(`        <p class="text-sm text-gray-500 dark:text-gray-400">${tsTemplateText(g.description)}</p>`);
-        }
-        for (const fieldName of g.fields) {
-          groupedFieldNames.add(fieldName);
-          const control = createFields.find((f) => f.name === fieldName);
-          if (control) {
-            lines.push(...this.renderFormControl(control).map((l) => `  ${l}`));
-            continue;
-          }
-          const computed = computedFields.find((f) => f.name === fieldName);
-          if (computed) {
-            lines.push(...this.renderComputedField(computed).map((l) => `  ${l}`));
-          }
-        }
-        lines.push(isCollapsible ? '      </details>' : '      </section>');
-      }
-
-      for (const f of createFields) {
-        if (!groupedFieldNames.has(f.name)) {
+    if (!hasTabs) {
+      if (!hasGroups) {
+        for (const f of createFields) {
           lines.push(...this.renderFormControl(f));
         }
-      }
-      for (const f of computedFields) {
-        if (!groupedFieldNames.has(f.name)) {
+        for (const f of computedFields) {
           lines.push(...this.renderComputedField(f));
+        }
+      } else {
+        const sortedGroups = [...domain.uiMetadata!.groups!].sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+        const groupedFieldNames = new Set<string>();
+
+        for (const g of sortedGroups) {
+          lines.push(...this.renderFormGroupSection(g, g.fields, createFields, computedFields, '      '));
+          for (const fieldName of g.fields) {
+            groupedFieldNames.add(fieldName);
+          }
+        }
+
+        for (const f of createFields) {
+          if (!groupedFieldNames.has(f.name)) {
+            lines.push(...this.renderFormControl(f));
+          }
+        }
+        for (const f of computedFields) {
+          if (!groupedFieldNames.has(f.name)) {
+            lines.push(...this.renderComputedField(f));
+          }
+        }
+      }
+    } else {
+      lines.push('      <div role="tablist" aria-label="Form Tabs" class="flex border-b border-gray-200 dark:border-gray-700 mb-6 gap-2">');
+      for (const t of sortedTabs) {
+        const tabName = t.name ?? '';
+        const tabLabel = tsTemplateText(t.label || t.name || '');
+        const iconSpan = t.icon ? `<span class="mr-2">${tsTemplateText(t.icon)}</span>` : '';
+        lines.push(`        <button type="button" role="tab" id="tab-${testIdSegment(tabName)}" aria-controls="panel-${testIdSegment(tabName)}" [attr.aria-selected]="activeTab() === '${tsSingleQuoted(tabName)}'" (click)="activeTab.set('${tsSingleQuoted(tabName)}')" data-testid="tab-${testIdSegment(tabName)}" class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors cursor-pointer" [class]="activeTab() === '${tsSingleQuoted(tabName)}' ? 'border-exeris-primary text-exeris-primary font-semibold' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:border-gray-300'">${iconSpan}${tabLabel}</button>`);
+      }
+      lines.push('      </div>');
+
+      const sortedGroups = hasGroups
+        ? [...domain.uiMetadata!.groups!].sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
+        : [];
+
+      for (const t of sortedTabs) {
+        const tabName = t.name ?? '';
+        const tabFields = t.fields ?? [];
+        lines.push(`      <div role="tabpanel" id="panel-${testIdSegment(tabName)}" aria-labelledby="tab-${testIdSegment(tabName)}" [hidden]="activeTab() !== '${tsSingleQuoted(tabName)}'" data-testid="tabpanel-${testIdSegment(tabName)}" class="space-y-6">`);
+        if (!hasGroups) {
+          for (const fieldName of tabFields) {
+            const control = createFields.find((f) => f.name === fieldName);
+            if (control) {
+              lines.push(...this.renderFormControl(control).map((l) => `  ${l}`));
+              continue;
+            }
+            const computed = computedFields.find((f) => f.name === fieldName);
+            if (computed) {
+              lines.push(...this.renderComputedField(computed).map((l) => `  ${l}`));
+            }
+          }
+        } else {
+          const tabGroupedFieldNames = new Set<string>();
+          for (const g of sortedGroups) {
+            const gTabFieldNames = g.fields.filter((fn) => tabFields.includes(fn));
+            if (gTabFieldNames.length === 0) continue;
+            lines.push(...this.renderFormGroupSection(g, gTabFieldNames, createFields, computedFields, '        '));
+            for (const fn of gTabFieldNames) {
+              tabGroupedFieldNames.add(fn);
+            }
+          }
+          for (const fieldName of tabFields) {
+            if (!tabGroupedFieldNames.has(fieldName)) {
+              const control = createFields.find((f) => f.name === fieldName);
+              if (control) {
+                lines.push(...this.renderFormControl(control).map((l) => `  ${l}`));
+                continue;
+              }
+              const computed = computedFields.find((f) => f.name === fieldName);
+              if (computed) {
+                lines.push(...this.renderComputedField(computed).map((l) => `  ${l}`));
+              }
+            }
+          }
+        }
+        lines.push('      </div>');
+      }
+
+      const tabbedFieldNames = new Set<string>(sortedTabs.flatMap((t) => t.fields ?? []));
+      if (!hasGroups) {
+        for (const f of createFields) {
+          if (!tabbedFieldNames.has(f.name)) {
+            lines.push(...this.renderFormControl(f));
+          }
+        }
+        for (const f of computedFields) {
+          if (!tabbedFieldNames.has(f.name)) {
+            lines.push(...this.renderComputedField(f));
+          }
+        }
+      } else {
+        const untabbedGroupedFieldNames = new Set<string>();
+        for (const g of sortedGroups) {
+          const gUntabbedFieldNames = g.fields.filter((fn) => !tabbedFieldNames.has(fn));
+          if (gUntabbedFieldNames.length === 0) continue;
+          lines.push(...this.renderFormGroupSection(g, gUntabbedFieldNames, createFields, computedFields, '      '));
+          for (const fn of gUntabbedFieldNames) {
+            untabbedGroupedFieldNames.add(fn);
+          }
+        }
+        for (const f of createFields) {
+          if (!tabbedFieldNames.has(f.name) && !untabbedGroupedFieldNames.has(f.name)) {
+            lines.push(...this.renderFormControl(f));
+          }
+        }
+        for (const f of computedFields) {
+          if (!tabbedFieldNames.has(f.name) && !untabbedGroupedFieldNames.has(f.name)) {
+            lines.push(...this.renderComputedField(f));
+          }
         }
       }
     }
@@ -258,6 +340,9 @@ export class FormGenerator implements CodeGenerator {
     lines.push(`  readonly entity = input<${modelName} | null>(null);`);
     // Bound from the `:id` route parameter by withComponentInputBinding on the edit route.
     lines.push('  readonly id = input<string | undefined>();');
+    if (hasTabs) {
+      lines.push(`  readonly activeTab = signal<string>('${tsSingleQuoted(sortedTabs[0].name ?? '')}');`);
+    }
     lines.push('');
     lines.push('  private readonly entityResource = rxResource({');
     lines.push('    params: () => this.id(),');
@@ -483,6 +568,42 @@ export class FormGenerator implements CodeGenerator {
     lines.push('}');
 
     return lines.join('\n');
+  }
+
+  private renderFormGroupSection(
+    g: UIGroupMetadata,
+    fieldNames: string[],
+    createFields: FieldRenderModel[],
+    computedFields: FieldRenderModel[],
+    indent: string,
+  ): string[] {
+    const lines: string[] = [];
+    const heading = tsTemplateText(g.label || g.name);
+    const isCollapsible = g.collapsible === true;
+    if (isCollapsible) {
+      lines.push(`${indent}<details data-testid="group-${testIdSegment(g.name)}"${g.collapsed ? '' : ' open'} class="space-y-4">`);
+      lines.push(`${indent}  <summary class="cursor-pointer text-lg font-medium text-gray-900 dark:text-white">${heading}</summary>`);
+    } else {
+      lines.push(`${indent}<section data-testid="group-${testIdSegment(g.name)}" class="space-y-4">`);
+      lines.push(`${indent}  <h3 class="text-lg font-medium text-gray-900 dark:text-white">${heading}</h3>`);
+    }
+    if (g.description) {
+      lines.push(`${indent}  <p class="text-sm text-gray-500 dark:text-gray-400">${tsTemplateText(g.description)}</p>`);
+    }
+    const extraIndent = indent === '      ' ? '  ' : '    ';
+    for (const fieldName of fieldNames) {
+      const control = createFields.find((f) => f.name === fieldName);
+      if (control) {
+        lines.push(...this.renderFormControl(control).map((l) => `${extraIndent}${l}`));
+        continue;
+      }
+      const computed = computedFields.find((f) => f.name === fieldName);
+      if (computed) {
+        lines.push(...this.renderComputedField(computed).map((l) => `${extraIndent}${l}`));
+      }
+    }
+    lines.push(isCollapsible ? `${indent}</details>` : `${indent}</section>`);
+    return lines;
   }
 
   private renderFormControl(f: FieldRenderModel): string[] {

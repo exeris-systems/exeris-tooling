@@ -27,6 +27,8 @@ import {
   SystemFieldsMetadataSchema,
   EventSourcedMetadataSchema,
   InternalApiMetadataSchema,
+  NavMenuMetadataSchema,
+  UITabMetadataSchema,
   DomainMetadataSchema,
   ExerisMetadataSchema,
   parseDomainMetadata,
@@ -231,6 +233,15 @@ describe('UIMetadataSchema', () => {
     ]);
   });
 
+  it('keeps the tabs the processor writes for @Tab', () => {
+    const parsed = UIMetadataSchema.parse({
+      tabs: [{ name: 'general', label: 'General', order: 1, icon: 'info', fields: ['name', 'description'] }],
+    });
+    expect(parsed.tabs).toEqual([
+      { name: 'general', label: 'General', order: 1, icon: 'info', fields: ['name', 'description'] },
+    ]);
+  });
+
   it('fills no switch the wire leaves out', () => {
     expect(UIMetadataSchema.parse({})).toEqual({});
   });
@@ -239,6 +250,46 @@ describe('UIMetadataSchema', () => {
     expect(UIMetadataSchema.parse({ icon: 'shopping-cart', color: '#ff0000' })).toEqual({
       icon: 'shopping-cart', color: '#ff0000',
     });
+  });
+});
+
+describe('UITabMetadataSchema', () => {
+  it('parses a minimal tab, leaving an absent member list absent', () => {
+    const parsed = UITabMetadataSchema.parse({ name: 'general' });
+    expect(parsed.name).toBe('general');
+    expect(parsed.fields).toBeUndefined();
+  });
+});
+
+describe('NavMenuMetadataSchema', () => {
+  it('round-trips all navMenu attributes', () => {
+    const wire = {
+      group: 'Sales',
+      parent: 'Orders',
+      label: 'Orders',
+      icon: 'shopping_cart',
+      order: 1,
+      groupOrder: 2,
+      groupIcon: 'store',
+      hidden: false,
+      roles: ['SALES'],
+      permissions: ['orders:read'],
+      badge: 'NEW',
+      badgeColor: 'accent',
+      tooltip: 'Orders menu',
+      openInNewTab: false,
+      routePath: '/orders',
+      queryParams: 'tab=active',
+      expanded: true,
+      divider: 'BEFORE' as const,
+    };
+    expect(NavMenuMetadataSchema.parse(wire)).toEqual(wire);
+  });
+
+  it('leaves absent roles and permissions absent', () => {
+    const parsed = NavMenuMetadataSchema.parse({});
+    expect(parsed.roles).toBeUndefined();
+    expect(parsed.permissions).toBeUndefined();
   });
 });
 

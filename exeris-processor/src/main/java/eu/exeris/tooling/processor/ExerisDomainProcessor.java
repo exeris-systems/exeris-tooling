@@ -23,6 +23,7 @@ import eu.exeris.sdk.sourcemodel.ast.GraphEdgeMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphPropertyMetadata;
 import eu.exeris.sdk.sourcemodel.ast.InternalApiMetadata;
+import eu.exeris.sdk.sourcemodel.ast.NavMenuMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ParamSource;
 import eu.exeris.sdk.sourcemodel.ast.ProvidesMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RegionMetadata;
@@ -181,6 +182,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     /** {@code @UIGroup}, which groups fields for presentation. */
     private static final String UI_GROUP_FQN = "eu.exeris.sdk.annotation.UIGroup";
 
+    /** {@code @NavMenu}, which configures navigation menu placement for an entity. */
+    private static final String NAV_MENU_FQN = "eu.exeris.sdk.annotation.NavMenu";
+
+    /** {@code @Tab}, which organizes entity fields into tabbed sections. */
+    private static final String TAB_FQN = "eu.exeris.sdk.annotation.Tab";
+
     /** Package every SDK annotation lives under, including the {@code capability} sub-package. */
     private static final String SDK_ANNOTATION_PACKAGE = "eu.exeris.sdk.annotation.";
 
@@ -311,6 +318,16 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     private static final String SAGA_COMPENSATION_NOT_EMITTED =
             "the value reaches SagaMetadata in the JSON, and no emitter reads it: the emitted flow "
                     + "registers the step compensators and sets only the saga timeout and retry count";
+
+    /** Why each unconsumed {@code @NavMenu} attribute is listed in {@link #INERT_ATTRIBUTES}. */
+    private static final String NAV_MENU_NOT_EMITTED =
+            "the value reaches NavMenuMetadata in the JSON, and no generator consumes it: the emitted "
+                    + "navigation consumes group, label, icon, order, groupOrder and hidden";
+
+    /** Why each unconsumed {@code @Tab} attribute is listed in {@link #INERT_ATTRIBUTES}. */
+    private static final String TAB_NOT_EMITTED =
+            "the value reaches UITabMetadata in the JSON, and no generator consumes it: the emitted "
+                    + "presentation consumes name, label, order, icon and member fields";
 
     /**
      * Why these registries exist: every SDK annotation is
@@ -718,6 +735,24 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                     "UIGroupMetadata carries no CSS class, and no emitted component applies it"),
             new InertAttribute("UIGroup", "visibleWhen",
                     "visibility conditions are not modeled on UIGroupMetadata and no generator reads them"),
+            new InertAttribute("NavMenu", "parent", NAV_MENU_NOT_EMITTED),
+            new InertAttribute("NavMenu", "roles", NAV_MENU_NOT_EMITTED),
+            new InertAttribute("NavMenu", "permissions", NAV_MENU_NOT_EMITTED),
+            new InertAttribute("NavMenu", "badge", NAV_MENU_NOT_EMITTED),
+            new InertAttribute("NavMenu", "badgeColor", NAV_MENU_NOT_EMITTED),
+            new InertAttribute("NavMenu", "tooltip", NAV_MENU_NOT_EMITTED),
+            new InertAttribute("NavMenu", "openInNewTab", NAV_MENU_NOT_EMITTED),
+            new InertAttribute("NavMenu", "routePath", NAV_MENU_NOT_EMITTED),
+            new InertAttribute("NavMenu", "queryParams", NAV_MENU_NOT_EMITTED),
+            new InertAttribute("NavMenu", "expanded", NAV_MENU_NOT_EMITTED),
+            new InertAttribute("NavMenu", "divider", NAV_MENU_NOT_EMITTED),
+            new InertAttribute("Tab", "lazy", TAB_NOT_EMITTED),
+            new InertAttribute("Tab", "badgeField", TAB_NOT_EMITTED),
+            new InertAttribute("Tab", "badgeColor", TAB_NOT_EMITTED),
+            new InertAttribute("Tab", "disabled", TAB_NOT_EMITTED),
+            new InertAttribute("Tab", "disabledWhen", TAB_NOT_EMITTED),
+            new InertAttribute("Tab", "visibleWhen", TAB_NOT_EMITTED),
+            new InertAttribute("Tab", "cssClass", TAB_NOT_EMITTED),
             new InertAttribute(DOMAIN_EVENT, "description",
                     "it is extracted into DomainEventMetadata.description and reaches the JSON, but "
                             + "no emitter renders it"),
@@ -872,9 +907,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             "Action", "ActionParam", "AuditCreatedAt", "AuditCreatedBy", "AuditUpdatedAt",
             "AuditUpdatedBy", "Bind", "Block", "CapabilityLifecycle", "CapabilityModule",
             DOMAIN_EVENT, "EventSourced", "ExerisDomain", "Field", "Graph", "GraphEdge",
-            "GraphProperty", "InternalApi", "PrimaryKey", "Provides", "QueryParam", "Region",
+            "GraphProperty", "InternalApi", "NavMenu", "PrimaryKey", "Provides", "QueryParam", "Region",
             "Relationship", "Requires", "Saga", "SagaStep", "SharedScope", "SoftDelete",
-            "SoftDeleteTimestamp", "SoftDeletedBy", "TenantId", "UI", "UIGroup", "Validation",
+            "SoftDeleteTimestamp", "SoftDeletedBy", "Tab", "TenantId", "UI", "UIGroup", "Validation",
             "Version", "View");
 
     /**
@@ -898,7 +933,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * <p>The distinction these notes carry is real and worth the words: {@code @Derived},
      * {@code @Rule}, {@code @EventHandler} and {@code @Projection} are <em>reserved</em> — AST
      * carriers exist and the emission is design-gated on the behavioural corpus — whereas
-     * {@code @NavMenu} or {@code @Tab} are simply unbuilt. Both are "no effect on output" and an
+     * {@code @Channel} is simply unbuilt. Both are "no effect on output" and an
      * author deserves to know which one they have hit.
      */
     private static final List<UnreadAnnotation> UNREAD_NOTES = List.of(
@@ -941,14 +976,6 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "carries no channel. realTimeApi and @Action.streaming are the "
                             + "server-push (SSE) surfaces that do reach emitted code. The WebSocket "
                             + "emitter is tracked in ROADMAP.md"),
-            new UnreadAnnotation("NavMenu",
-                    "no navigation artefact is emitted from it on either side. The TS app shell "
-                            + "builds its sidebar from the entity list and the @View routes, never "
-                            + "from this annotation"),
-            new UnreadAnnotation("Tab",
-                    "presentation grouping is emitted from @View (regions and blocks), and this "
-                            + "annotation does not feed it. Generated forms and detail views are "
-                            + "not split into tabs"),
             // Reached only from a non-type element: on a type, @UI is extracted (TYPE_LEVEL_EXTRACTION).
             new UnreadAnnotation("UI",
                     "the processor reads @UI on a type only. On a field it reaches no metadata, so "
@@ -1968,11 +1995,15 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         try {
             // Extract saga metadata
             SagaMetadata sagaMetadata = extractSagaMetadata(element);
+            NavMenuMetadata navMenu = extractNavMenuMetadata(element);
 
             // Build domain metadata with saga configuration
-            DomainMetadata metadata = DomainMetadata.builder(sagaName, packageName)
-                    .sagaMetadata(sagaMetadata)
-                    .build();
+            DomainMetadata.Builder builder = DomainMetadata.builder(sagaName, packageName)
+                    .sagaMetadata(sagaMetadata);
+            if (navMenu != null) {
+                builder.navMenu(navMenu);
+            }
+            DomainMetadata metadata = builder.build();
 
             // A standalone @Saga still emits a DomainMetadata JSON, so stamp the
             // ADR-042 baseline-trust fields here too — same treatment as @ExerisDomain,
@@ -2046,6 +2077,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         InternalApiMetadata internalApi = extractInternalApiMetadata(element);
         if (internalApi != null) {
             builder.internalApi(internalApi);
+        }
+
+        // Extract navigation menu configuration
+        NavMenuMetadata navMenu = extractNavMenuMetadata(element);
+        if (navMenu != null) {
+            builder.navMenu(navMenu);
         }
 
         validateRouteAccess(element, domainAnnotation);
@@ -3271,7 +3308,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     }
 
     /** An annotation attribute's value, or {@code null} when absent or blank. */
-    private String nonBlank(Map<String, Object> values, String attribute) {
+    private static String nonBlank(Map<String, Object> values, String attribute) {
         Object value = values.get(attribute);
         if (!(value instanceof String text) || text.isBlank()) {
             return null;
@@ -3462,8 +3499,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
     private UIMetadata extractUIMetadata(TypeElement element) {
         AnnotationMirror uiAnnotation = findAnnotation(element, UI_FQN);
+        List<UIMetadata.UITabMetadata> tabs = uiTabs(element);
         List<UIMetadata.UIGroupMetadata> groups = uiGroups(element);
-        if (uiAnnotation == null && groups.isEmpty()) {
+        if (uiAnnotation == null && tabs.isEmpty() && groups.isEmpty()) {
             return null;
         }
 
@@ -3481,8 +3519,107 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                     .exportable(getBoolean(values, "exportable", false));
         }
 
+        if (!tabs.isEmpty()) {
+            builder.tabs(tabs);
+        }
         builder.groups(groups);
         return builder.build();
+    }
+
+    private List<UIMetadata.UITabMetadata> uiTabs(TypeElement element) {
+        Map<String, TabDeclarations> byName = new LinkedHashMap<>();
+        for (Element enclosed : element.getEnclosedElements()) {
+            if (enclosed.getKind() != ElementKind.FIELD
+                    || enclosed.getModifiers().contains(Modifier.STATIC)
+                    || enclosed.getModifiers().contains(Modifier.TRANSIENT)) {
+                continue;
+            }
+
+            AnnotationMirror tabAnnotation = findAnnotation(enclosed, TAB_FQN);
+            if (tabAnnotation == null) {
+                continue;
+            }
+
+            Map<String, Object> values = extractAnnotationValues(tabAnnotation);
+            warnInertAttributes("Tab", values, enclosed, tabAnnotation);
+
+            String name = nonBlank(values, "name");
+            if (name == null) {
+                continue;
+            }
+
+            TabDeclarations declarations = byName.computeIfAbsent(name, TabDeclarations::new);
+            declarations.absorb(values);
+            declarations.fields.add(enclosed.getSimpleName().toString());
+        }
+
+        List<UIMetadata.UITabMetadata> result = new ArrayList<>();
+        for (TabDeclarations tab : byName.values()) {
+            result.add(tab.build());
+        }
+        return List.copyOf(result);
+    }
+
+    private static final class TabDeclarations {
+        private final String name;
+        private final List<String> fields = new ArrayList<>();
+        private String label;
+        private Integer order;
+        private String icon;
+        private Boolean lazy;
+        private String badgeField;
+        private String badgeColor;
+        private Boolean disabled;
+        private String disabledWhen;
+        private String visibleWhen;
+        private String cssClass;
+
+        private TabDeclarations(String name) {
+            this.name = name;
+        }
+
+        private void absorb(Map<String, Object> values) {
+            label = firstNonBlank(label, values, "label");
+            if (order == null && values.containsKey("order")) {
+                order = getInt(values, "order", UIMetadata.UITabMetadata.DEFAULT_ORDER);
+            }
+            icon = firstNonBlank(icon, values, "icon");
+            if (lazy == null && values.containsKey("lazy")) {
+                lazy = getBoolean(values, "lazy", false);
+            }
+            badgeField = firstNonBlank(badgeField, values, "badgeField");
+            badgeColor = firstNonBlank(badgeColor, values, "badgeColor");
+            if (disabled == null && values.containsKey("disabled")) {
+                disabled = getBoolean(values, "disabled", false);
+            }
+            disabledWhen = firstNonBlank(disabledWhen, values, "disabledWhen");
+            visibleWhen = firstNonBlank(visibleWhen, values, "visibleWhen");
+            cssClass = firstNonBlank(cssClass, values, "cssClass");
+        }
+
+        private UIMetadata.UITabMetadata build() {
+            return new UIMetadata.UITabMetadata(
+                    name,
+                    label,
+                    order,
+                    icon,
+                    Boolean.TRUE.equals(lazy),
+                    badgeField,
+                    badgeColor,
+                    Boolean.TRUE.equals(disabled),
+                    disabledWhen,
+                    visibleWhen,
+                    cssClass,
+                    List.copyOf(fields)
+            );
+        }
+    }
+
+    private static String firstNonBlank(String current, Map<String, Object> values, String key) {
+        if (current != null) {
+            return current;
+        }
+        return nonBlank(values, key);
     }
 
     private List<UIMetadata.UIGroupMetadata> uiGroups(TypeElement element) {
@@ -4234,6 +4371,87 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         return InternalApiMetadata.builder()
                 .internal(true)
                 .build();
+    }
+
+    /**
+     * Type-level {@code @NavMenu} extraction: present-only read of navigation menu attributes,
+     * or {@code null} when absent.
+     */
+    private NavMenuMetadata extractNavMenuMetadata(TypeElement element) {
+        AnnotationMirror navMenuAnnotation = findAnnotation(element, NAV_MENU_FQN);
+        if (navMenuAnnotation == null) {
+            return null;
+        }
+
+        Map<String, Object> values = extractAnnotationValues(navMenuAnnotation);
+        warnInertAttributes("NavMenu", values, element, navMenuAnnotation);
+
+        NavMenuMetadata.Builder builder = NavMenuMetadata.builder();
+        if (values.containsKey("group")) {
+            builder.group(getString(values, "group", null));
+        }
+        if (values.containsKey("parent")) {
+            builder.parent(getString(values, "parent", null));
+        }
+        if (values.containsKey("label")) {
+            builder.label(getString(values, "label", null));
+        }
+        if (values.containsKey("icon")) {
+            builder.icon(getString(values, "icon", null));
+        }
+        if (values.containsKey("order")) {
+            builder.order(getInt(values, "order", NavMenuMetadata.DEFAULT_ORDER));
+        }
+        if (values.containsKey("groupOrder")) {
+            builder.groupOrder(getInt(values, "groupOrder", NavMenuMetadata.DEFAULT_ORDER));
+        }
+        if (values.containsKey("groupIcon")) {
+            builder.groupIcon(getString(values, "groupIcon", null));
+        }
+        builder.hidden(getBoolean(values, "hidden", false));
+        if (values.containsKey("roles")) {
+            builder.roles(getStringArray(values, "roles"));
+        }
+        if (values.containsKey("permissions")) {
+            builder.permissions(getStringArray(values, "permissions"));
+        }
+        if (values.containsKey("badge")) {
+            builder.badge(getString(values, "badge", null));
+        }
+        if (values.containsKey("badgeColor")) {
+            builder.badgeColor(getString(values, "badgeColor", null));
+        }
+        if (values.containsKey("tooltip")) {
+            builder.tooltip(getString(values, "tooltip", null));
+        }
+        builder.openInNewTab(getBoolean(values, "openInNewTab", false));
+        if (values.containsKey("routePath")) {
+            builder.routePath(getString(values, "routePath", null));
+        }
+        if (values.containsKey("queryParams")) {
+            builder.queryParams(getString(values, "queryParams", null));
+        }
+        builder.expanded(getBoolean(values, "expanded", false));
+        if (values.containsKey("divider")) {
+            NavMenuMetadata.Divider divider = navMenuDivider(values.get("divider"));
+            if (divider != null) {
+                builder.divider(divider);
+            }
+        }
+        return builder.build();
+    }
+
+    /** Maps a {@code @NavMenu.Divider} enum constant to the AST {@link NavMenuMetadata.Divider}; null when unset. */
+    private NavMenuMetadata.Divider navMenuDivider(Object value) {
+        String constant = enumConstantName(value);
+        if (constant != null) {
+            for (NavMenuMetadata.Divider divider : NavMenuMetadata.Divider.values()) {
+                if (divider.name().equals(constant)) {
+                    return divider;
+                }
+            }
+        }
+        return null;
     }
 
     /**
