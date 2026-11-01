@@ -483,8 +483,19 @@ class KernelCodegenCompileTest {
         assertThat(json)
                 .contains("\"graphMetadata\"")
                 .contains("\"properties\"")
+                .contains("\"edges\"")
                 .contains("\"uiMetadata\"")
                 .contains("\"groups\"");
+
+        Path graphSyncFile = generatedMain.resolve("com/knowledge/graph/ArticleGraphSync.java");
+        assertThat(graphSyncFile).exists();
+        String graphSyncContent = Files.readString(graphSyncFile);
+        assertThat(graphSyncContent)
+                .contains("AUTHOR_ID_EDGE")
+                .contains("RELATED_ARTICLE_ID_REFERENCES_EDGE")
+                .contains("RELATED_ARTICLE_ID_SIMILAR_TO_EDGE")
+                .contains("TOPIC_ID_EDGE")
+                .contains("allocator.allocateNetwork(bytes.length)");
 
         List<String> files = new ArrayList<>();
         for (Path root : List.of(generatedMain, generatedTests)) {
@@ -508,6 +519,7 @@ class KernelCodegenCompileTest {
                 import eu.exeris.sdk.annotation.ExerisDomain;
                 import eu.exeris.sdk.annotation.Field;
                 import eu.exeris.sdk.annotation.Graph;
+                import eu.exeris.sdk.annotation.GraphEdge;
                 import eu.exeris.sdk.annotation.GraphProperty;
                 import eu.exeris.sdk.annotation.UI;
                 import eu.exeris.sdk.annotation.UIGroup;
@@ -536,6 +548,22 @@ class KernelCodegenCompileTest {
                     @UIGroup(name = "meta", label = "Metadata", order = 2, collapsible = true, collapsed = false)
                     private String summary;
 
+                    @Field(label = "Author ID")
+                    @GraphEdge(type = "WRITTEN_BY", targetLabel = "Author", direction = GraphEdge.Direction.OUTGOING)
+                    private UUID authorId;
+
+                    @Field(label = "Related Article ID")
+                    @GraphEdge(type = "REFERENCES", targetLabel = "Article", staticWeight = 2.5)
+                    @GraphEdge(type = "SIMILAR_TO", targetLabel = "Article", bidirectional = true)
+                    private UUID relatedArticleId;
+
+                    @Field(label = "Topic ID")
+                    @GraphEdge(type = "TAGGED_WITH", targetLabel = "Topic", weighted = true, weightField = "importance")
+                    private UUID topicId;
+
+                    @Field(label = "Importance")
+                    private double importance;
+
                     public UUID getId() { return id; }
                     public void setId(UUID id) { this.id = id; }
                     public String getTitle() { return title; }
@@ -544,6 +572,14 @@ class KernelCodegenCompileTest {
                     public void setSlug(String slug) { this.slug = slug; }
                     public String getSummary() { return summary; }
                     public void setSummary(String summary) { this.summary = summary; }
+                    public UUID getAuthorId() { return authorId; }
+                    public void setAuthorId(UUID authorId) { this.authorId = authorId; }
+                    public UUID getRelatedArticleId() { return relatedArticleId; }
+                    public void setRelatedArticleId(UUID relatedArticleId) { this.relatedArticleId = relatedArticleId; }
+                    public UUID getTopicId() { return topicId; }
+                    public void setTopicId(UUID topicId) { this.topicId = topicId; }
+                    public double getImportance() { return importance; }
+                    public void setImportance(double importance) { this.importance = importance; }
                 }
                 """);
         return sources;

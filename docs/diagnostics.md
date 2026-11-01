@@ -63,7 +63,6 @@ Printed by `javac` while it compiles your sources. `-Aexeris.strict=true` enable
 | `EXT-PROC-1010` | The `@SharedScope` field is declared required. | Drop `required = true`; a row with no shared scope is owner-private. |
 | `EXT-PROC-1011` | A system-field role marker (`@TenantId`, `@Version`, `@SoftDelete…`, `@Audit…`) is on more than one field. | Keep the marker on exactly one field. |
 | `EXT-PROC-1012` | A system-field role marker and the matching `@ExerisDomain` override name different fields. | Remove whichever of the two is wrong. |
-| `EXT-PROC-1013` | `@GraphEdge` is declared more than once on one field. | Declare each edge on its own field. |
 | `EXT-PROC-1014` | `@ExerisDomain(realTimeApi = true)` is on a `TENANT` or `UNIVERSE` entity. Kernel events carry no tenant, so the generated live view would send every tenant's events to every subscriber. | Declare `dataScope = DataScope.GLOBAL` if the rows are not tenant-owned; otherwise drop `realTimeApi` until stream events carry an isolation key. |
 | `EXT-PROC-1015` | An `@ExerisDomain` type declares no field named by its primary key, inherited or its own. The key is the field `primaryKeyField` names, else `id`, and the generated schema, repository and Angular model identify a row by it. | Declare the key, `private UUID id;` or the field `primaryKeyField` names, with its getter and setter. |
 | `EXT-PROC-1016` | A `@DomainEvent`'s name is a frame name the generated streams reserve: `stream-error` (a failure after the response head), `keep-alive` (the heartbeat), or an event type a browser `EventSource` dispatches itself — `message` (an unnamed frame), `open` or `error` (the connection). A stream frame carrying the event would be read as the reserved one. | Rename the event. |
@@ -200,5 +199,6 @@ moves its row here; `DiagnosticIdTest` fails if a registered identifier is liste
 
 | ID | Meaning | Retired in |
 |---|---|---|
+| `EXT-PROC-1013` | `@GraphEdge` is declared more than once on one field. | 0.11.0. Each edge on the field gets its own name and shares the field (`GraphEdgeMetadata.field`). |
 | `EXT-PROC-1104` | An entity's derived default table name differs from the plain plural of its class name. | 0.10.0. The default table has followed the SDK plural since 0.9.0; set `tableName` to name any other table. |
 | `EXT-PROC-1107` | `@Action(streaming = true)`: the generated stream route does not run the action. | 0.10.0. The per-action stream handler runs the action and streams the events it triggers (ADR-044 Amendment 2). |

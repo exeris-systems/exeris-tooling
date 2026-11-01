@@ -241,6 +241,14 @@ export const GraphEdgeMetadataSchema = z.object({
   name: z.string(),
   targetLabel: z.string().optional(),
   relationType: z.string().optional(),
+  field: z.string().optional(),
+  direction: z.enum(['OUTGOING', 'INCOMING', 'BOTH']).optional(),
+  bidirectional: z.boolean().optional(),
+  inverseType: z.string().optional(),
+  description: z.string().optional(),
+  weighted: z.boolean().optional(),
+  weightField: z.string().optional(),
+  staticWeight: z.number().optional(),
 });
 
 export type GraphEdgeMetadata = z.infer<typeof GraphEdgeMetadataSchema>;

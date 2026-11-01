@@ -575,8 +575,8 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("T57: two @GraphEdge on one field are refused at the field, not two stages later")
-        void repeatedGraphEdgeOnOneFieldIsRefused() {
+        @DisplayName("two @GraphEdge on one field are extracted with distinct identities and shared field")
+        void repeatedGraphEdgeOnOneFieldIsExtracted() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.Order",
                     """
@@ -597,23 +597,26 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
 
-            // Raised in review of this PR, and it was right: the first version of this test
-            // asserted both edges extracted, which would have shipped metadata the consumer
-            // rejects. GraphEdgeMetadata.name is the edge's identity AND the source of the entity
-            // getter ("get" + capitalize) in KernelGraphSyncGenerator, whose assertDistinctEdgeNames
-            // throws on a repeat — so two edges on one field need one name to be both, and the
-            // metadata would have built at javac time and crashed codegen-java.
-            assertThat(compilation).failed();
-            assertThat(compilation).hadErrorContaining("@GraphEdge is declared 2 times on field 'partyId'");
-            assertThat(compilation).hadErrorContaining("OWNED_BY, BILLED_TO");
-            assertThat(compilation).hadErrorContaining("separate identity component");
-            assertThat(compilation).hadErrorCount(1);
+            JsonNode edges = readMetadataRoot(compilation, "Order")
+                    .path("graphMetadata").path("edges");
+
+            assertThat(edges).hasSize(2);
+            assertThat(edges.get(0).path("name").asText()).isEqualTo("partyIdOwnedBy");
+            assertThat(edges.get(0).path("targetLabel").asText()).isEqualTo("User");
+            assertThat(edges.get(0).path("relationType").asText()).isEqualTo("OWNED_BY");
+            assertThat(edges.get(0).path("field").asText()).isEqualTo("partyId");
+
+            assertThat(edges.get(1).path("name").asText()).isEqualTo("partyIdBilledTo");
+            assertThat(edges.get(1).path("targetLabel").asText()).isEqualTo("Account");
+            assertThat(edges.get(1).path("relationType").asText()).isEqualTo("BILLED_TO");
+            assertThat(edges.get(1).path("field").asText()).isEqualTo("partyId");
         }
 
         @Test
-        @DisplayName("a direct @GraphEdge beside a hand-written @GraphEdges is refused once, and no edge is extracted")
-        void directGraphEdgeBesideContainerIsRefused() throws IOException {
+        @DisplayName("a direct @GraphEdge beside a hand-written @GraphEdges container extracts both edges")
+        void directGraphEdgeBesideContainerIsExtracted() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "parity.EdgesMixed",
                     """
@@ -636,19 +639,119 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
 
-            // Legal Java (JLS 9.7.5 forbids the container only beside two or more direct
-            // annotations), but two edges on one field all the same.
-            assertThat(compilation).failed();
-            assertThat(compilation).hadErrorCount(1);
-            assertThat(compilation).hadErrorContaining("@GraphEdge is declared 2 times on field 'mixed'");
-            assertThat(compilation).hadErrorContaining("DIRECT, CONTAINED");
+            JsonNode edges = readMetadataRoot(compilation, "EdgesMixed")
+                    .path("graphMetadata").path("edges");
 
-            // compile-testing withholds generated files from a failed compilation, but the
-            // processor still writes the document; read it from a plain javac run.
-            JsonNode root = new ObjectMapper().readTree(
-                    metadataWrittenDespiteErrors(source, "EdgesMixed", tempDir));
-            assertThat(root.path("graphMetadata").path("edges")).isEmpty();
+            assertThat(edges).hasSize(2);
+            assertThat(edges.get(0).path("name").asText()).isEqualTo("mixedDirect");
+            assertThat(edges.get(0).path("relationType").asText()).isEqualTo("DIRECT");
+            assertThat(edges.get(0).path("field").asText()).isEqualTo("mixed");
+
+            assertThat(edges.get(1).path("name").asText()).isEqualTo("mixedContained");
+            assertThat(edges.get(1).path("relationType").asText()).isEqualTo("CONTAINED");
+            assertThat(edges.get(1).path("field").asText()).isEqualTo("mixed");
+        }
+
+        @Test
+        @DisplayName("extracts all eight 0.13 GraphEdgeMetadata components when declared")
+        void extractsAllGraphEdgeMetadataComponents() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.SocialLink",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Graph;
+                    import eu.exeris.sdk.annotation.GraphEdge;
+                    import java.util.UUID;
+
+                    @ExerisDomain(module = "social", path = "/links")
+                    @Graph
+                    public class SocialLink {
+                        private UUID id;
+
+                        @GraphEdge(
+                                type = "FOLLOWS",
+                                targetLabel = "User",
+                                direction = GraphEdge.Direction.INCOMING,
+                                bidirectional = true,
+                                inverseType = "FOLLOWED_BY",
+                                description = "Follows connection",
+                                weighted = true,
+                                weightField = "strength",
+                                staticWeight = 2.5
+                        )
+                        private UUID targetUser;
+
+                        private Double strength;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+
+            JsonNode edges = readMetadataRoot(compilation, "SocialLink")
+                    .path("graphMetadata").path("edges");
+
+            assertThat(edges).hasSize(1);
+            JsonNode edge = edges.get(0);
+            assertThat(edge.path("name").asText()).isEqualTo("targetUser");
+            assertThat(edge.path("targetLabel").asText()).isEqualTo("User");
+            assertThat(edge.path("relationType").asText()).isEqualTo("FOLLOWS");
+            assertThat(edge.has("field")).isFalse(); // field == name is omitted from JSON
+            assertThat(edge.path("direction").asText()).isEqualTo("INCOMING");
+            assertThat(edge.path("bidirectional").asBoolean()).isTrue();
+            assertThat(edge.path("inverseType").asText()).isEqualTo("FOLLOWED_BY");
+            assertThat(edge.path("description").asText()).isEqualTo("Follows connection");
+            assertThat(edge.path("weighted").asBoolean()).isTrue();
+            assertThat(edge.path("weightField").asText()).isEqualTo("strength");
+            assertThat(edge.path("staticWeight").asDouble()).isEqualTo(2.5);
+        }
+
+        @Test
+        @DisplayName("preserves declared false and zero values in GraphEdgeMetadata")
+        void preservesFalseAndZeroValuesInGraphEdge() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.ZeroLink",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Graph;
+                    import eu.exeris.sdk.annotation.GraphEdge;
+                    import java.util.UUID;
+
+                    @ExerisDomain(module = "social", path = "/zero-links")
+                    @Graph
+                    public class ZeroLink {
+                        private UUID id;
+
+                        @GraphEdge(
+                                type = "CONNECTED",
+                                targetLabel = "Node",
+                                bidirectional = false,
+                                weighted = false,
+                                staticWeight = 0.0
+                        )
+                        private UUID targetNode;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+
+            JsonNode edges = readMetadataRoot(compilation, "ZeroLink")
+                    .path("graphMetadata").path("edges");
+
+            assertThat(edges).hasSize(1);
+            JsonNode edge = edges.get(0);
+            assertThat(edge.path("bidirectional").asBoolean()).isFalse();
+            assertThat(edge.path("weighted").asBoolean()).isFalse();
+            assertThat(edge.path("staticWeight").asDouble()).isEqualTo(0.0);
         }
 
         @TempDir
