@@ -34,18 +34,20 @@ import java.util.stream.Collectors;
  * <ul>
  *   <li>A {@code public static final}
  *       {@code eu.exeris.kernel.spi.graph.model.GraphNodeDescriptor}
- *       {@code NODE_DESCRIPTOR} constant constructed via
- *       {@code GraphNodeDescriptor.create(label, sourceTable)} — pass it to
+ *       {@code NODE_DESCRIPTOR} constant listing the {@code @GraphProperty} names, or
+ *       {@code GraphNodeDescriptor.create(label, sourceTable)} without any — pass it to
  *       {@code GraphEngine.registerNodes(...)} at bootstrap.</li>
  *   <li>One {@code public static final}
  *       {@code eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor}
- *       constant per declared {@link GraphEdgeMetadata}, built via
+ *       constant per declared {@link GraphEdgeMetadata}: the full constructor when the edge
+ *       declares a direction, {@code bidirectional} or a static weight, else
  *       {@code GraphEdgeDescriptor.create(sourceLabel, edgeType, targetLabel)}.
  *       Pass them to {@code GraphEngine.registerEdges(...)} at bootstrap.</li>
  *   <li>{@code syncToGraph(entity)} — opens a {@code GraphSession} via
- *       try-with-resources, calls {@code session.upsertNode(NODE_LABEL,
- *       entity.getId(), null)}, then per declared edge calls
- *       {@code session.upsertEdge(EDGE, sourceId, targetId, 1.0, null)}.</li>
+ *       try-with-resources, calls {@code session.upsertNode(NODE_LABEL, id, properties)}
+ *       with the encoded {@code @GraphProperty} values, or {@code null} without any, then per
+ *       declared edge calls {@code session.upsertEdge(EDGE, sourceId, targetId, weight, null)}
+ *       with the weight described below.</li>
  *   <li>{@code deleteFromGraph(entityId)} — opens a session and calls
  *       {@code session.deleteNode(NODE_LABEL, entityId)}.</li>
  * </ul>

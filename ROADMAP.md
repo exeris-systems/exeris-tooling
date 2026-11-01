@@ -757,6 +757,14 @@ each fix.
       *Counting note.* Earlier entries and PR bodies in this train said "115 processor"; that is
       Codegen Core. The modules are Annotation Processor 107, Codegen Core 115, Codegen Java 429,
       Maven Plugin 53, E2E 28. The totals were real and the label was wrong.
+
+      *State in 0.11.0 (row J2).* SDK 0.13's `GraphEdgeMetadata` carries `field`, `direction`,
+      `bidirectional`, `inverseType`, `description`, `weighted`, `weightField` and `staticWeight`;
+      the processor writes them, accepts more than one edge on a field (each named after the field
+      and its relation type, sharing the field), and `EXT-PROC-1013` is retired. The graph sync
+      emits direction, weight and `@GraphProperty` values. The refusal, the eleven-attribute gap and
+      the absent `direction` above describe 0.8.0–0.10.x. `properties`, `propertyMappings`,
+      `staticProperties` and `computedProperties` still have no component.
 - [ ] **`@SagaTransition` — the flip is deferred to 0.10 (founder decision 2026-09-26).** "Flipping"
       it means processor extraction into `SagaMetadata.transitions` and the SDK `-io` reader landing
       together (ADR-042 lockstep), then `KernelSagaGenerator` emitting the declared edges instead of
