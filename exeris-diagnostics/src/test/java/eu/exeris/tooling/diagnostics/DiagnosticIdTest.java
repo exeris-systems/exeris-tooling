@@ -60,7 +60,6 @@ class DiagnosticIdTest {
         m.put(DiagnosticId.SHARED_SCOPE_REQUIRED, "EXT-PROC-1010");
         m.put(DiagnosticId.SYSTEM_FIELD_ROLE_REPEATED, "EXT-PROC-1011");
         m.put(DiagnosticId.SYSTEM_FIELD_ROLE_CONFLICTS_WITH_OVERRIDE, "EXT-PROC-1012");
-        m.put(DiagnosticId.GRAPH_EDGE_REPEATED_ON_FIELD, "EXT-PROC-1013");
         m.put(DiagnosticId.REAL_TIME_API_ON_TENANT_PARTITIONED, "EXT-PROC-1014");
         m.put(DiagnosticId.ENTITY_WITHOUT_ID_FIELD, "EXT-PROC-1015");
         m.put(DiagnosticId.DOMAIN_EVENT_NAME_RESERVED, "EXT-PROC-1016");

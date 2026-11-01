@@ -3581,9 +3581,11 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * generated graph sync: an edge not extracted here is one the artefact never carries.
      *
      * <p>{@code @GraphEdge} is {@code @Repeatable(GraphEdges.class)}, so both the direct mirror and
-     * the container are read, through the same helper as {@code @SagaStep}. Unlike a saga step, a
-     * field holds at most one edge: the two carriers are counted together and more than one is
-     * refused.
+     * the container are read, through the same helper as {@code @SagaStep}, and counted together.
+     * A field with one edge identifies it by the field's name and leaves {@code field} null. A
+     * field with several gives each the field's name followed by its relation type in title case
+     * ({@code assignee} + {@code REVIEWED_BY} → {@code assigneeReviewedBy}), with a counter for a
+     * repeated type, and carries the field's name in {@code field}, where the getter comes from.
      *
      * <p>Order is field declaration order, which decides the order of the emitted constants. That
      * is the assumption every other extraction here already makes.
@@ -3598,26 +3600,34 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 continue;
             }
 
-            // Repeated on one field: javac replaced the singles with the container. A hand-written
-            // container may also stand beside one direct @GraphEdge (JLS 9.7.5 forbids it only
-            // beside two or more), so both carriers are counted together — the field holds one
-            // edge or it is refused. See refuseRepeatedEdge.
-            List<GraphEdgeMetadata> onField = new ArrayList<>();
+            List<AnnotationMirror> mirrors = new ArrayList<>();
             AnnotationMirror direct = findAnnotation(enclosed, GRAPH_EDGE_FQN);
             if (direct != null) {
-                onField.add(graphEdge(direct, enclosed));
+                mirrors.add(direct);
             }
             AnnotationMirror container = findAnnotation(enclosed, GRAPH_EDGES_FQN);
             if (container != null) {
-                forEachContained(container, contained -> onField.add(graphEdge(contained, enclosed)));
+                forEachContained(container, mirrors::add);
             }
 
-            if (onField.size() > 1) {
-                // Anchored on the direct mirror when there is one: a hand-written container is
-                // not what the author repeated.
-                refuseRepeatedEdge(enclosed, direct != null ? direct : container, onField);
+            if (mirrors.isEmpty()) {
+                continue;
+            }
+
+            String fieldName = enclosed.getSimpleName().toString();
+            if (mirrors.size() == 1) {
+                edges.add(graphEdge(mirrors.getFirst(), fieldName, fieldName));
             } else {
-                edges.addAll(onField);
+                Map<String, Integer> counts = new HashMap<>();
+                for (AnnotationMirror mirror : mirrors) {
+                    Map<String, Object> values = extractAnnotationValues(mirror);
+                    String relationType = blankToNull(getString(values, "type", null));
+                    String suffix = relationType != null ? toTitleCase(relationType) : "";
+                    String baseName = fieldName + suffix;
+                    int count = counts.merge(baseName, 1, Integer::sum);
+                    String edgeName = count > 1 ? baseName + count : baseName;
+                    edges.add(graphEdge(mirror, edgeName, fieldName));
+                }
             }
         }
 
@@ -3625,63 +3635,15 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     }
 
     /**
-     * Refuses two {@code @GraphEdge}s on one field, at the declaration, with the reason.
+     * Extracts one {@code @GraphEdge} mirror into {@link GraphEdgeMetadata}.
      *
-     * <p><b>The record cannot express the shape, and the consumer proves it.</b>
-     * {@code GraphEdgeMetadata.name} does two jobs in {@code KernelGraphSyncGenerator}: it is the
-     * edge's identity — {@code assertDistinctEdgeNames} rejects a repeat outright — and it is how
-     * the entity getter is derived, {@code "get" + capitalize(name)}. Two edges on one field need
-     * the same getter and different identities, and one {@code String} cannot be both.
-     *
-     * <p>Accepting the shape here would produce metadata that builds at {@code javac} time and then
-     * fails the generator with "Duplicate edge names", two stages away from the declaration.
-     * Refusing at the field, naming the real limitation, is the better of the three available
-     * outcomes; silently dropping the repeats is the worst.
-     *
-     * <p>The count covers every carrier on the field: the direct mirror and every element of a
-     * {@code @GraphEdges} container, whether javac synthesised it or the author wrote it.
-     *
-     * <p>Lifting it is an SDK ask: {@code GraphEdgeMetadata} needs the field and the identity as
-     * separate components. Recorded in the ROADMAP.
+     * <p>The label resolves from {@code targetLabel()}, the simple name of {@code target()}
+     * (excluding {@code void.class}), or {@code targetName()}, in that order. Components
+     * corresponding to optional annotation attributes are extracted only when declared
+     * explicitly, matching the SDK source model reader.
      */
-    private void refuseRepeatedEdge(Element field, AnnotationMirror anchor,
-                                    List<GraphEdgeMetadata> repeated) {
-        String types = repeated.stream()
-                .map(e -> e.relationType() != null ? e.relationType() : "(no type)")
-                .collect(Collectors.joining(", "));
-        error(DiagnosticId.GRAPH_EDGE_REPEATED_ON_FIELD,
-                "@GraphEdge is declared " + repeated.size() + " times on field '"
-                        + field.getSimpleName() + "' (" + types + "), and the pipeline cannot carry "
-                        + "that. GraphEdgeMetadata identifies an edge by the field it is declared "
-                        + "on, and the graph-sync generator derives the entity getter from the same "
-                        + "value — so two edges on one field would need one name to be both. "
-                        + "Declare each edge on its own field, or open an SDK change giving "
-                        + "GraphEdgeMetadata a separate identity component.",
-                field, anchor);
-    }
-
-    /**
-     * One {@code @GraphEdge} mirror, narrowed to the three components {@link GraphEdgeMetadata}
-     * carries: the annotated field's name, the target node label, and the relation type.
-     *
-     * <p><b>Target-label precedence, and why it is not just {@code targetLabel()}.</b> The
-     * annotation offers three ways to say what the edge points at — {@code targetLabel()} (the
-     * graph label), {@code target()} (the entity class) and {@code targetName()} (its name when
-     * the class is not on the path). The record holds one. Taking only {@code targetLabel()} would
-     * mean {@code @GraphEdge(type = "OWNED_BY", target = User.class)} — the obvious way to write
-     * one — emitted a descriptor pointing at the generator's {@code "Node"} fallback, which is
-     * nobody's label. So an explicit label wins, then the class's simple name, then the name
-     * string; this mirrors how the node label above is derived from {@code nodeClass} or the
-     * element's own simple name.
-     *
-     * <p>The annotation's remaining eleven attributes — {@code direction}, {@code bidirectional},
-     * {@code inverseType}, {@code weighted}, {@code weightField}, {@code description},
-     * {@code properties}, {@code propertyMappings}, {@code staticProperties},
-     * {@code computedProperties} and {@code target}/{@code targetName} beyond the label above —
-     * have <em>no component in the record to carry them</em>. Extracting them would need an SDK
-     * change first; recorded in the ROADMAP rather than half-read here.
-     */
-    private GraphEdgeMetadata graphEdge(AnnotationMirror mirror, Element field) {
+    private GraphEdgeMetadata graphEdge(AnnotationMirror mirror,
+                                        String edgeName, String fieldName) {
         Map<String, Object> values = extractAnnotationValues(mirror);
 
         String label = blankToNull(getString(values, "targetLabel", null));
@@ -3692,10 +3654,83 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             label = blankToNull(getString(values, "targetName", null));
         }
 
+        String relationType = blankToNull(getString(values, "type", null));
+
+        GraphEdgeMetadata.Direction direction = null;
+        if (values.containsKey("direction")) {
+            String dirName = enumConstantName(values.get("direction"));
+            if (dirName != null) {
+                try {
+                    direction = GraphEdgeMetadata.Direction.valueOf(dirName);
+                } catch (IllegalArgumentException e) {
+                    // unrecognised constant reads as absent
+                }
+            }
+        }
+
+        Boolean bidirectional = values.containsKey("bidirectional")
+                ? getBoolean(values, "bidirectional", false)
+                : null;
+
+        String inverseType = blankToNull(getString(values, "inverseType", null));
+        String description = blankToNull(getString(values, "description", null));
+
+        Boolean weighted = values.containsKey("weighted")
+                ? getBoolean(values, "weighted", false)
+                : null;
+
+        String weightField = blankToNull(getString(values, "weightField", null));
+
+        Double staticWeight = null;
+        if (values.containsKey("staticWeight")) {
+            Object val = values.get("staticWeight");
+            if (val instanceof Number n) {
+                staticWeight = n.doubleValue();
+            }
+        }
+
         return new GraphEdgeMetadata(
-                field.getSimpleName().toString(),
+                edgeName,
                 label,
-                blankToNull(getString(values, "type", null)));
+                relationType,
+                fieldName,
+                direction,
+                bidirectional,
+                inverseType,
+                description,
+                weighted,
+                weightField,
+                staticWeight);
+    }
+
+    private static String toTitleCase(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        if (text.contains("_") || text.contains("-")) {
+            StringBuilder sb = new StringBuilder(text.length());
+            boolean capitalizeNext = true;
+            for (char c : text.toCharArray()) {
+                if (c == '_' || c == '-') {
+                    capitalizeNext = true;
+                } else if (capitalizeNext) {
+                    sb.append(Character.toUpperCase(c));
+                    capitalizeNext = false;
+                } else {
+                    sb.append(Character.toLowerCase(c));
+                }
+            }
+            return sb.toString();
+        }
+        if (Character.isLowerCase(text.charAt(0))) {
+            return Character.toUpperCase(text.charAt(0)) + text.substring(1);
+        }
+        StringBuilder sb = new StringBuilder(text.length());
+        sb.append(Character.toUpperCase(text.charAt(0)));
+        for (int i = 1; i < text.length(); i++) {
+            sb.append(Character.toLowerCase(text.charAt(i)));
+        }
+        return sb.toString();
     }
 
     /** The simple name of a fully-qualified type, or null for {@code void.class} / an absent one. */

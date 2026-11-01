@@ -108,9 +108,7 @@ public enum DiagnosticId {
     SYSTEM_FIELD_ROLE_CONFLICTS_WITH_OVERRIDE("EXT-PROC-1012",
             "A system-field role marker and the matching @ExerisDomain override name different fields."),
 
-    /** {@code @GraphEdge} is repeated on one field. */
-    GRAPH_EDGE_REPEATED_ON_FIELD("EXT-PROC-1013",
-            "@GraphEdge is declared more than once on one field."),
+    // EXT-PROC-1013 is retired (docs/diagnostics.md, "Retired identifiers") and is never allocated again.
 
     /**
      * {@code @ExerisDomain(realTimeApi = true)} on a {@code TENANT} or {@code UNIVERSE} entity: kernel

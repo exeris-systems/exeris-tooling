@@ -467,9 +467,8 @@ keys those predicates assume (`ConnectionInterceptor.SESSION_KEY_TENANT_ID`,
 The kernel takes more than the AST carries, in two families:
 
 - `GraphEdgeDescriptor(sourceNode, edgeType, targetNode, weight, bidirectional, direction,
-  tableName)` accepts **weight, bidirectional and direction** — three of the eleven `@GraphEdge`
-  attributes recorded below as having no component. The gap is `GraphEdgeMetadata`'s three
-  components.
+  tableName)` accepts **weight, bidirectional and direction**. SDK 0.13's `GraphEdgeMetadata`
+  carries them, and the 0.11.0 graph sync emits them; `tableName` has no component.
 - `GraphNodeDescriptor(nodeLabel, sourceTable, idProperty, properties, syncToGraph)` — likewise for
   `@Graph.idProperty`, `.sourceTable`, `.syncToGraph`.
 

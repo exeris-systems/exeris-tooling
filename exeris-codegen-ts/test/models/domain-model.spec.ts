@@ -269,6 +269,36 @@ describe('GraphEdgeMetadataSchema + GraphMetadataSchema', () => {
     expect(GraphEdgeMetadataSchema.parse({ name: 'placedBy' })).toEqual({ name: 'placedBy' });
   });
 
+  it('keeps all 0.13 components of a fully-populated GraphEdgeMetadata document', () => {
+    const result = GraphEdgeMetadataSchema.parse({
+      name: 'friendsFriendOf',
+      targetLabel: 'User',
+      relationType: 'FRIEND_OF',
+      field: 'friends',
+      direction: 'BOTH',
+      bidirectional: true,
+      inverseType: 'FRIENDED_BY',
+      description: 'Mutual friendships',
+      weighted: true,
+      weightField: 'affinityScore',
+      staticWeight: 2.5,
+    });
+
+    expect(result).toEqual({
+      name: 'friendsFriendOf',
+      targetLabel: 'User',
+      relationType: 'FRIEND_OF',
+      field: 'friends',
+      direction: 'BOTH',
+      bidirectional: true,
+      inverseType: 'FRIENDED_BY',
+      description: 'Mutual friendships',
+      weighted: true,
+      weightField: 'affinityScore',
+      staticWeight: 2.5,
+    });
+  });
+
   it('does not manufacture a direction the pipeline never carried', () => {
     const result = GraphEdgeMetadataSchema.parse({ name: 'placedBy', targetLabel: 'User' });
 
