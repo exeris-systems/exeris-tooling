@@ -2,6 +2,7 @@ package eu.exeris.tooling.codegen.java.kernel;
 
 import com.palantir.javapoet.AnnotationSpec;
 import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.FieldSpec;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterSpec;
@@ -18,10 +19,12 @@ import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
 import eu.exeris.tooling.codegen.java.support.ServerOwnedFields;
 import eu.exeris.tooling.codegen.java.support.NameCasing;
+import eu.exeris.tooling.codegen.java.support.DomainTypeKind;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.ParamSource;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
@@ -95,10 +98,18 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
     private static final ClassName UUID = ClassName.get("java.util", "UUID");
     private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
     private static final ClassName BIG_DECIMAL = ClassName.get("java.math", "BigDecimal");
+    /** The java.time types a query parameter is read with their own {@code parse(CharSequence)}. */
+    private static final java.util.Set<String> PARSED_TIME_TYPES = java.util.Set.of(
+            "java.time.LocalDateTime", "java.time.Instant", "java.time.OffsetDateTime");
+
     private static final ClassName ILLEGAL_ARGUMENT_EXCEPTION =
             ClassName.get("java.lang", "IllegalArgumentException");
     private static final ClassName RUNTIME_EXCEPTION =
             ClassName.get("java.lang", "RuntimeException");
+    private static final ClassName URL_DECODER =
+            ClassName.get("java.net", "URLDecoder");
+    private static final ClassName STANDARD_CHARSETS =
+            ClassName.get("java.nio.charset", "StandardCharsets");
     /** JavaPoet parameter name for the {@code HttpExchange} every handler method takes. */
     private static final String EXCHANGE_PARAM = "exchange";
     /** The emitted method that answers a write naming a missing row (ADR-076 Amendment 1). */
@@ -216,13 +227,29 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         // emitted as a kernel HttpStreamHandler by KernelActionStreamHandlerGenerator
         // and bound to a streamRoute(...), so a respond-once handle<Action> method
         // for it would be dead (unrouted) code — skip it.
+        boolean hasActionQueryParams = false;
+        boolean hasActionBoolQueryParams = false;
+        boolean hasActionDateQueryParams = false;
         if (metadata.hasActions()) {
             for (ActionMetadata action : metadata.actions()) {
                 if (action.streaming()) {
                     continue;
                 }
-                if (action.hasParams()) {
+                boolean hasBodyParams = action.params().stream()
+                        .anyMatch(p -> p.effectiveBindingSource() == ParamSource.BODY);
+                if (hasBodyParams) {
                     handlerBuilder.addType(buildActionRequestRecord(action));
+                }
+                for (ActionParamMetadata p : action.params()) {
+                    if (p.effectiveBindingSource() == ParamSource.QUERY) {
+                        hasActionQueryParams = true;
+                        DomainTypeKind kind = DomainTypeKind.of(p.type());
+                        if (kind == DomainTypeKind.BOOL) {
+                            hasActionBoolQueryParams = true;
+                        } else if (kind == DomainTypeKind.LOCAL_DATE) {
+                            hasActionDateQueryParams = true;
+                        }
+                    }
                 }
                 handlerBuilder.addMethod(buildActionHandler(
                         action, entityType, optionalOfEntity, selfType, entityLower, metadata, tenantPartitioned,
@@ -244,6 +271,15 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                                     UNPROCESSABLE_CONTENT_REASON)
                             .build())
                     .addMethod(buildRespondReferenceNotFound());
+        }
+        if (hasActionQueryParams) {
+            handlerBuilder.addMethod(buildQueryParam());
+            if (hasActionBoolQueryParams) {
+                handlerBuilder.addMethod(buildParseBoolean());
+            }
+            if (hasActionDateQueryParams) {
+                handlerBuilder.addMethod(buildParseDate());
+            }
         }
         handlerBuilder.addMethod(buildRawQuery());
         handlerBuilder.addMethod(buildExtractPathId());
@@ -639,12 +675,37 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         // CRUD routes; the trailing /actions/{name} segment doesn't change it.
         appendPathIdGuard(method);
 
-        if (action.hasParams()) {
+        List<ActionParamMetadata> queryParams = action.params().stream()
+                .filter(p -> p.effectiveBindingSource() == ParamSource.QUERY)
+                .toList();
+        List<ActionParamMetadata> bodyParams = action.params().stream()
+                .filter(p -> p.effectiveBindingSource() == ParamSource.BODY)
+                .toList();
+
+        if (!bodyParams.isEmpty()) {
             ClassName requestType = selfType.nestedClass(actionRequestName(action));
             method.addStatement("$T request", requestType)
                     .beginControlFlow("try")
                     .addStatement("request = parseBody(exchange, $T.class)", requestType);
             appendBodyDecodeCatches(method);
+        }
+
+        if (!queryParams.isEmpty()) {
+            for (ActionParamMetadata p : queryParams) {
+                method.addStatement("$T $L", typeNameOf(p.type()), queryParamLocal(p));
+            }
+            method.addStatement("String rawQuery = rawQuery(exchange)")
+                    .beginControlFlow("try");
+            for (ActionParamMetadata p : queryParams) {
+                appendQueryParamRead(method, p);
+            }
+            // A java.time parse failure is a DateTimeParseException, which is not an
+            // IllegalArgumentException; both are the caller's malformed value.
+            method.nextControlFlow("catch ($T | $T e)", ILLEGAL_ARGUMENT_EXCEPTION,
+                            ClassName.get("java.time.format", "DateTimeParseException"))
+                    .addStatement("exchange.respond($T.BAD_REQUEST)", HTTP_STATUS)
+                    .addStatement("return")
+                    .endControlFlow();
         }
 
         method.beginControlFlow("try")
@@ -657,7 +718,9 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
 
         if (action.hasParams()) {
             String args = action.params().stream()
-                    .map(p -> "request." + p.name() + "()")
+                    .map(p -> p.effectiveBindingSource() == ParamSource.QUERY
+                            ? queryParamLocal(p)
+                            : "request." + p.name() + "()")
                     .collect(java.util.stream.Collectors.joining(", "));
             method.addStatement("entity.$L($L)", action.effectiveMethodName(), args);
         } else {
@@ -682,17 +745,169 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
     }
 
     /** Emits the per-action request record (canonical constructor = {@code @ActionParam}
-     *  components, in declaration order). Decoded by {@code parseBody} via the ADR-036
+     *  body components, in declaration order). Decoded by {@code parseBody} via the ADR-036
      *  codec SPI, exactly like the CRUD body. */
     static TypeSpec buildActionRequestRecord(ActionMetadata action) {
         MethodSpec.Builder canonical = MethodSpec.constructorBuilder().addModifiers(Modifier.PUBLIC);
         for (ActionParamMetadata p : action.params()) {
-            canonical.addParameter(ParameterSpec.builder(typeNameOf(p.type()), p.name()).build());
+            if (p.effectiveBindingSource() == ParamSource.BODY) {
+                canonical.addParameter(ParameterSpec.builder(typeNameOf(p.type()), p.name()).build());
+            }
         }
         return TypeSpec.recordBuilder(actionRequestName(action))
                 .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
                 .addJavadoc("Request body for the {@code $L} action.\n", action.name())
                 .recordConstructor(canonical.build())
+                .build();
+    }
+
+    private static String queryParamLocal(ActionParamMetadata p) {
+        return "query" + NameCasing.pascal(p.name());
+    }
+
+    private static void appendQueryParamRead(
+            MethodSpec.Builder method, ActionParamMetadata p) {
+        String varName = queryParamLocal(p);
+        // The underscore keeps the raw local apart from every camelCase local the handler declares
+        // (rawQuery, request, entity, ...) and from every queryX value local, whatever the name.
+        String rawName = "raw_" + p.name();
+        String key = p.effectiveQueryKey();
+        method.addStatement("String $L = queryParam(rawQuery, $S)", rawName, key);
+        if (p.defaultValue() != null && !p.defaultValue().isBlank()) {
+            method.beginControlFlow("if ($L == null)", rawName)
+                    .addStatement("$L = $S", rawName, p.defaultValue())
+                    .endControlFlow();
+        }
+        if (isCharType(p.type())) {
+            method.beginControlFlow("if ($L != null && $L.length() != 1)", rawName, rawName)
+                    .addStatement("throw new $T($S + $S)", ILLEGAL_ARGUMENT_EXCEPTION,
+                            "query parameter is not a single character: ", key)
+                    .endControlFlow();
+        }
+        if (p.required()) {
+            method.beginControlFlow("if ($L == null)", rawName)
+                    .addStatement("throw new $T($S + $S)", ILLEGAL_ARGUMENT_EXCEPTION,
+                            "missing required query parameter: ", key)
+                    .nextControlFlow("else")
+                    .addStatement("$L = $L", varName, parseQueryValue(p, rawName))
+                    .endControlFlow();
+        } else {
+            method.beginControlFlow("if ($L == null)", rawName)
+                    .addStatement("$L = $L", varName, defaultValueForType(p.type()))
+                    .nextControlFlow("else")
+                    .addStatement("$L = $L", varName, parseQueryValue(p, rawName))
+                    .endControlFlow();
+        }
+    }
+
+    private static String defaultValueForType(String type) {
+        return switch (type) {
+            case "boolean" -> "false";
+            case "byte" -> "(byte) 0";
+            case "short" -> "(short) 0";
+            case "int" -> "0";
+            case "long" -> "0L";
+            case "char" -> "'\\0'";
+            case "float" -> "0.0f";
+            case "double" -> "0.0d";
+            default -> "null";
+        };
+    }
+
+    private static boolean isCharType(String type) {
+        return "char".equals(type) || "java.lang.Character".equals(type) || "Character".equals(type);
+    }
+
+    private static CodeBlock parseQueryValue(ActionParamMetadata p, String raw) {
+        String type = p.type();
+        if (isCharType(type)) {
+            return CodeBlock.of("$L.charAt(0)", raw);
+        }
+        if (PARSED_TIME_TYPES.contains(type)) {
+            return CodeBlock.of("$T.parse($L)", typeNameOf(type), raw);
+        }
+        DomainTypeKind kind = DomainTypeKind.of(type);
+        return switch (kind) {
+            case STRING -> CodeBlock.of("$L", raw);
+            case INT -> DomainTypeKind.isPrimitive(type)
+                    ? CodeBlock.of("Integer.parseInt($L)", raw)
+                    : CodeBlock.of("Integer.valueOf($L)", raw);
+            case LONG -> DomainTypeKind.isPrimitive(type)
+                    ? CodeBlock.of("Long.parseLong($L)", raw)
+                    : CodeBlock.of("Long.valueOf($L)", raw);
+            case SHORT -> DomainTypeKind.isPrimitive(type)
+                    ? CodeBlock.of("Short.parseShort($L)", raw)
+                    : CodeBlock.of("Short.valueOf($L)", raw);
+            case BYTE -> DomainTypeKind.isPrimitive(type)
+                    ? CodeBlock.of("Byte.parseByte($L)", raw)
+                    : CodeBlock.of("Byte.valueOf($L)", raw);
+            case BOOL -> CodeBlock.of("parseBoolean($L)", raw);
+            case FLOAT -> DomainTypeKind.isPrimitive(type)
+                    ? CodeBlock.of("Float.parseFloat($L)", raw)
+                    : CodeBlock.of("Float.valueOf($L)", raw);
+            case DOUBLE -> DomainTypeKind.isPrimitive(type)
+                    ? CodeBlock.of("Double.parseDouble($L)", raw)
+                    : CodeBlock.of("Double.valueOf($L)", raw);
+            case BIG_DECIMAL -> CodeBlock.of("new $T($L)", BIG_DECIMAL, raw);
+            case UUID -> CodeBlock.of("$T.fromString($L)", UUID, raw);
+            case LOCAL_DATE -> CodeBlock.of("parseDate($L)", raw);
+            default -> {
+                TypeName typeName = typeNameOf(type);
+                yield CodeBlock.of("$T.valueOf($L)", typeName, raw);
+            }
+        };
+    }
+
+    private static MethodSpec buildQueryParam() {
+        return MethodSpec.methodBuilder("queryParam")
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(String.class)
+                .addParameter(String.class, "rawQuery")
+                .addParameter(String.class, "name")
+                .beginControlFlow("if (rawQuery.isEmpty())")
+                .addStatement("return null")
+                .endControlFlow()
+                .beginControlFlow("for (String pair : rawQuery.split($S))", "&")
+                .beginControlFlow("if (pair.isEmpty())")
+                .addStatement("continue")
+                .endControlFlow()
+                .addStatement("int eq = pair.indexOf('=')")
+                .addStatement("String key = $T.decode(eq < 0 ? pair : pair.substring(0, eq), $T.UTF_8)",
+                        URL_DECODER, STANDARD_CHARSETS)
+                .beginControlFlow("if (key.equals(name))")
+                .addStatement("return eq < 0 ? $S : $T.decode(pair.substring(eq + 1), $T.UTF_8)",
+                        "", URL_DECODER, STANDARD_CHARSETS)
+                .endControlFlow()
+                .endControlFlow()
+                .addStatement("return null")
+                .build();
+    }
+
+    private static MethodSpec buildParseBoolean() {
+        return MethodSpec.methodBuilder("parseBoolean")
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(TypeName.BOOLEAN)
+                .addParameter(String.class, "value")
+                .beginControlFlow("if (value.equalsIgnoreCase($S))", "true")
+                .addStatement("return true")
+                .endControlFlow()
+                .beginControlFlow("if (value.equalsIgnoreCase($S))", "false")
+                .addStatement("return false")
+                .endControlFlow()
+                .addStatement("throw new $T($S + value)", ILLEGAL_ARGUMENT_EXCEPTION, "not a boolean: ")
+                .build();
+    }
+
+    private static MethodSpec buildParseDate() {
+        return MethodSpec.methodBuilder("parseDate")
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(ClassName.get("java.time", "LocalDate"))
+                .addParameter(String.class, "value")
+                .beginControlFlow("try")
+                .addStatement("return $T.parse(value)", ClassName.get("java.time", "LocalDate"))
+                .nextControlFlow("catch ($T e)", ClassName.get("java.time", "DateTimeException"))
+                .addStatement("throw new $T($S + value, e)", ILLEGAL_ARGUMENT_EXCEPTION, "not an ISO date: ")
+                .endControlFlow()
                 .build();
     }
 

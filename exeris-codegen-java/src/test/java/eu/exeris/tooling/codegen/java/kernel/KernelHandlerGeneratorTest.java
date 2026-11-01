@@ -8,6 +8,7 @@ import eu.exeris.sdk.sourcemodel.ast.DataScope;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.ParamSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -1017,5 +1018,124 @@ class KernelHandlerGeneratorTest {
         assertThat(getAll.indexOf("respondTenantUnbound(exchange)"))
                 .isNotNegative()
                 .isLessThan(getAll.indexOf("OrderListQuery.parse"));
+    }
+
+    @Test
+    @DisplayName("an action with @QueryParam parameters reads them from rawQuery, converts them, and catches 400")
+    void actionWithQueryParamsReadsAndCatches400() {
+        ActionParamMetadata qParam = ActionParamMetadata.builder("term", "String")
+                .bindingSource(ParamSource.QUERY)
+                .queryKey("q")
+                .required(true)
+                .build();
+        ActionParamMetadata limitParam = ActionParamMetadata.builder("limit", "int")
+                .bindingSource(ParamSource.QUERY)
+                .required(false)
+                .defaultValue("50")
+                .build();
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .actions(List.of(
+                        ActionMetadata.builder("search")
+                                .methodName("searchOrders")
+                                .params(List.of(qParam, limitParam))
+                                .build()))
+                .build();
+
+        String handler = new KernelHandlerGenerator().generate(metadata).content();
+
+        // No request record emitted because all parameters are QUERY
+        assertThat(handler).doesNotContain("record SearchRequest");
+        assertThat(handler).doesNotContain("parseBody(exchange, SearchRequest.class)");
+
+        // The handler reads query params, converts them, and handles missing required
+        assertThat(handler).contains("void handleSearch(HttpExchange exchange)");
+        assertThat(handler).contains("String rawQuery = rawQuery(exchange);");
+        assertThat(handler).contains("String queryTerm;");
+        assertThat(handler).contains("int queryLimit;");
+        assertThat(handler).contains("String raw_term = queryParam(rawQuery, \"q\");");
+        assertThat(handler).contains("if (raw_term == null) {");
+        assertThat(handler).contains("throw new IllegalArgumentException(\"missing required query parameter: \" + \"q\");");
+        assertThat(handler).contains("String raw_limit = queryParam(rawQuery, \"limit\");");
+        assertThat(handler).contains("if (raw_limit == null) {");
+        assertThat(handler).contains("raw_limit = \"50\";");
+        assertThat(handler).contains("queryLimit = Integer.parseInt(raw_limit);");
+        assertThat(handler).contains("catch (IllegalArgumentException | DateTimeParseException e) {");
+        assertThat(handler).contains("exchange.respond(HttpStatus.BAD_REQUEST);");
+        assertThat(handler).contains("entity.searchOrders(queryTerm, queryLimit);");
+    }
+
+    @Test
+    @DisplayName("a @QueryParam named query and a char parameter emit locals that do not collide, and a single-character read")
+    void queryParamNamedQueryAndCharParam() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .actions(List.of(ActionMetadata.builder("lookup").methodName("lookup")
+                        .params(List.of(
+                                ActionParamMetadata.builder("query", "String").bindingSource(ParamSource.QUERY).build(),
+                                ActionParamMetadata.builder("grade", "char").bindingSource(ParamSource.QUERY)
+                                        .required(false).build()))
+                        .build()))
+                .build();
+
+        String handler = new KernelHandlerGenerator().generate(metadata).content();
+
+        assertThat(handler).contains("String rawQuery = rawQuery(exchange);");
+        assertThat(handler).contains("String raw_query = queryParam(rawQuery, \"query\");");
+        assertThat(handler).contains("if (raw_grade != null && raw_grade.length() != 1) {");
+        assertThat(handler).contains("queryGrade = raw_grade.charAt(0);");
+        assertThat(handler).contains("entity.lookup(queryQuery, queryGrade);");
+    }
+
+    @Test
+    @DisplayName("a java.time query parameter is read with its own parse, and a malformed one answers 400")
+    void javaTimeQueryParamIsParsed() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .actions(List.of(ActionMetadata.builder("since").methodName("since")
+                        .params(List.of(
+                                ActionParamMetadata.builder("from", "java.time.Instant").bindingSource(ParamSource.QUERY).build(),
+                                ActionParamMetadata.builder("at", "java.time.LocalDateTime").bindingSource(ParamSource.QUERY)
+                                        .required(false).build()))
+                        .build()))
+                .build();
+
+        String handler = new KernelHandlerGenerator().generate(metadata).content();
+
+        assertThat(handler).contains("queryFrom = Instant.parse(raw_from);");
+        assertThat(handler).contains("queryAt = LocalDateTime.parse(raw_at);");
+        assertThat(handler).contains("catch (IllegalArgumentException | DateTimeParseException e) {");
+    }
+
+    @Test
+    @DisplayName("an action with mixed QUERY and BODY parameters reads both and passes them to entity method")
+    void actionWithMixedParamsReadsBoth() {
+        ActionParamMetadata qParam = ActionParamMetadata.builder("notify", "boolean")
+                .bindingSource(ParamSource.QUERY)
+                .queryKey("notify")
+                .required(false)
+                .defaultValue("true")
+                .build();
+        ActionParamMetadata bodyParam = ActionParamMetadata.builder("assignee", "String")
+                .bindingSource(ParamSource.BODY)
+                .required(true)
+                .build();
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .actions(List.of(
+                        ActionMetadata.builder("reassign")
+                                .methodName("reassignOrder")
+                                .params(List.of(qParam, bodyParam))
+                                .build()))
+                .build();
+
+        String handler = new KernelHandlerGenerator().generate(metadata).content();
+
+        // Request record emitted with ONLY the body parameter
+        assertThat(handler).contains("public static record ReassignRequest(String assignee) {");
+        assertThat(handler).doesNotContain("boolean notify");
+        assertThat(handler).contains("parseBody(exchange, ReassignRequest.class)");
+        assertThat(handler).contains("boolean queryNotify;");
+        assertThat(handler).contains("entity.reassignOrder(queryNotify, request.assignee());");
     }
 }

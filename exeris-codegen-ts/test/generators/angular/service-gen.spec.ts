@@ -356,6 +356,62 @@ describe('ServiceGenerator custom actions emission', () => {
     // Only the 5 fixed CRUD methods + no custom action method comments.
     expect(content).not.toContain('/** Execute');
   });
+
+  it('action with @QueryParam → HttpParams with effective query key, empty body {}', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      actions: [{
+        name: 'search',
+        params: [
+          { name: 'term', type: 'String', bindingSource: 'QUERY', queryKey: 'q' },
+          { name: 'limit', type: 'int', bindingSource: 'QUERY' },
+        ],
+      }],
+    }), CTX)!.content;
+
+    expect(content).toContain('search(id: string, term: string, limit: number): Observable<Order>');
+    expect(content).toContain('let httpParams = new HttpParams();');
+    expect(content).toContain("httpParams = httpParams.set('q', String(term));");
+    expect(content).toContain("httpParams = httpParams.set('limit', String(limit));");
+    expect(content).toContain('this.http.post<Order>(`${this.baseUrl}/${id}/actions/search`, {}, { params: httpParams })');
+  });
+
+  it('action with mixed QUERY and BODY params → HttpParams for query, body object for body', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      actions: [{
+        name: 'reassign',
+        params: [
+          { name: 'notify', type: 'boolean', bindingSource: 'QUERY', queryKey: 'notify' },
+          { name: 'assignee', type: 'String', bindingSource: 'BODY' },
+        ],
+      }],
+    }), CTX)!.content;
+
+    expect(content).toContain('reassign(id: string, notify: boolean, assignee: string): Observable<Order>');
+    expect(content).toContain('let httpParams = new HttpParams();');
+    expect(content).toContain("httpParams = httpParams.set('notify', String(notify));");
+    expect(content).toContain('this.http.post<Order>(`${this.baseUrl}/${id}/actions/reassign`, { assignee }, { params: httpParams })');
+  });
+
+  it('names its locals apart from action parameters called id, params or httpParams, and escapes the query key', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      actions: [{
+        name: 'lookup',
+        params: [
+          { name: 'id', type: 'String', bindingSource: 'QUERY', queryKey: "it's" },
+          { name: 'params', type: 'String', bindingSource: 'QUERY' },
+          { name: 'httpParams', type: 'String', bindingSource: 'QUERY' },
+        ],
+      }],
+    }), CTX)!.content;
+
+    expect(content).toContain('lookup(entityId: string, id: string, params: string, httpParams: string): Observable<Order>');
+    expect(content).toContain('let httpParams2 = new HttpParams();');
+    expect(content).toContain("httpParams2 = httpParams2.set('it\\'s', String(id));");
+    expect(content).toContain('this.http.post<Order>(`${this.baseUrl}/${entityId}/actions/lookup`, {}, { params: httpParams2 })');
+  });
 });
 
 // ---------- collectEnumTypes ----------
