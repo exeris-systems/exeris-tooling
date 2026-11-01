@@ -1825,4 +1825,152 @@ describe('FormGenerator — group text is safe in the template', () => {
     expect(content).not.toContain('{{ y }}');
   });
 });
+
+describe('FormGenerator @Tab tabs layout', () => {
+  const gen = new FormGenerator();
+
+  it('renders tabs in order (by order then declaration), accessible tablist/tab/tabpanel, and first tab active signal', () => {
+    const content = gen.generate(domain({
+      entityName: 'Employee',
+      fields: [
+        field({ name: 'first', type: 'String' }),
+        field({ name: 'salary', type: 'BigDecimal' }),
+        field({ name: 'emergency', type: 'String' }),
+      ],
+      uiMetadata: {
+        tabs: [
+          { name: 'compensation', label: 'Compensation', order: 2, icon: '💰', fields: ['salary'] },
+          { name: 'basic', label: 'Basic Info', order: 1, icon: '👤', fields: ['first'] },
+          { name: 'emergency', order: 2, fields: ['emergency'] },
+        ],
+      },
+    }), CTX)!.content;
+
+    // Accessible tablist
+    expect(content).toContain('role="tablist"');
+
+    // Tab buttons ordered by order (basic:1, compensation:2, emergency:2)
+    const basicTabIdx = content.indexOf('data-testid="tab-basic"');
+    const compTabIdx = content.indexOf('data-testid="tab-compensation"');
+    const emergTabIdx = content.indexOf('data-testid="tab-emergency"');
+    expect(basicTabIdx).toBeGreaterThan(-1);
+    expect(compTabIdx).toBeGreaterThan(basicTabIdx);
+    expect(emergTabIdx).toBeGreaterThan(compTabIdx);
+
+    // Tab attributes
+    expect(content).toContain('id="tab-basic" aria-controls="panel-basic" [attr.aria-selected]="activeTab() === \'basic\'"');
+    expect(content).toContain('<span class="mr-2">👤</span>Basic Info');
+    expect(content).toContain('<span class="mr-2">💰</span>Compensation');
+    // Name fallback for emergency tab
+    expect(content).toContain('id="tab-emergency" aria-controls="panel-emergency"');
+    expect(content).toContain('emergency</button>');
+
+    // Tab panels with role="tabpanel" and [hidden]
+    expect(content).toContain('<div role="tabpanel" id="panel-basic" aria-labelledby="tab-basic" [hidden]="activeTab() !== \'basic\'" data-testid="tabpanel-basic"');
+    expect(content).toContain('<div role="tabpanel" id="panel-compensation" aria-labelledby="tab-compensation" [hidden]="activeTab() !== \'compensation\'" data-testid="tabpanel-compensation"');
+    expect(content).toContain('<div role="tabpanel" id="panel-emergency" aria-labelledby="tab-emergency" [hidden]="activeTab() !== \'emergency\'" data-testid="tabpanel-emergency"');
+
+    // First tab (basic, order 1) is active signal
+    expect(content).toContain("readonly activeTab = signal<string>('basic');");
+
+    // Fields render inside their respective panels
+    const basicPanelIdx = content.indexOf('data-testid="tabpanel-basic"');
+    const compPanelIdx = content.indexOf('data-testid="tabpanel-compensation"');
+    const emergPanelIdx = content.indexOf('data-testid="tabpanel-emergency"');
+    const firstFieldIdx = content.indexOf('data-testid="field-first"');
+    const salaryFieldIdx = content.indexOf('data-testid="field-salary"');
+    const emergFieldIdx = content.indexOf('data-testid="field-emergency"');
+
+    expect(firstFieldIdx).toBeGreaterThan(basicPanelIdx);
+    expect(firstFieldIdx).toBeLessThan(compPanelIdx);
+    expect(salaryFieldIdx).toBeGreaterThan(compPanelIdx);
+    expect(salaryFieldIdx).toBeLessThan(emergPanelIdx);
+    expect(emergFieldIdx).toBeGreaterThan(emergPanelIdx);
+  });
+
+  it('restricts group sections inside a tab to that tab member fields', () => {
+    const content = gen.generate(domain({
+      entityName: 'Employee',
+      fields: [
+        field({ name: 'f1', type: 'String' }),
+        field({ name: 'f2', type: 'String' }),
+        field({ name: 'f3', type: 'String' }),
+      ],
+      uiMetadata: {
+        groups: [
+          { name: 'commonGroup', label: 'Common Group', order: 1, fields: ['f1', 'f2', 'f3'] },
+        ],
+        tabs: [
+          { name: 'tab1', label: 'Tab 1', order: 1, fields: ['f1'] },
+          { name: 'tab2', label: 'Tab 2', order: 2, fields: ['f2'] },
+        ],
+      },
+    }), CTX)!.content;
+
+    const tab1PanelIdx = content.indexOf('data-testid="tabpanel-tab1"');
+    const tab2PanelIdx = content.indexOf('data-testid="tabpanel-tab2"');
+
+    // Both panels render the commonGroup section, but restricted to their fields
+    const groupInTab1 = content.indexOf('data-testid="group-commonGroup"', tab1PanelIdx);
+    const groupInTab2 = content.indexOf('data-testid="group-commonGroup"', tab2PanelIdx);
+
+    expect(groupInTab1).toBeGreaterThan(tab1PanelIdx);
+    expect(groupInTab1).toBeLessThan(tab2PanelIdx);
+    expect(groupInTab2).toBeGreaterThan(tab2PanelIdx);
+
+    // f3 is untabbed and renders after tab panels in commonGroup
+    const closeTab2Idx = content.indexOf('</div>', tab2PanelIdx);
+    const untabbedGroupIdx = content.indexOf('data-testid="group-commonGroup"', closeTab2Idx);
+    expect(untabbedGroupIdx).toBeGreaterThan(closeTab2Idx);
+  });
+
+  it('renders untabbed fields after the tab strip inside the form element', () => {
+    const content = gen.generate(domain({
+      entityName: 'Employee',
+      fields: [
+        field({ name: 'inTab', type: 'String' }),
+        field({ name: 'untabbedField', type: 'String' }),
+      ],
+      uiMetadata: {
+        tabs: [
+          { name: 'tab1', label: 'Tab 1', order: 1, fields: ['inTab'] },
+        ],
+      },
+    }), CTX)!.content;
+
+    const panelIdx = content.indexOf('data-testid="tabpanel-tab1"');
+    const panelEndIdx = content.indexOf('</div>', panelIdx);
+    const untabbedFieldIdx = content.indexOf('data-testid="field-untabbedField"');
+    const formEndIdx = content.indexOf('</form>');
+
+    // untabbed field is after panel closing div and before </form>
+    expect(untabbedFieldIdx).toBeGreaterThan(panelEndIdx);
+    expect(untabbedFieldIdx).toBeLessThan(formEndIdx);
+  });
+
+  it('no tabs declared → output is byte-identical to prior output', () => {
+    const withoutTabs = gen.generate(domain({
+      entityName: 'Employee',
+      fields: [
+        field({ name: 'first', type: 'String' }),
+        field({ name: 'last', type: 'String' }),
+      ],
+    }), CTX)!.content;
+
+    const withEmptyTabs = gen.generate(domain({
+      entityName: 'Employee',
+      fields: [
+        field({ name: 'first', type: 'String' }),
+        field({ name: 'last', type: 'String' }),
+      ],
+      uiMetadata: {
+        tabs: [],
+      },
+    }), CTX)!.content;
+
+    expect(withEmptyTabs).toBe(withoutTabs);
+    expect(withoutTabs).not.toContain('role="tablist"');
+    expect(withoutTabs).not.toContain('activeTab = signal');
+  });
+});
 });

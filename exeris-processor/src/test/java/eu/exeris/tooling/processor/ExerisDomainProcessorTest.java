@@ -9,7 +9,9 @@ import eu.exeris.sdk.sourcemodel.ast.BindingMetadata;
 import eu.exeris.sdk.sourcemodel.ast.BlockType;
 import eu.exeris.sdk.sourcemodel.ast.ComponentNodeMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.NavMenuMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RegionMetadata;
+import eu.exeris.sdk.sourcemodel.ast.UIMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ViewKind;
 import eu.exeris.sdk.sourcemodel.ast.ViewMetadata;
 import eu.exeris.sdk.sourcemodel.mutation.BaselineTrust;
@@ -3538,18 +3540,18 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("warns on @NavMenu — a type-level annotation no extraction ever touched")
+        @DisplayName("warns on @Channel — a type-level annotation no extraction ever touched")
         void strictWarnsOnUnreadTypeAnnotation() {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.Account",
                     """
                     package com.example;
 
+                    import eu.exeris.sdk.annotation.Channel;
                     import eu.exeris.sdk.annotation.ExerisDomain;
-                    import eu.exeris.sdk.annotation.NavMenu;
 
                     @ExerisDomain(module = "core", path = "/accounts")
-                    @NavMenu(label = "Accounts")
+                    @Channel
                     public class Account { private java.util.UUID id;
                         private String name;
                     }
@@ -3562,8 +3564,8 @@ class ExerisDomainProcessorTest {
                     .compile(source);
 
             assertThat(compilation).succeeded();
-            assertThat(hasUnreadWarningFor(compilation, "@NavMenu"))
-                    .as("warning naming @NavMenu")
+            assertThat(hasUnreadWarningFor(compilation, "@Channel"))
+                    .as("warning naming @Channel")
                     .isTrue();
             // Before C0 this was unreportable by construction: no extraction means no call site,
             // and the audit was driven from call sites. Neither inert registry could hold it.
@@ -3868,11 +3870,11 @@ class ExerisDomainProcessorTest {
                     """
                     package com.example;
 
+                    import eu.exeris.sdk.annotation.Channel;
                     import eu.exeris.sdk.annotation.ExerisDomain;
-                    import eu.exeris.sdk.annotation.NavMenu;
 
                     @ExerisDomain(module = "core", path = "/accounts")
-                    @NavMenu(label = "Accounts")
+                    @Channel
                     public class Account { private java.util.UUID id;
                         private String name;
                     }
@@ -6518,8 +6520,8 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("@Tab is reported as never read")
-        void tabAnnotationIsReportedAsUnread() {
+        @DisplayName("@Tab is extracted and its unconsumed attributes are reported as inert under strict mode")
+        void tabUnconsumedAttributesReportedAsInert() {
             Compilation compilation = strictCompile("Widget", """
                     package com.example;
 
@@ -6530,16 +6532,17 @@ class ExerisDomainProcessorTest {
                     @ExerisDomain(module = "core", path = "/widgets")
                     public class Widget { private java.util.UUID id;
                         @Field(label = "Name")
-                        @Tab(name = "general")
+                        @Tab(name = "general", lazy = true)
                         private String name;
                     }
                     """);
 
             assertThat(compilation).succeeded();
-            assertThat(warnings(compilation, UNREAD))
+            assertThat(warnings(compilation, UNREAD)).isEmpty();
+            assertThat(warnings(compilation, INERT))
                     .singleElement()
-                    .satisfies(m -> assertThat(m).contains("@Tab is set")
-                            .contains("grouping is emitted from @View"));
+                    .satisfies(m -> assertThat(m).contains("@Tab.lazy is set")
+                            .contains("no code generator consumes it"));
         }
 
         @Test
@@ -6588,5 +6591,269 @@ class ExerisDomainProcessorTest {
                 Arguments.of("writeOnly", "writeOnly = true"),
                 Arguments.of("compositeUnique", "compositeUnique = \"g\""),
                 Arguments.of("indexed", "indexed = true"));
+    }
+
+    @Nested
+    @DisplayName("Extraction of @NavMenu and @Tab")
+    class NavMenuAndTabExtractionTests {
+
+        private DomainMetadata compile(String code) throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString("com.example.Order", code);
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeededWithoutWarnings();
+            JavaFileObject file = compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Order.json").orElseThrow();
+            return new ObjectMapper()
+                    .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                    .readValue(readContent(file), DomainMetadata.class);
+        }
+
+        @Test
+        @DisplayName("All @NavMenu attributes are extracted present-only")
+        void allNavMenuAttributesExtracted() throws IOException {
+            DomainMetadata dm = compile("""
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.NavMenu;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    @NavMenu(
+                            group = "Sales",
+                            parent = "Orders",
+                            label = "All Orders",
+                            icon = "shopping_cart",
+                            order = 1,
+                            groupOrder = 2,
+                            groupIcon = "store",
+                            hidden = true,
+                            roles = {"ADMIN", "SALES"},
+                            permissions = {"orders:read"},
+                            badge = "NEW",
+                            badgeColor = "accent",
+                            tooltip = "View orders",
+                            openInNewTab = true,
+                            routePath = "/custom/orders",
+                            queryParams = "status=open",
+                            expanded = true,
+                            divider = NavMenu.Divider.BEFORE
+                    )
+                    public class Order {
+                        private java.util.UUID id;
+                    }
+                    """);
+
+            NavMenuMetadata nav = dm.navMenu();
+            assertThat(nav).isNotNull();
+            assertThat(nav.group()).isEqualTo("Sales");
+            assertThat(nav.parent()).isEqualTo("Orders");
+            assertThat(nav.label()).isEqualTo("All Orders");
+            assertThat(nav.icon()).isEqualTo("shopping_cart");
+            assertThat(nav.order()).isEqualTo(1);
+            assertThat(nav.groupOrder()).isEqualTo(2);
+            assertThat(nav.groupIcon()).isEqualTo("store");
+            assertThat(nav.hidden()).isTrue();
+            assertThat(nav.roles()).containsExactly("ADMIN", "SALES");
+            assertThat(nav.permissions()).containsExactly("orders:read");
+            assertThat(nav.badge()).isEqualTo("NEW");
+            assertThat(nav.badgeColor()).isEqualTo("accent");
+            assertThat(nav.tooltip()).isEqualTo("View orders");
+            assertThat(nav.openInNewTab()).isTrue();
+            assertThat(nav.routePath()).isEqualTo("/custom/orders");
+            assertThat(nav.queryParams()).isEqualTo("status=open");
+            assertThat(nav.expanded()).isTrue();
+            assertThat(nav.divider()).isEqualTo(NavMenuMetadata.Divider.BEFORE);
+        }
+
+        @Test
+        @DisplayName("@NavMenu defaults and signed order 0 preservation")
+        void navMenuDefaultsAndOrderZero() throws IOException {
+            DomainMetadata dm = compile("""
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.NavMenu;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    @NavMenu(order = 0)
+                    public class Order {
+                        private java.util.UUID id;
+                    }
+                    """);
+
+            NavMenuMetadata nav = dm.navMenu();
+            assertThat(nav).isNotNull();
+            assertThat(nav.order()).isEqualTo(0);
+            assertThat(nav.effectiveOrder()).isEqualTo(0);
+            assertThat(nav.label()).isNull();
+            assertThat(nav.group()).isNull();
+            assertThat(nav.parent()).isNull();
+            assertThat(nav.groupOrder()).isNull();
+            assertThat(nav.effectiveGroupOrder()).isEqualTo(999);
+            assertThat(nav.hidden()).isFalse();
+            assertThat(nav.openInNewTab()).isFalse();
+            assertThat(nav.expanded()).isFalse();
+            assertThat(nav.roles()).isEmpty();
+            assertThat(nav.permissions()).isEmpty();
+            assertThat(nav.divider()).isNull();
+            assertThat(nav.effectiveDivider()).isEqualTo(NavMenuMetadata.Divider.NONE);
+        }
+
+        @Test
+        @DisplayName("@NavMenu divider constants map correctly")
+        void navMenuDividerVariants() throws IOException {
+            for (String div : List.of("NONE", "BEFORE", "AFTER")) {
+                DomainMetadata dm = compile("""
+                        package com.example;
+
+                        import eu.exeris.sdk.annotation.ExerisDomain;
+                        import eu.exeris.sdk.annotation.NavMenu;
+
+                        @ExerisDomain(module = "sales", path = "/orders")
+                        @NavMenu(divider = NavMenu.Divider.%s)
+                        public class Order {
+                            private java.util.UUID id;
+                        }
+                        """.formatted(div));
+                assertThat(dm.navMenu().divider())
+                        .isEqualTo(NavMenuMetadata.Divider.valueOf(div));
+            }
+        }
+
+        @Test
+        @DisplayName("@Tab attributes, ordering, and first-declaration absorption rule")
+        void tabAttributesAndFolding() throws IOException {
+            DomainMetadata dm = compile("""
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+                    import eu.exeris.sdk.annotation.Tab;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    public class Order {
+                        private java.util.UUID id;
+
+                        @Field(label = "Field A")
+                        @Tab(
+                                name = "main",
+                                label = "Main Tab",
+                                order = 0,
+                                icon = "info",
+                                lazy = true,
+                                badgeField = "badgeCount",
+                                badgeColor = "accent",
+                                disabled = true,
+                                disabledWhen = "locked",
+                                visibleWhen = "active",
+                                cssClass = "main-tab"
+                        )
+                        private String fieldA;
+
+                        @Field(label = "Field B")
+                        @Tab(
+                                name = "main",
+                                label = "Overwritten Label",
+                                order = 5,
+                                icon = "other",
+                                lazy = false,
+                                disabled = false
+                        )
+                        private String fieldB;
+
+                        @Field(label = "Field C")
+                        @Tab(name = "secondary", label = "Secondary Tab", order = 2)
+                        private String fieldC;
+                    }
+                    """);
+
+            assertThat(dm.uiMetadata()).isNotNull();
+            List<UIMetadata.UITabMetadata> tabs = dm.uiMetadata().tabs();
+            assertThat(tabs).hasSize(2);
+
+            UIMetadata.UITabMetadata mainTab = tabs.get(0);
+            assertThat(mainTab.name()).isEqualTo("main");
+            assertThat(mainTab.label()).isEqualTo("Main Tab");
+            assertThat(mainTab.order()).isEqualTo(0);
+            assertThat(mainTab.icon()).isEqualTo("info");
+            assertThat(mainTab.lazy()).isTrue();
+            assertThat(mainTab.badgeField()).isEqualTo("badgeCount");
+            assertThat(mainTab.badgeColor()).isEqualTo("accent");
+            assertThat(mainTab.disabled()).isTrue();
+            assertThat(mainTab.disabledWhen()).isEqualTo("locked");
+            assertThat(mainTab.visibleWhen()).isEqualTo("active");
+            assertThat(mainTab.cssClass()).isEqualTo("main-tab");
+            assertThat(mainTab.fields()).containsExactly("fieldA", "fieldB");
+
+            UIMetadata.UITabMetadata secondaryTab = tabs.get(1);
+            assertThat(secondaryTab.name()).isEqualTo("secondary");
+            assertThat(secondaryTab.label()).isEqualTo("Secondary Tab");
+            assertThat(secondaryTab.order()).isEqualTo(2);
+            assertThat(secondaryTab.fields()).containsExactly("fieldC");
+        }
+
+        @Test
+        @DisplayName("@Tab on entity without @UI creates UIMetadata with builder defaults and tabs")
+        void tabsWithoutUIProducesUIMetadataWithDefaults() throws IOException {
+            DomainMetadata dm = compile("""
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+                    import eu.exeris.sdk.annotation.Tab;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    public class Order {
+                        private java.util.UUID id;
+
+                        @Field(label = "Name")
+                        @Tab(name = "general")
+                        private String name;
+                    }
+                    """);
+
+            assertThat(dm.uiMetadata()).isNotNull();
+            assertThat(dm.uiMetadata().listView()).isTrue();
+            assertThat(dm.uiMetadata().detailView()).isTrue();
+            assertThat(dm.uiMetadata().createForm()).isTrue();
+            assertThat(dm.uiMetadata().editForm()).isTrue();
+            assertThat(dm.uiMetadata().searchable()).isTrue();
+            assertThat(dm.uiMetadata().filterable()).isTrue();
+            assertThat(dm.uiMetadata().exportable()).isFalse();
+            assertThat(dm.uiMetadata().tabs()).singleElement().satisfies(t -> {
+                assertThat(t.name()).isEqualTo("general");
+                assertThat(t.fields()).containsExactly("name");
+            });
+        }
+
+        @Test
+        @DisplayName("Strict mode reports inert attributes for @NavMenu and @Tab")
+        void strictModeReportsInertAttributes() {
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(JavaFileObjects.forSourceString("com.example.Order", """
+                            package com.example;
+
+                            import eu.exeris.sdk.annotation.ExerisDomain;
+                            import eu.exeris.sdk.annotation.Field;
+                            import eu.exeris.sdk.annotation.NavMenu;
+                            import eu.exeris.sdk.annotation.Tab;
+
+                            @ExerisDomain(module = "sales", path = "/orders")
+                            @NavMenu(tooltip = "Orders tooltip")
+                            public class Order {
+                                private java.util.UUID id;
+
+                                @Field(label = "Name")
+                                @Tab(name = "general", badgeField = "badgeCount")
+                                private String name;
+                            }
+                            """));
+
+            assertThat(compilation).succeeded();
+            assertThat(compilation).hadWarningContaining("@NavMenu.tooltip is set but no code generator consumes it");
+            assertThat(compilation).hadWarningContaining("@Tab.badgeField is set but no code generator consumes it");
+        }
     }
 }

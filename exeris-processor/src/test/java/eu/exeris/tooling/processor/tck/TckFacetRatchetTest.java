@@ -18,8 +18,6 @@ class TckFacetRatchetTest {
 
     private static final Set<Facet> CEILING = EnumSet.of(
             Facet.ROUTE_ACCESS,
-            Facet.NAV_MENU,
-            Facet.TABS,
             Facet.BLOBS);
 
     @Test

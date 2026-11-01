@@ -194,6 +194,23 @@ export const UIGroupMetadataSchema = z.object({
 
 export type UIGroupMetadata = z.infer<typeof UIGroupMetadataSchema>;
 
+export const UITabMetadataSchema = z.object({
+  name: z.string().optional(),
+  label: z.string().optional(),
+  order: z.number().int().optional(),
+  icon: z.string().optional(),
+  lazy: z.boolean().optional(),
+  badgeField: z.string().optional(),
+  badgeColor: z.string().optional(),
+  disabled: z.boolean().optional(),
+  disabledWhen: z.string().optional(),
+  visibleWhen: z.string().optional(),
+  cssClass: z.string().optional(),
+  fields: z.array(z.string()).optional(),
+});
+
+export type UITabMetadata = z.infer<typeof UITabMetadataSchema>;
+
 export const UIMetadataSchema = z.object({
   icon: z.string().optional(),
   color: z.string().optional(),
@@ -205,6 +222,7 @@ export const UIMetadataSchema = z.object({
   filterable: z.boolean().optional(),
   exportable: z.boolean().optional(),
   groups: z.array(UIGroupMetadataSchema).optional(),
+  tabs: z.array(UITabMetadataSchema).optional(),
 });
 
 export type UIMetadata = z.infer<typeof UIMetadataSchema>;
@@ -390,6 +408,33 @@ export const InternalApiMetadataSchema = z.object({
 export type InternalApiMetadata = z.infer<typeof InternalApiMetadataSchema>;
 
 // ============================================================================
+// Navigation Menu Metadata
+// ============================================================================
+
+export const NavMenuMetadataSchema = z.object({
+  group: z.string().optional(),
+  parent: z.string().optional(),
+  label: z.string().optional(),
+  icon: z.string().optional(),
+  order: z.number().int().optional(),
+  groupOrder: z.number().int().optional(),
+  groupIcon: z.string().optional(),
+  hidden: z.boolean().optional(),
+  roles: z.array(z.string()).optional(),
+  permissions: z.array(z.string()).optional(),
+  badge: z.string().optional(),
+  badgeColor: z.string().optional(),
+  tooltip: z.string().optional(),
+  openInNewTab: z.boolean().optional(),
+  routePath: z.string().optional(),
+  queryParams: z.string().optional(),
+  expanded: z.boolean().optional(),
+  divider: z.enum(['NONE', 'BEFORE', 'AFTER']).optional(),
+});
+
+export type NavMenuMetadata = z.infer<typeof NavMenuMetadataSchema>;
+
+// ============================================================================
 // Domain Metadata (Root)
 // ============================================================================
 
@@ -451,6 +496,7 @@ export const DomainMetadataSchema = z.object({
   systemFields: SystemFieldsMetadataSchema.optional(),
   eventSourced: EventSourcedMetadataSchema.optional(),
   internalApi: InternalApiMetadataSchema.optional(),
+  navMenu: NavMenuMetadataSchema.optional(),
 });
 
 export type DomainMetadata = z.infer<typeof DomainMetadataSchema>;

@@ -28,9 +28,11 @@ import {
   EventSourcedMetadataSchema,
   FieldMetadataSchema,
   InternalApiMetadataSchema,
+  NavMenuMetadataSchema,
   RelationshipMetadataSchema,
   SagaStepMetadataSchema,
   UIMetadataSchema,
+  UITabMetadataSchema,
   type DomainMetadata,
 } from '../../src/models/domain-model.js';
 import { DEFAULT_CONFIG, type GeneratorConfig } from '../../src/config.js';
@@ -42,8 +44,10 @@ import {
   EVENT_SOURCED_CONTRACT_COVERAGE,
   FIELD_CONTRACT_COVERAGE,
   INTERNAL_API_CONTRACT_COVERAGE,
+  NAV_MENU_CONTRACT_COVERAGE,
   RELATIONSHIP_CONTRACT_COVERAGE,
   SAGA_STEP_CONTRACT_COVERAGE,
+  TAB_CONTRACT_COVERAGE,
   UI_CONTRACT_COVERAGE,
   type ContractCoverageEntry,
   type NestedContractCoverageEntry,
@@ -223,6 +227,22 @@ const MAXIMAL = {
     filterable: true,
     exportable: true,
     groups: [{ name: 'billing', label: 'Billing', order: 1, collapsible: false, collapsed: true, gridSpan: 12, fields: ['total'] }],
+    tabs: [
+      {
+        name: 'billing',
+        label: 'Billing Info',
+        order: 1,
+        icon: 'credit_card',
+        lazy: true,
+        badgeField: 'total',
+        badgeColor: 'primary',
+        disabled: false,
+        disabledWhen: 'status == "CANCELLED"',
+        visibleWhen: 'true',
+        cssClass: 'tab-billing',
+        fields: ['total'],
+      },
+    ],
   },
   graphMetadata: { label: 'Order', edges: [{ name: 'contains', targetLabel: 'Product', relationType: 'CONTAINS' }] },
   sagaMetadata: {
@@ -261,6 +281,26 @@ const MAXIMAL = {
     since: '0.9',
     disabledActions: ['cancel'],
     allowedRoles: ['ops'],
+  },
+  navMenu: {
+    group: 'Sales',
+    parent: 'OrdersParent',
+    label: 'Order Management',
+    icon: 'shopping_cart',
+    order: 1,
+    groupOrder: 1,
+    groupIcon: 'store',
+    hidden: false,
+    roles: ['admin'],
+    permissions: ['order:read'],
+    badge: 'NEW',
+    badgeColor: 'accent',
+    tooltip: 'Manage orders',
+    openInNewTab: false,
+    routePath: '/orders-custom',
+    queryParams: 'status=active',
+    expanded: true,
+    divider: 'NONE',
   },
 } as const;
 
@@ -335,6 +375,22 @@ const NESTED_KINDS = {
     minimal: {},
     of: (dm: DomainMetadata): object[] => (dm.internalApi ? [dm.internalApi] : []),
   },
+  navMenu: {
+    label: 'NavMenuMetadata',
+    table: 'NAV_MENU_CONTRACT_COVERAGE',
+    schema: NavMenuMetadataSchema as AnySchema,
+    states: NAV_MENU_CONTRACT_COVERAGE,
+    minimal: {},
+    of: (dm: DomainMetadata): object[] => (dm.navMenu ? [dm.navMenu] : []),
+  },
+  tab: {
+    label: 'UITabMetadata',
+    table: 'TAB_CONTRACT_COVERAGE',
+    schema: UITabMetadataSchema as AnySchema,
+    states: TAB_CONTRACT_COVERAGE,
+    minimal: {},
+    of: (dm: DomainMetadata): object[] => dm.uiMetadata?.tabs ?? [],
+  },
 } as const;
 
 type NestedKind = keyof typeof NESTED_KINDS;
@@ -359,12 +415,16 @@ function watchDomain(domain: DomainMetadata, recs: Recorders): DomainMetadata {
     events: domain.events.map((e) => watch(e, recs.event)),
     relationships: domain.relationships.map((r) => watch(r, recs.relationship)),
   };
-  if (domain.uiMetadata) copy.uiMetadata = watch(domain.uiMetadata, recs.ui);
+  if (domain.uiMetadata) {
+    const tabs = domain.uiMetadata.tabs?.map((t) => watch(t, recs.tab));
+    copy.uiMetadata = watch({ ...domain.uiMetadata, ...(tabs ? { tabs } : {}) }, recs.ui);
+  }
   if (domain.sagaMetadata) {
     copy.sagaMetadata = { ...domain.sagaMetadata, steps: domain.sagaMetadata.steps.map((s) => watch(s, recs.sagaStep)) };
   }
   if (domain.eventSourced) copy.eventSourced = watch(domain.eventSourced, recs.eventSourced);
   if (domain.internalApi) copy.internalApi = watch(domain.internalApi, recs.internalApi);
+  if (domain.navMenu) copy.navMenu = watch(domain.navMenu, recs.navMenu);
   return watch(copy, recs.domain);
 }
 
