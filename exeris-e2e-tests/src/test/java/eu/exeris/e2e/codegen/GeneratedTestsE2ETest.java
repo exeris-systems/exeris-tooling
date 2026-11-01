@@ -469,15 +469,17 @@ class GeneratedTestsE2ETest {
                     public Long getLoyaltyPoints() { return loyaltyPoints; }
                     public void setLoyaltyPoints(Long loyaltyPoints) { this.loyaltyPoints = loyaltyPoints; }
 
-                    @SagaStep(order = 0, name = "reserveStock", service = "inventory",
+                    @SagaStep(order = 1, name = "reserveStock", service = "inventory",
                             command = "ReserveStock", compensation = "ReleaseStock")
                     public void reserveStock() {}
 
-                    @SagaStep(order = 1, name = "chargePayment", service = "payments",
+                    public void ReleaseStock() {}
+
+                    @SagaStep(order = 2, name = "chargePayment", service = "payments",
                             command = "ChargePayment")
                     public void chargePayment() {}
 
-                    @SagaStep(order = 2, name = "ship", service = "logistics",
+                    @SagaStep(order = 3, name = "ship", service = "logistics",
                             command = "Ship")
                     public void ship() {}
 

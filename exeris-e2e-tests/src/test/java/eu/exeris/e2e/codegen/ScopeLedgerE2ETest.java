@@ -325,7 +325,7 @@ class ScopeLedgerE2ETest {
                     public void setLabel(String label) { this.label = label; }
                     @Action(name = "track", label = "Track", streaming = true)
                     public void track() { }
-                    @SagaStep(order = 0, name = "relay", service = "relay", command = "Relay")
+                    @SagaStep(order = 1, name = "relay", service = "relay", command = "Relay")
                     public void relay() { }
                 }
                 """);
@@ -408,7 +408,7 @@ class ScopeLedgerE2ETest {
                     public void setId(UUID id) { this.id = id; }
                     public String getDestination() { return destination; }
                     public void setDestination(String destination) { this.destination = destination; }
-                    @SagaStep(order = 0, name = "depart", service = "fleet", command = "Depart")
+                    @SagaStep(order = 1, name = "depart", service = "fleet", command = "Depart")
                     public void depart() { }
                 }
                 """);

@@ -39,8 +39,6 @@ final class TckCorpusProducer {
      * same change, and {@code TckFacetRatchetTest} holds the set to shrinking only.
      */
     static final Set<Facet> UNSUPPORTED = Collections.unmodifiableSet(EnumSet.of(
-            Facet.SAGA_COMPENSATION,
-            Facet.SAGA_TRIGGER,
             Facet.ROUTE_ACCESS,
             Facet.NAV_MENU,
             Facet.TABS,

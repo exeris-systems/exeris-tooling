@@ -299,12 +299,15 @@ class ExerisDomainProcessorTest {
                         
                         @SagaStep(order = 1, name = "validateOrder", service = "order-service", command = "ValidateOrderCommand", compensation = "CancelValidationCommand")
                         public void step1() {}
+                        public void CancelValidationCommand() {}
                         
                         @SagaStep(order = 2, name = "reserveInventory", service = "inventory-service", command = "ReserveInventoryCommand", compensation = "ReleaseInventoryCommand")
                         public void step2() {}
+                        public void ReleaseInventoryCommand() {}
                         
                         @SagaStep(order = 3, name = "processPayment", service = "payment-service", command = "ProcessPaymentCommand", compensation = "RefundPaymentCommand")
                         public void step3() {}
+                        public void RefundPaymentCommand() {}
                     }
                     """
             );
@@ -450,6 +453,7 @@ class ExerisDomainProcessorTest {
                         
                         @SagaStep(order = 1, name = "chargeCard", service = "payment-service", command = "ChargeCardCommand", compensation = "RefundCommand", parallel = false)
                         public void chargeStep() {}
+                        public void RefundCommand() {}
                     }
                     """
             );
@@ -467,6 +471,185 @@ class ExerisDomainProcessorTest {
             assertThat(metadata)
                     .contains("PaymentSaga")
                     .contains("\"saga\" : true");
+        }
+
+        @Test
+        @DisplayName("a compensation method not found on host type is refused with EXT-PROC-1025")
+        void compensationMethodNotFoundRefused() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.OrderSaga",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Saga;
+                    import eu.exeris.sdk.annotation.SagaStep;
+
+                    @Saga(name = "OrderSaga")
+                    public class OrderSaga {
+                        @SagaStep(order = 1, name = "reserve", service = "svc", command = "cmd",
+                                compensation = "missingRollback")
+                        public void reserve() {}
+                    }
+                    """);
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation)
+                    .hadErrorContaining("[Exeris] EXT-PROC-1025: @SagaStep(compensation = \"missingRollback\")");
+        }
+
+        @Test
+        @DisplayName("an order sequence not starting at 1 is refused with EXT-PROC-1028")
+        void orderNotStartingAtOneRefused() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.OrderSaga",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Saga;
+                    import eu.exeris.sdk.annotation.SagaStep;
+
+                    @Saga(name = "OrderSaga")
+                    public class OrderSaga {
+                        @SagaStep(order = 0, name = "reserve", service = "svc", command = "cmd")
+                        public void reserve() {}
+                    }
+                    """);
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation).hadErrorContaining("[Exeris] EXT-PROC-1028: @SagaStep(order = 0)");
+        }
+
+        @Test
+        @DisplayName("a duplicate order among steps not all parallel is refused with EXT-PROC-1026")
+        void duplicateOrderNonParallelRefused() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.OrderSaga",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Saga;
+                    import eu.exeris.sdk.annotation.SagaStep;
+
+                    @Saga(name = "OrderSaga")
+                    public class OrderSaga {
+                        @SagaStep(order = 1, name = "reserve", service = "svc", command = "cmd")
+                        public void reserve() {}
+                        @SagaStep(order = 1, name = "charge", service = "svc", command = "cmd")
+                        public void charge() {}
+                    }
+                    """);
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation).hadErrorContaining("[Exeris] EXT-PROC-1026: @SagaStep(order = 1)");
+        }
+
+        @Test
+        @DisplayName("a gap in order sequence is refused with EXT-PROC-1027")
+        void orderGapRefused() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.OrderSaga",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Saga;
+                    import eu.exeris.sdk.annotation.SagaStep;
+
+                    @Saga(name = "OrderSaga")
+                    public class OrderSaga {
+                        @SagaStep(order = 1, name = "reserve", service = "svc", command = "cmd")
+                        public void reserve() {}
+                        @SagaStep(order = 3, name = "ship", service = "svc", command = "cmd")
+                        public void ship() {}
+                    }
+                    """);
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation).hadErrorContaining("[Exeris] EXT-PROC-1027: @SagaStep(order = 3)");
+        }
+
+        @Test
+        @DisplayName("deprecated trigger constants are read as replacements with warning EXT-PROC-1109")
+        void deprecatedTriggerConstantWarned() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.OrderSaga",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Saga;
+                    import eu.exeris.sdk.annotation.SagaStep;
+
+                    @Saga(name = "OrderSaga", trigger = @Saga.SagaTrigger(
+                            type = Saga.SagaTrigger.TriggerType.SCHEDULE, schedule = "0 0 * * *"))
+                    public class OrderSaga {
+                        @SagaStep(order = 1, name = "run", service = "svc", command = "cmd")
+                        public void run() {}
+                    }
+                    """);
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+            assertThat(compilation).hadWarningContaining("[Exeris] EXT-PROC-1109: @Saga.SagaTrigger(type = SCHEDULE)");
+
+            String metadata = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/OrderSaga.json").orElseThrow());
+            assertThat(metadata).contains("\"type\" : \"SCHEDULED\"");
+        }
+
+        @Test
+        @DisplayName("trigger and compensation components are extracted onto SagaMetadata")
+        void triggerAndCompensationComponentsExtracted() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.OrderSaga",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Saga;
+                    import eu.exeris.sdk.annotation.SagaStep;
+
+                    @Saga(
+                            name = "OrderSaga",
+                            compensationTimeout = "PT5M",
+                            compensationMaxRetries = 2,
+                            compensationRetryDelay = "PT10S",
+                            continueCompensationOnFailure = true,
+                            compensationDlq = "order.compensation.dlq",
+                            compensationFailureHandler = OrderSaga.Handler.class,
+                            manualInterventionOnCompensationFailure = false,
+                            trigger = @Saga.SagaTrigger(
+                                    type = Saga.SagaTrigger.TriggerType.EVENT,
+                                    source = OrderSaga.Event.class,
+                                    topic = "order.events"
+                            )
+                    )
+                    public class OrderSaga {
+                        @SagaStep(order = 1, name = "reserve", service = "svc", command = "cmd",
+                                compensation = "release")
+                        public void reserve() {}
+                        public void release() {}
+
+                        public static class Handler {}
+                        public static class Event {}
+                    }
+                    """);
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeededWithoutWarnings();
+
+            String metadata = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/OrderSaga.json").orElseThrow());
+            assertThat(metadata)
+                    .contains("\"compensationTimeout\" : \"PT5M\"")
+                    .contains("\"compensationMaxRetries\" : 2")
+                    .contains("\"compensationRetryDelay\" : \"PT10S\"")
+                    .contains("\"continueCompensationOnFailure\" : true")
+                    .contains("\"compensationDlq\" : \"order.compensation.dlq\"")
+                    .contains("\"compensationFailureHandler\" : \"com.example.OrderSaga.Handler\"")
+                    .contains("\"manualInterventionOnCompensationFailure\" : false")
+                    .contains("\"type\" : \"EVENT\"")
+                    .contains("\"source\" : \"com.example.OrderSaga.Event\"")
+                    .contains("\"topic\" : \"order.events\"");
         }
     }
 
@@ -4467,6 +4650,8 @@ class ExerisDomainProcessorTest {
                                 compensation = "Refund", timeout = "PT5S", parallel = true)
                         public void charge() {
                         }
+                        public void Refund() {
+                        }
                     }
                     """
             );
@@ -5022,6 +5207,7 @@ class ExerisDomainProcessorTest {
                         @SagaStep(order = 1, name = "validate", service = "order-service",
                                 command = "ValidateCommand", compensation = "CancelCommand")
                         public void step1() {}
+                        public void CancelCommand() {}
                     }
                     """
             );

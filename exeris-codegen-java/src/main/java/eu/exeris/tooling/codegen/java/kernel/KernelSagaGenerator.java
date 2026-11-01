@@ -156,9 +156,8 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
         assertSupportedVersion(entity, sagaName, saga.version());
         boolean versioned = saga.version() != INITIAL_VERSION;
 
-        String timeoutIso = saga.timeout() != null && !saga.timeout().isBlank()
-                ? saga.timeout() : "PT30M";
-        int maxRetries = saga.maxRetries() > 0 ? saga.maxRetries() : 3;
+        boolean hasTimeout = saga.timeout() != null && !saga.timeout().isBlank();
+        int maxRetries = saga.maxRetries() >= 0 ? saga.maxRetries() : 3;
 
         TypeSpec.Builder builder = KernelScaffold.publicClass(className)
                 .addJavadoc("Generated saga skeleton for $L.\n", entity)
@@ -187,11 +186,14 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
                     .build());
         }
 
+        if (hasTimeout) {
+            builder.addField(FieldSpec.builder(TypeName.LONG, "TIMEOUT_NANOS",
+                            Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                    .initializer("$T.parse($S).toNanos()", DURATION, saga.timeout())
+                    .build());
+        }
+
         builder
-                .addField(FieldSpec.builder(TypeName.LONG, "TIMEOUT_NANOS",
-                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                        .initializer("$T.parse($S).toNanos()", DURATION, timeoutIso)
-                        .build())
                 .addField(FieldSpec.builder(TypeName.INT, "MAX_RETRIES",
                                 Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                         .initializer("$L", maxRetries)
@@ -207,7 +209,7 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
                 .addStatement("this.flowEngine = flowEngine")
                 .build());
 
-        builder.addMethod(buildInitialize(steps, versioned));
+        builder.addMethod(buildInitialize(steps, versioned, hasTimeout));
         builder.addMethod(buildSchedule());
 
         for (SagaStepMetadata step : steps) {
@@ -261,7 +263,7 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
                 : List.of(SagaStepMetadata.simple("process", 0, null));
     }
 
-    private MethodSpec buildInitialize(List<SagaStepMetadata> steps, boolean versioned) {
+    private MethodSpec buildInitialize(List<SagaStepMetadata> steps, boolean versioned, boolean hasTimeout) {
         MethodSpec.Builder method = MethodSpec.methodBuilder("initialize")
                 .addModifiers(Modifier.PUBLIC, Modifier.SYNCHRONIZED)
                 .returns(FLOW_EXECUTION_PLAN)
@@ -284,7 +286,7 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
             String stepName = step.name();
             String methodName = toMethodName(stepName);
             if (hasCompensation(step)) {
-                String compMethodName = "compensate" + capitalize(methodName);
+                String compMethodName = step.compensation();
                 method.addStatement("builder.step($S, this::$L, this::$L)",
                         stepName, methodName, compMethodName);
             } else {
@@ -297,8 +299,12 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
             method.addStatement("builder.transition($L, $L)", i, i + 1);
         }
 
-        method.addStatement("builder.timeoutDuration(TIMEOUT_NANOS).maxRetries(MAX_RETRIES)")
-                .addStatement("this.plan = flowEngine.plans().compile(builder.build())")
+        if (hasTimeout) {
+            method.addStatement("builder.timeoutDuration(TIMEOUT_NANOS).maxRetries(MAX_RETRIES)");
+        } else {
+            method.addStatement("builder.maxRetries(MAX_RETRIES)");
+        }
+        method.addStatement("this.plan = flowEngine.plans().compile(builder.build())")
                 .addStatement("return this.plan");
 
         return method.build();
@@ -333,7 +339,7 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
     }
 
     private MethodSpec buildStepCompensation(SagaStepMetadata step) {
-        String compensationName = "compensate" + capitalize(toMethodName(step.name()));
+        String compensationName = step.compensation();
         return MethodSpec.methodBuilder(compensationName)
                 .addModifiers(Modifier.PROTECTED)
                 .returns(FLOW_OUTCOME)
@@ -399,7 +405,7 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
             String action = toMethodName(step.name());
             emitted.add(action);
             if (hasCompensation(step)) {
-                emitted.add("compensate" + capitalize(action));
+                emitted.add(step.compensation());
             }
         }
         List<String> duplicates = emitted.stream()
@@ -436,13 +442,6 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
             }
         }
         return sb.length() == 0 ? "step" : sb.toString();
-    }
-
-    private String capitalize(String s) {
-        if (s == null || s.isEmpty()) {
-            return s;
-        }
-        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 
     @Override

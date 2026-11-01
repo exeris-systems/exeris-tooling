@@ -67,7 +67,7 @@ class KernelSagaGeneratorTest {
                 .contains("public OrderFulfillmentFlow(FlowEngine flowEngine)")
                 .contains("public synchronized FlowExecutionPlan initialize()")
                 .contains("FlowDefinitionBuilder builder = flowEngine.plans().newDefinition(DEFINITION_NAME)")
-                .contains("builder.step(\"reserve-inventory\", this::reserveInventory, this::compensateReserveInventory)")
+                .contains("builder.step(\"reserve-inventory\", this::reserveInventory, this::restoreInventory)")
                 .contains("builder.step(\"send-email\", this::sendEmail, null)")
                 .contains("builder.transition(0, 1)")
                 .contains("builder.timeoutDuration(TIMEOUT_NANOS).maxRetries(MAX_RETRIES)")
@@ -75,7 +75,7 @@ class KernelSagaGeneratorTest {
                 .contains("public void schedule(FlowContext context)")
                 .contains("flowEngine.scheduler().schedule(initialize(), context)")
                 .contains("protected FlowOutcome reserveInventory(FlowContext context)")
-                .contains("protected FlowOutcome compensateReserveInventory(FlowContext context)")
+                .contains("protected FlowOutcome restoreInventory(FlowContext context)")
                 .contains("protected FlowOutcome sendEmail(FlowContext context)")
                 .contains("return FlowOutcome.CONTINUE");
     }
@@ -133,13 +133,10 @@ class KernelSagaGeneratorTest {
     @Test
     @DisplayName("Should reject action-vs-compensation method-name collision across steps")
     void shouldRejectActionVsCompensationCollision() {
-        // Step "compensate-foo" emits action method `compensateFoo()`.
-        // Step "foo" + compensation also emits a compensation method
-        // `compensateFoo()`. The guard catches the cross-category clash.
         DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
                 .sagaMetadata(SagaMetadata.builder("OrderSaga")
                         .steps(List.of(
-                                SagaStepMetadata.simple("compensate-foo", 0, null),
+                                SagaStepMetadata.simple("rollback", 0, null),
                                 SagaStepMetadata.builder("foo", 1)
                                         .compensation("rollback")
                                         .build()))
@@ -149,7 +146,43 @@ class KernelSagaGeneratorTest {
         assertThatThrownBy(() -> strategy.generate(metadata))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Saga step method-name collision")
-                .hasMessageContaining("compensateFoo");
+                .hasMessageContaining("rollback");
+    }
+
+    @Test
+    @DisplayName("a declared maxRetries = 0 stays 0 in emitted MAX_RETRIES")
+    void declaredMaxRetriesZeroIsKept() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .sagaMetadata(SagaMetadata.builder("OrderSaga")
+                        .maxRetries(0)
+                        .build())
+                .build();
+
+        List<GeneratedFile> files = strategy.generate(metadata);
+        String sagaFlow = files.stream()
+                .filter(f -> f.artifactType() == ArtifactType.SAGA)
+                .findFirst().orElseThrow().content();
+        assertThat(sagaFlow)
+                .contains("private static final int MAX_RETRIES = 0");
+    }
+
+    @Test
+    @DisplayName("an absent timeout emits no TIMEOUT_NANOS and no timeoutDuration call")
+    void absentTimeoutEmitsNoTimeoutDurationCall() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .sagaMetadata(SagaMetadata.builder("OrderSaga")
+                        .timeout(null)
+                        .build())
+                .build();
+
+        List<GeneratedFile> files = strategy.generate(metadata);
+        String sagaFlow = files.stream()
+                .filter(f -> f.artifactType() == ArtifactType.SAGA)
+                .findFirst().orElseThrow().content();
+        assertThat(sagaFlow)
+                .doesNotContain("TIMEOUT_NANOS")
+                .doesNotContain("timeoutDuration(")
+                .contains("builder.maxRetries(MAX_RETRIES)");
     }
 
     // --- kernel ADR-064: @Saga.version reaches the flow definition -----------------------------

@@ -193,6 +193,31 @@ public enum DiagnosticId {
     ACTION_PARAM_NAME_NOT_A_NAME("EXT-PROC-1024",
             "@ActionParam(name) is not a Java name."),
 
+    /**
+     * {@code @SagaStep(compensation)} names no method with a compatible signature on the {@code @Saga}
+     * host type.
+     */
+    SAGA_STEP_COMPENSATION_METHOD_NOT_FOUND("EXT-PROC-1025",
+            "@SagaStep(compensation) names no method with a compatible signature on the @Saga host type."),
+
+    /**
+     * {@code @SagaStep(order)} is duplicated among steps that are not all parallel.
+     */
+    SAGA_STEP_ORDER_DUPLICATE("EXT-PROC-1026",
+            "@SagaStep(order) is duplicated among steps that are not all parallel."),
+
+    /**
+     * The sequence of {@code @SagaStep(order)} values has a gap.
+     */
+    SAGA_STEP_ORDER_GAP("EXT-PROC-1027",
+            "@SagaStep(order) sequence has a gap."),
+
+    /**
+     * The sequence of {@code @SagaStep(order)} values does not start at 1.
+     */
+    SAGA_STEP_ORDER_NOT_STARTING_AT_ONE("EXT-PROC-1028",
+            "@SagaStep(order) sequence does not start at 1."),
+
     // -----------------------------------------------------------------------
     // EXT-PROC-11xx — warnings on an ordinary build (javac WARNING)
     // -----------------------------------------------------------------------
@@ -224,6 +249,12 @@ public enum DiagnosticId {
     /** {@code @Field} is on a static or transient field, which is not persisted. */
     FIELD_ON_STATIC_OR_TRANSIENT("EXT-PROC-1108",
             "@Field is on a static or transient field, which is not persisted."),
+
+    /**
+     * A deprecated {@code @Saga.SagaTrigger.TriggerType} constant is set; it is read as its replacement.
+     */
+    SAGA_TRIGGER_CONSTANT_DEPRECATED("EXT-PROC-1109",
+            "A deprecated @Saga.SagaTrigger.TriggerType constant is set; it is read as its replacement."),
 
     // -----------------------------------------------------------------------
     // EXT-PROC-12xx — the -Aexeris.strict audit (javac WARNING, opt-in)

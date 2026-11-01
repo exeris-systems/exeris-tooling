@@ -71,12 +71,17 @@ class DiagnosticIdTest {
         m.put(DiagnosticId.QUERY_PARAMETER_TYPE_UNSUPPORTED, "EXT-PROC-1022");
         m.put(DiagnosticId.QUERY_PARAMETER_ON_STREAMING_ACTION, "EXT-PROC-1023");
         m.put(DiagnosticId.ACTION_PARAM_NAME_NOT_A_NAME, "EXT-PROC-1024");
+        m.put(DiagnosticId.SAGA_STEP_COMPENSATION_METHOD_NOT_FOUND, "EXT-PROC-1025");
+        m.put(DiagnosticId.SAGA_STEP_ORDER_DUPLICATE, "EXT-PROC-1026");
+        m.put(DiagnosticId.SAGA_STEP_ORDER_GAP, "EXT-PROC-1027");
+        m.put(DiagnosticId.SAGA_STEP_ORDER_NOT_STARTING_AT_ONE, "EXT-PROC-1028");
         m.put(DiagnosticId.TENANT_SCOPED_DEPRECATED, "EXT-PROC-1101");
         m.put(DiagnosticId.VALIDATION_ATTRIBUTE_DEPRECATED, "EXT-PROC-1102");
         m.put(DiagnosticId.VALIDATE_ON_UNRECOGNISED, "EXT-PROC-1103");
         m.put(DiagnosticId.SHARED_SCOPE_OUTSIDE_UNIVERSE, "EXT-PROC-1105");
         m.put(DiagnosticId.BIND_WITHOUT_SOURCE_IGNORED, "EXT-PROC-1106");
         m.put(DiagnosticId.FIELD_ON_STATIC_OR_TRANSIENT, "EXT-PROC-1108");
+        m.put(DiagnosticId.SAGA_TRIGGER_CONSTANT_DEPRECATED, "EXT-PROC-1109");
         m.put(DiagnosticId.STRICT_INERT_ATTRIBUTE, "EXT-PROC-1201");
         m.put(DiagnosticId.STRICT_INERT_ANNOTATION, "EXT-PROC-1202");
         m.put(DiagnosticId.STRICT_UNREAD_ANNOTATION, "EXT-PROC-1203");
