@@ -15,3 +15,16 @@
 export function tsSingleQuoted(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, ' ');
 }
+
+/**
+ * Text placed between tags of a component template that is itself a TypeScript template literal:
+ * the characters that would close the literal, open an interpolation or a tag are dropped.
+ */
+export function tsTemplateText(text: string): string {
+  return text.replace(/[`$\\{}<>]/g, '');
+}
+
+/** A declared name as one segment of a `data-testid`: anything but letters, digits, `_` and `-` becomes `-`. */
+export function testIdSegment(name: string): string {
+  return name.replace(/[^A-Za-z0-9_-]/g, '-');
+}

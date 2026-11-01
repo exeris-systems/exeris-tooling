@@ -897,3 +897,159 @@ describe('DetailGenerator — by-id resource', () => {
     );
   });
 });
+
+// ---------- @UIGroup field grouping ----------
+
+describe('DetailGenerator @UIGroup field grouping', () => {
+  const gen = new DetailGenerator();
+
+  it('renders groups in order (ties by first declaration)', () => {
+    const content = gen.generate(domain({
+      entityName: 'Customer',
+      fields: [
+        field({ name: 'email', type: 'String' }),
+        field({ name: 'phone', type: 'String' }),
+        field({ name: 'firstName', type: 'String' }),
+        field({ name: 'lastName', type: 'String' }),
+      ],
+      uiMetadata: {
+        groups: [
+          { name: 'second', label: 'Second Group', order: 2, fields: ['email', 'phone'] },
+          { name: 'firstA', label: 'First Group A', order: 1, fields: ['firstName'] },
+          { name: 'firstB', label: 'First Group B', order: 1, fields: ['lastName'] },
+        ],
+      },
+    }), CTX)!.content;
+
+    const firstAIdx = content.indexOf('data-testid="group-firstA"');
+    const firstBIdx = content.indexOf('data-testid="group-firstB"');
+    const secondIdx = content.indexOf('data-testid="group-second"');
+
+    expect(firstAIdx).toBeGreaterThan(-1);
+    expect(firstBIdx).toBeGreaterThan(-1);
+    expect(secondIdx).toBeGreaterThan(-1);
+    expect(firstAIdx).toBeLessThan(firstBIdx);
+    expect(firstBIdx).toBeLessThan(secondIdx);
+
+    // Group heading
+    expect(content).toContain('<h2 class="exeris-card-header text-sm font-medium text-gray-500 dark:text-gray-400">First Group A</h2>');
+  });
+
+  it('renders fields inside group in the group field order', () => {
+    const content = gen.generate(domain({
+      entityName: 'Customer',
+      fields: [
+        field({ name: 'a', type: 'String' }),
+        field({ name: 'b', type: 'String' }),
+        field({ name: 'c', type: 'String' }),
+      ],
+      uiMetadata: {
+        groups: [
+          { name: 'reversed', label: 'Reversed', order: 1, fields: ['c', 'a', 'b'] },
+        ],
+      },
+    }), CTX)!.content;
+
+    // Inside GROUP_REVERSED_FIELDS
+    const groupConstStart = content.indexOf('const GROUP_REVERSED_FIELDS: FieldDisplay[] = [');
+    const groupConstEnd = content.indexOf('];', groupConstStart);
+    const constContent = content.slice(groupConstStart, groupConstEnd);
+
+    const cIdx = constContent.indexOf("name: 'c'");
+    const aIdx = constContent.indexOf("name: 'a'");
+    const bIdx = constContent.indexOf("name: 'b'");
+
+    expect(cIdx).toBeLessThan(aIdx);
+    expect(aIdx).toBeLessThan(bIdx);
+  });
+
+  it('renders collapsible: true as native <details> with <summary> (open unless collapsed: true)', () => {
+    const content = gen.generate(domain({
+      entityName: 'Customer',
+      fields: [
+        field({ name: 'billingAddress', type: 'String' }),
+        field({ name: 'shippingAddress', type: 'String' }),
+        field({ name: 'accountType', type: 'String' }),
+      ],
+      uiMetadata: {
+        groups: [
+          { name: 'billing', label: 'Billing', order: 1, collapsible: true, collapsed: false, description: 'Billing details description', fields: ['billingAddress'] },
+          { name: 'shipping', label: 'Shipping', order: 2, collapsible: true, collapsed: true, fields: ['shippingAddress'] },
+          { name: 'account', order: 3, collapsible: false, fields: ['accountType'] },
+        ],
+      },
+    }), CTX)!.content;
+
+    // Billing: collapsible + not collapsed -> <details data-testid="group-billing" open ...>
+    expect(content).toContain('<details data-testid="group-billing" open class="exeris-card overflow-hidden">');
+    expect(content).toContain('<summary class="exeris-card-header text-sm font-medium text-gray-500 dark:text-gray-400 cursor-pointer">Billing</summary>');
+    expect(content).toContain('<p class="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">Billing details description</p>');
+
+    // Shipping: collapsible + collapsed -> <details data-testid="group-shipping" ...> without open
+    expect(content).toContain('<details data-testid="group-shipping" class="exeris-card overflow-hidden mt-8">');
+    expect(content).not.toContain('<details data-testid="group-shipping" open');
+    expect(content).toContain('<summary class="exeris-card-header text-sm font-medium text-gray-500 dark:text-gray-400 cursor-pointer">Shipping</summary>');
+
+    // Account: not collapsible -> <section data-testid="group-account" ...>
+    expect(content).toContain('<section data-testid="group-account" class="exeris-card overflow-hidden mt-8">');
+    expect(content).toContain('<h2 class="exeris-card-header text-sm font-medium text-gray-500 dark:text-gray-400">account</h2>');
+  });
+
+  it('renders ungrouped fields after groups and skips fields not displayed', () => {
+    const content = gen.generate(domain({
+      entityName: 'Customer',
+      fields: [
+        field({ name: 'grouped1', type: 'String' }),
+        field({ name: 'grouped2', type: 'String' }),
+        field({ name: 'ungrouped1', type: 'String' }),
+        field({ name: 'hiddenField', type: 'String', hidden: true }),
+      ],
+      uiMetadata: {
+        groups: [
+          { name: 'main', label: 'Main', order: 1, fields: ['grouped1', 'hiddenField', 'grouped2', 'nonExistent'] },
+        ],
+      },
+    }), CTX)!.content;
+
+    const groupMainIdx = content.indexOf('data-testid="group-main"');
+    expect(groupMainIdx).toBeGreaterThan(-1);
+
+    // Ungrouped fields section renders with Details header after the groups
+    const ungroupedIdx = content.indexOf('<section aria-labelledby="details-title" class="exeris-card overflow-hidden mt-8">');
+    expect(ungroupedIdx).toBeGreaterThan(groupMainIdx);
+    expect(content).toContain('readonly ungroupedFields = UNGROUPED_FIELDS;');
+
+    // In GROUP_MAIN_FIELDS, hiddenField and nonExistent are skipped
+    const mainConstStart = content.indexOf('const GROUP_MAIN_FIELDS: FieldDisplay[] = [');
+    const mainConstEnd = content.indexOf('];', mainConstStart);
+    const mainConst = content.slice(mainConstStart, mainConstEnd);
+    expect(mainConst).toContain("name: 'grouped1'");
+    expect(mainConst).toContain("name: 'grouped2'");
+    expect(mainConst).not.toContain("name: 'hiddenField'");
+    expect(mainConst).not.toContain("name: 'nonExistent'");
+  });
+
+  it('output is byte-identical without groups or with empty groups', () => {
+    const withoutGroups = gen.generate(domain({
+      entityName: 'Customer',
+      fields: [
+        field({ name: 'first', type: 'String' }),
+        field({ name: 'last', type: 'String' }),
+      ],
+    }), CTX)!.content;
+
+    const withEmptyGroups = gen.generate(domain({
+      entityName: 'Customer',
+      fields: [
+        field({ name: 'first', type: 'String' }),
+        field({ name: 'last', type: 'String' }),
+      ],
+      uiMetadata: {
+        groups: [],
+      },
+    }), CTX)!.content;
+
+    expect(withEmptyGroups).toBe(withoutGroups);
+    expect(withoutGroups).not.toContain('data-testid="group-');
+  });
+});
