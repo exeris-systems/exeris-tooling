@@ -303,6 +303,11 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             String qualifiedName,
                             ViewMetadata view) {}
 
+    /** Why each {@code @Saga} compensation attribute is listed in {@link #INERT_ATTRIBUTES}. */
+    private static final String SAGA_COMPENSATION_NOT_EMITTED =
+            "the value reaches SagaMetadata in the JSON, and no emitter reads it: the emitted flow "
+                    + "registers the step compensators and sets only the saga timeout and retry count";
+
     /**
      * Why these registries exist: every SDK annotation is
      * {@code @Retention(SOURCE)}, so it is erased by the compiler and is absent
@@ -350,20 +355,15 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      *
      * <p>{@code Saga} and {@code SagaStep} do have call sites, on the one extraction path both a
      * standalone {@code @Saga} class and an {@code @ExerisDomain} entity carrying {@code @Saga} go
-     * through, so the entries for them below fire. The {@code @Saga.compensation*} family is unregistered for a
-     * different reason: none of it is extracted, half of it has no carrier, and what an emitter
-     * should compile it into against the kernel's compensation surface is an open question, not a
-     * generator that declines to act. C0's never-read pass does not cover these either — it works
-     * per annotation, and {@code @Saga} is read.
+     * through, so the entries for them below fire. The {@code @Saga.compensation*} family and {@code @Saga.trigger} are
+     * extracted into {@code SagaMetadata} and read by no emitter, so they are registered here: the
+     * emitted flow registers each step's compensation method and carries only the saga timeout and
+     * retry count.
      *
      * <p>When a generator starts consuming one of these, DELETE its entry in the
      * same change — a stale entry produces a false "no effect" warning on an
      * attribute that now matters. Surfaced only under {@code -Aexeris.strict}.
      */
-    private static final String SAGA_COMPENSATION_NOT_EMITTED =
-            "the value reaches SagaMetadata in the JSON, and no emitter reads it: the emitted flow "
-                    + "registers the step compensators and sets only the saga timeout and retry count";
-
     private static final List<InertAttribute> INERT_ATTRIBUTES = List.of(
             new InertAttribute("Action", "path",
                     "the route is derived as {domainPath}/{id}/actions/{kebab-action-name} and this "
@@ -3938,6 +3938,27 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         return null;
     }
 
+    /**
+     * The name of the method the generated flow emits for a step named {@code stepName}: the name
+     * split on {@code -} and {@code _}, joined in camel case, {@code step} when nothing is left.
+     * It must equal {@code KernelSagaGenerator}'s step method name, or a compensation that collides
+     * with a step reaches the generator unrefused.
+     */
+    static String sagaStepMethodName(String stepName) {
+        if (stepName == null || stepName.isBlank()) {
+            return "step";
+        }
+        StringBuilder name = new StringBuilder(stepName.length());
+        for (String part : stepName.split("[-_]+")) {
+            if (part.isEmpty()) {
+                continue;
+            }
+            char head = name.isEmpty() ? Character.toLowerCase(part.charAt(0)) : Character.toUpperCase(part.charAt(0));
+            name.append(head).append(part, 1, part.length());
+        }
+        return name.isEmpty() ? "step" : name.toString();
+    }
+
     private boolean hasCompensationMethod(TypeElement hostElement, String methodName) {
         if (methodName == null || methodName.isBlank()) {
             return false;
@@ -4009,9 +4030,21 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             return List.of();
         }
 
+        Set<String> stepMethodNames = new HashSet<>();
+        for (SagaStepSite site : sites) {
+            stepMethodNames.add(site.method().getSimpleName().toString());
+            stepMethodNames.add(sagaStepMethodName(site.metadata().name()));
+        }
         for (SagaStepSite site : sites) {
             String comp = site.metadata().compensation();
-            if (comp != null && !comp.isBlank() && !hasCompensationMethod(element, comp)) {
+            if (comp != null && stepMethodNames.contains(comp)) {
+                error(DiagnosticId.SAGA_STEP_COMPENSATION_NAMES_A_STEP,
+                        "@SagaStep(compensation = \"" + comp + "\") on method '"
+                                + site.method().getSimpleName() + "' names a saga step. The generated "
+                                + "flow emits one method per step and one per compensation; name a "
+                                + "method that is not a step.",
+                        site.method(), site.mirror());
+            } else if (comp != null && !comp.isBlank() && !hasCompensationMethod(element, comp)) {
                 error(DiagnosticId.SAGA_STEP_COMPENSATION_METHOD_NOT_FOUND,
                         "@SagaStep(compensation = \"" + comp + "\") on method '"
                                 + site.method().getSimpleName()

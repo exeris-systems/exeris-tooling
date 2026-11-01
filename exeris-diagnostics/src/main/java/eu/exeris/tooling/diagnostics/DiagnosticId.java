@@ -218,6 +218,13 @@ public enum DiagnosticId {
     SAGA_STEP_ORDER_NOT_STARTING_AT_ONE("EXT-PROC-1028",
             "@SagaStep(order) sequence does not start at 1."),
 
+    /**
+     * {@code @SagaStep(compensation)} names a saga step: the generated flow emits one method per
+     * step and one per compensation, and a step cannot also be a compensation.
+     */
+    SAGA_STEP_COMPENSATION_NAMES_A_STEP("EXT-PROC-1029",
+            "@SagaStep(compensation) names a saga step, not a separate compensation method."),
+
     // -----------------------------------------------------------------------
     // EXT-PROC-11xx — warnings on an ordinary build (javac WARNING)
     // -----------------------------------------------------------------------

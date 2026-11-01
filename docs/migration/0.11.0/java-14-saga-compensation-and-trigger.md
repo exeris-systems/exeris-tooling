@@ -14,7 +14,8 @@ last-verified: 2026-11-01
 this::releaseStock)` with `protected FlowOutcome releaseStock(FlowContext context)`, where it emitted a
 `compensateReserveStock` stub. A subclass that overrode `compensate<Step>` renames its override to the
 declared name. The `@Saga` host type must declare that method, with no parameter or one `FlowContext`
-parameter; otherwise `javac` fails with `EXT-PROC-1025`.
+parameter; otherwise `javac` fails with `EXT-PROC-1025`. Two steps may name one compensation method,
+which is emitted once and registered for both; a compensation naming a step fails with `EXT-PROC-1029`.
 
 **Step order.** `@SagaStep.order` runs 1..N without a gap, and a value is shared only by steps that are
 all `parallel = true`. A saga numbered from 0 fails with `EXT-PROC-1028`, a gap with `EXT-PROC-1027`, and

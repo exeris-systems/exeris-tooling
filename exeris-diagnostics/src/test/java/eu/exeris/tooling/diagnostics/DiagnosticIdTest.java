@@ -75,6 +75,7 @@ class DiagnosticIdTest {
         m.put(DiagnosticId.SAGA_STEP_ORDER_DUPLICATE, "EXT-PROC-1026");
         m.put(DiagnosticId.SAGA_STEP_ORDER_GAP, "EXT-PROC-1027");
         m.put(DiagnosticId.SAGA_STEP_ORDER_NOT_STARTING_AT_ONE, "EXT-PROC-1028");
+        m.put(DiagnosticId.SAGA_STEP_COMPENSATION_NAMES_A_STEP, "EXT-PROC-1029");
         m.put(DiagnosticId.TENANT_SCOPED_DEPRECATED, "EXT-PROC-1101");
         m.put(DiagnosticId.VALIDATION_ATTRIBUTE_DEPRECATED, "EXT-PROC-1102");
         m.put(DiagnosticId.VALIDATE_ON_UNRECOGNISED, "EXT-PROC-1103");

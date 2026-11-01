@@ -499,6 +499,61 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
+        @DisplayName("a compensation naming a saga step is refused with EXT-PROC-1029")
+        void compensationNamingAStepRefused() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.OrderSaga",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Saga;
+                    import eu.exeris.sdk.annotation.SagaStep;
+
+                    @Saga(name = "OrderSaga")
+                    public class OrderSaga {
+                        @SagaStep(order = 1, name = "reserve", service = "svc", command = "cmd")
+                        public void reserve() {}
+
+                        @SagaStep(order = 2, name = "charge", service = "svc", command = "cmd",
+                                compensation = "reserve")
+                        public void charge() {}
+                    }
+                    """);
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation)
+                    .hadErrorContaining("[Exeris] EXT-PROC-1029: @SagaStep(compensation = \"reserve\")");
+        }
+
+        @Test
+        @DisplayName("two steps may name one compensation method")
+        void sharedCompensationAccepted() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.OrderSaga",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Saga;
+                    import eu.exeris.sdk.annotation.SagaStep;
+
+                    @Saga(name = "OrderSaga")
+                    public class OrderSaga {
+                        @SagaStep(order = 1, name = "reserve", service = "svc", command = "cmd",
+                                compensation = "rollback")
+                        public void reserve() {}
+
+                        @SagaStep(order = 2, name = "charge", service = "svc", command = "cmd",
+                                compensation = "rollback")
+                        public void charge() {}
+
+                        public void rollback() {}
+                    }
+                    """);
+            assertThat(compileWithProcessor(source)).succeeded();
+        }
+
+        @Test
         @DisplayName("an order sequence not starting at 1 is refused with EXT-PROC-1028")
         void orderNotStartingAtOneRefused() {
             JavaFileObject source = JavaFileObjects.forSourceString(

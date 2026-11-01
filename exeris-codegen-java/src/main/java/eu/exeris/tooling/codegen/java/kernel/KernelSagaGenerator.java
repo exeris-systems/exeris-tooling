@@ -15,8 +15,10 @@ import eu.exeris.sdk.sourcemodel.ast.SagaStepMetadata;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -212,9 +214,10 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
         builder.addMethod(buildInitialize(steps, versioned, hasTimeout));
         builder.addMethod(buildSchedule());
 
+        Set<String> compensations = new LinkedHashSet<>();
         for (SagaStepMetadata step : steps) {
             builder.addMethod(buildStepAction(step));
-            if (hasCompensation(step)) {
+            if (hasCompensation(step) && compensations.add(step.compensation())) {
                 builder.addMethod(buildStepCompensation(step));
             }
         }
@@ -381,33 +384,24 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
     }
 
     /**
-     * Asserts that every emitted method name — the per-step action AND
-     * (where declared) the compensation — is unique across the generated
-     * class. Bare step-name uniqueness is not enough:
-     * <ul>
-     *   <li>Two raw names that normalise to the same Java identifier
-     *       (e.g.\ {@code "my-step"} and {@code "my_step"} both become
-     *       {@code myStep}) would emit two methods with the same
-     *       signature.</li>
-     *   <li>A step literally named {@code "compensate-foo"} (no
-     *       compensation) emits {@code compensateFoo()}; a separate step
-     *       {@code "foo"} <i>with</i> a compensation also emits
-     *       {@code compensateFoo()} — a cross-category clash the
-     *       raw-name check would miss.</li>
-     * </ul>
-     * Both cases produce the same outcome at codegen time: JavaPoet
-     * throws a generic duplicate-method error with no saga context.
-     * Failing fast here gives the caller the actual offending names.
+     * Asserts that every emitted method name is unique across the generated class: one method per
+     * step action, and one per distinct compensation name, which every step naming it registers.
+     * Two raw step names that normalise to the same Java identifier (e.g.\ {@code "my-step"} and
+     * {@code "my_step"} both become {@code myStep}), or a compensation named like a step action,
+     * would otherwise reach JavaPoet as a duplicate method with no saga context. The processor
+     * refuses the second case at {@code javac}; metadata built without it is refused here with the
+     * offending names.
      */
     private void assertDistinctMethodNames(String entity, List<SagaStepMetadata> steps) {
         List<String> emitted = new ArrayList<>(steps.size() * 2);
+        Set<String> compensations = new LinkedHashSet<>();
         for (SagaStepMetadata step : steps) {
-            String action = toMethodName(step.name());
-            emitted.add(action);
+            emitted.add(toMethodName(step.name()));
             if (hasCompensation(step)) {
-                emitted.add(step.compensation());
+                compensations.add(step.compensation());
             }
         }
+        emitted.addAll(compensations);
         List<String> duplicates = emitted.stream()
                 .collect(Collectors.groupingBy(n -> n, Collectors.counting()))
                 .entrySet().stream()
@@ -418,8 +412,8 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
         if (!duplicates.isEmpty()) {
             throw new IllegalArgumentException(
                     "Saga step method-name collision on entity '" + entity + "': " + duplicates
-                            + ". Each step (and its compensation) must produce a unique "
-                            + "Java method identifier after name normalisation.");
+                            + ". Each step must produce a unique Java method identifier after name "
+                            + "normalisation, and a compensation must not be named like a step.");
         }
     }
 

@@ -150,6 +150,26 @@ class KernelSagaGeneratorTest {
     }
 
     @Test
+    @DisplayName("two steps naming one compensation share one emitted method, registered for both")
+    void sharedCompensationIsEmittedOnceAndRegisteredForEachStep() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .sagaMetadata(SagaMetadata.builder("OrderSaga")
+                        .steps(List.of(
+                                SagaStepMetadata.builder("reserve", 1).compensation("rollback").build(),
+                                SagaStepMetadata.builder("charge", 2).compensation("rollback").build()))
+                        .build())
+                .build();
+
+        String sagaFlow = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.SAGA)
+                .findFirst().orElseThrow().content();
+        assertThat(sagaFlow)
+                .contains("builder.step(\"reserve\", this::reserve, this::rollback)")
+                .contains("builder.step(\"charge\", this::charge, this::rollback)");
+        assertThat(sagaFlow.split("protected FlowOutcome rollback\\(", -1)).hasSize(2);
+    }
+
+    @Test
     @DisplayName("a declared maxRetries = 0 stays 0 in emitted MAX_RETRIES")
     void declaredMaxRetriesZeroIsKept() {
         DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
