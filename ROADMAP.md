@@ -925,8 +925,7 @@ each fix.
       processor refuses a non-UUID key (`EXT-PROC-1018`) and a renamed key beside a field `id`
       (`EXT-PROC-1019`), and the sample app's `Invoice` is keyed by the UUID `invoiceNo` with no
       `id`. The `@PrimaryKey` marker itself stays unextracted until J5b.
-- [ ] **C2 — `annotation.security.*` (27 attributes). Not a design call — both halves are asks on
-      other repos.**
+- [x] **C2 — `annotation.security.*` (27 attributes) — won't-build: no carriers will land.**
 
       **`@Encrypted` (11 attributes, `@Target(FIELD)`) has no carrier.** `FieldMetadata` declares no
       security component at all — no `encrypted`, no `pii`, no `maskInLogs`. By the T57 rule that puts
@@ -957,6 +956,14 @@ each fix.
       session key, which the Wall may well refuse on purpose) and an **SDK ask** (carriers). What is
       left that is ours — `readRoles` / `writeRoles` / `bypassRoles` — is role-based authorization,
       the same subject as **T51**, so it belongs in that RFC rather than in a C2 slice of its own.
+
+      **Closed in 0.11.0 as won't-build: no carriers will land (kernel ADR-012 §4c.1, exeris-sdk#207,
+      exeris-sdk#165).** Kernel ADR-012 §4c.1 rules out a principal session key at 1.0, and rules
+      field-level encryption at rest outside kernel scope in every tier. SDK 0.13.0 deprecates
+      `@RowLevelSecurity`, `@Encrypted` and `@Field.encrypted` for removal at 1.0.0; tenant isolation
+      is `@ExerisDomain(dataScope = TENANT)` and role authorization is `roles` / `permissions` /
+      `@RouteAccess`. `-Aexeris.strict` reports the ruling and the replacement under `INERT_ANNOTATIONS`
+      and `INERT_ATTRIBUTES` (row J9, #435).
 - [ ] **Registry entries are unverified strings.** `INERT_ATTRIBUTES` and `UNREAD_NOTES` are keyed by
       hand-written `Annotation#attribute` names that nothing checks against the SDK. A typo does not
       fail a build — it silently disables the `-Aexeris.strict` warning for that attribute, forever,
@@ -4129,9 +4136,9 @@ enters only if its upstream half is final first.
       default, with the two-pass first build scripted, and two invoker fixtures that build what it
       writes. Frontend-only waits on #391.
 
-**Not placed in a milestone**, because the next step belongs to another repository: C2
-(`@Encrypted` / `@RowLevelSecurity`, two asks on the kernel and the SDK) and `@SagaStep.parallel`
-(a kernel contract for concurrent flow steps). Each gets a milestone when its upstream half lands.
+**Not placed in a milestone**, because the next step belongs to another repository:
+`@SagaStep.parallel` (a kernel contract for concurrent flow steps, getting a milestone when its
+upstream half lands). C2 (`@Encrypted` / `@RowLevelSecurity`) is closed as won't-build (row J9, #435).
 
 **`@exeris/codegen-ts` → npmjs** ships in 0.9.0, in lockstep with the reactor; the 0.9.0 cut
 waits for the TS scope in [`docs/codegen-ts-track-plan.md`](docs/codegen-ts-track-plan.md) (P1–P21).

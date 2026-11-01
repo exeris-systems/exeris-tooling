@@ -98,7 +98,8 @@ import java.util.stream.Collectors;
         "eu.exeris.sdk.annotation.ExerisDomain",
         "eu.exeris.sdk.annotation.Saga",
         "eu.exeris.sdk.annotation.capability.CapabilityModule",
-        "eu.exeris.sdk.annotation.View"
+        "eu.exeris.sdk.annotation.View",
+        "eu.exeris.sdk.annotation.Schedule"
 })
 @SupportedOptions({ExerisDomainProcessor.OPTION_VERBOSE, ExerisDomainProcessor.OPTION_STRICT})
 @SuppressWarnings({
@@ -168,6 +169,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
     /** {@code @RouteAccess}, and the {@code @Action} it is read beside. */
     private static final String ROUTE_ACCESS_FQN = "eu.exeris.sdk.annotation.RouteAccess";
+
+    /** {@code @Schedule}, refused at build time (kernel ADR-057 Amendment A1). */
+    private static final String SCHEDULE_FQN = "eu.exeris.sdk.annotation.Schedule";
 
     private static final String ACTION_FQN = "eu.exeris.sdk.annotation.Action";
 
@@ -606,8 +610,11 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "as an unmarked field; nothing is masked, redacted or kept out of "
                             + "logs on its account"),
             new InertAttribute("Field", "encrypted",
-                    FIELD_NOT_EXTRACTED + "The emitted schema and repository store the value "
-                            + "as written; no column encryption is emitted"),
+                    FIELD_NOT_EXTRACTED + "it is deprecated for removal at 1.0.0. Kernel ADR-012 "
+                            + "§4c.1 rules field-level encryption at rest outside kernel scope in every "
+                            + "tier, and no principal session key at 1.0. Use "
+                            + "@ExerisDomain(dataScope = TENANT) for tenant isolation; roles / "
+                            + "permissions / @RouteAccess for role checks"),
             new InertAttribute("Field", "maskPattern",
                     FIELD_NOT_EXTRACTED + "No emitted response, view or log line applies a mask"),
             new InertAttribute("Field", "writeOnly",
@@ -806,8 +813,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "absence rather than assume a binding"),
             new InertAnnotation("eu.exeris.sdk.annotation.Blob", "Blob",
                     "the processor does not extract it and no generator consumes it, so the field "
-                            + "is emitted exactly as if the annotation were absent. The design-time "
-                            + "surface is reserved (ADR-072). The kernel line this repo pins boots "
+                            + "is emitted exactly as if the annotation were absent. It is frozen SDK "
+                            + "surface (SDK ADR-072 amendment 2026-10-29) whose transcription is "
+                            + "pending in tooling. The kernel line this repo pins boots "
                             + "blob storage as the subsystem named \"storage\" and binds "
                             + "KernelProviders.BLOB_STORE. "
                             + "Two things a transcription must carry: the driver is chosen by the "
@@ -815,23 +823,26 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "register at the same one), so the deployment names it; and with that "
                             + "key unset storage is off and BLOB_STORE is unbound, so generated "
                             + "code may not assume a store. Tracked in ROADMAP.md (K6)"),
-            new InertAnnotation("eu.exeris.sdk.annotation.Schedule", "Schedule",
-                    "the processor does not extract it and no generator consumes it, so the "
-                            + "annotated method is emitted exactly as if the annotation were absent. "
-                            + "The design-time surface is reserved (ADR-072). This one is NOT "
-                            + "capability-gated — the scheduling subsystem boots — it is gated on "
-                            + "identity: JobScheduler.submit(...) captures the ambient "
-                            + "PrincipalContext and StorageContext at submission and fails a job "
-                            + "closed at dispatch when neither is bound, and a declared schedule has "
-                            + "no submission event to capture from. See docs/adr/ADR-072.link.md"),
+            new InertAnnotation("eu.exeris.sdk.annotation.security.Encrypted", "Encrypted",
+                    "the processor does not extract it and no generator consumes it; it is "
+                            + "deprecated for removal at 1.0.0. Kernel ADR-012 §4c.1 rules field-level "
+                            + "encryption at rest outside kernel scope in every tier, and no "
+                            + "principal session key at 1.0. Use @ExerisDomain(dataScope = TENANT) "
+                            + "for tenant isolation; roles / permissions / @RouteAccess for role checks"),
+            new InertAnnotation("eu.exeris.sdk.annotation.security.RowLevelSecurity", "RowLevelSecurity",
+                    "the processor does not extract it and no generator consumes it; it is "
+                            + "deprecated for removal at 1.0.0. Kernel ADR-012 §4c.1 rules no principal "
+                            + "session key at 1.0, and field-level encryption at rest outside kernel "
+                            + "scope in every tier. Use @ExerisDomain(dataScope = TENANT) for tenant "
+                            + "isolation; roles / permissions / @RouteAccess for role checks"),
             new InertAnnotation(ROUTE_ACCESS_FQN, "RouteAccess",
                     "it is validated at compile time — PUBLIC beside a non-empty permissions, "
                             + "declared or inherited from the type, is refused — but it is not "
                             + "compiled into a route policy: no generator emits a URL-to-policy "
                             + "table, so every generated route is registered exactly as if the "
                             + "annotation were absent, and DomainMetadata / ActionMetadata carry no "
-                            + "routeAccess. The transcription onto the kernel's HttpRoutePolicy is "
-                            + "T53, tracked in ROADMAP.md"));
+                            + "routeAccess. It is frozen SDK surface (SDK ADR-072 amendment 2026-10-29) "
+                            + "whose transcription is pending in tooling (T53 / J3-3, tracked in ROADMAP.md)"));
 
     /**
      * Every SDK annotation this processor extracts, by simple name. <strong>C0: this set is the
@@ -853,9 +864,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * and NOT "the audit stays quiet about it". The narrower consumption question stays with the
      * two inert registries: {@code @EventSourced} is in this set and is still reported, by
      * {@link #INERT_ANNOTATIONS}. And an unextracted annotation that already has a registry entry
-     * ({@code @Blob}, {@code @Schedule}) is deliberately absent here and silenced by
-     * {@link #isAlreadyAudited} instead, so that this set never claims an extraction that does not
-     * exist. Every SDK annotation is answered by exactly one of the two passes.
+     * ({@code @Blob}, {@code @Encrypted}, {@code @RowLevelSecurity}) is deliberately absent here and
+     * silenced by {@link #isAlreadyAudited} instead, so that this set never claims an extraction
+     * that does not exist. Every SDK annotation is answered by exactly one of the two passes.
      */
     private static final Set<String> EXTRACTED_ANNOTATIONS = Set.of(
             "Action", "ActionParam", "AuditCreatedAt", "AuditCreatedBy", "AuditUpdatedAt",
@@ -1054,6 +1065,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             return false;
         }
 
+        // Refuse @Schedule declarations (kernel ADR-057 Amendment A1)
+        refuseScheduleAnnotations(roundEnv);
+
         // Process @ExerisDomain annotated classes
         processExerisDomainAnnotations(roundEnv);
 
@@ -1141,6 +1155,27 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             }
         }
         return sb.toString();
+    }
+
+    /**
+     * Refuses {@code @Schedule} declarations on any element (kernel ADR-057 Amendment A1).
+     * At 1.0 the kernel issues no service principal, so a declared background job is refused
+     * whatever its action requires.
+     */
+    private void refuseScheduleAnnotations(RoundEnvironment roundEnv) {
+        TypeElement scheduleElement = processingEnv.getElementUtils().getTypeElement(SCHEDULE_FQN);
+        if (scheduleElement == null) {
+            return;
+        }
+        for (Element element : roundEnv.getElementsAnnotatedWith(scheduleElement)) {
+            AnnotationMirror mirror = findAnnotation(element, SCHEDULE_FQN);
+            error(DiagnosticId.SCHEDULE_REFUSED,
+                    "@Schedule is refused at build time: the kernel issues no service principal at 1.0, "
+                            + "so a declared job is refused whatever its action requires (kernel ADR-057 "
+                            + "Amendment A1). Remove @Schedule; schedule the work outside the generated "
+                            + "application until the kernel issues a service principal.",
+                    element, mirror);
+        }
     }
 
     private void processExerisDomainAnnotations(RoundEnvironment roundEnv) {
@@ -4358,15 +4393,20 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
     /**
      * Whether the first pass already covers {@code simpleName} — either the processor extracts it,
-     * or {@link #INERT_ANNOTATIONS} carries an entry for it.
+     * or {@link #INERT_ANNOTATIONS} carries an entry for it, or it is refused at build time.
      *
-     * <p>The registry half is derived rather than restated. {@code @Blob} and {@code @Schedule} are
-     * the live case: both are unextracted, so on name alone this pass would report them — and both
-     * already have a registry entry whose note is far better than the generic sentence. Listing
-     * them in {@link #EXTRACTED_ANNOTATIONS} would silence the duplicate but make that set claim
-     * something false about them, and the next reader would believe it.
+     * <p>The registry half is derived rather than restated. {@code @Blob}, {@code @Encrypted} and
+     * {@code @RowLevelSecurity} are the live case: all three are unextracted, so on name alone this
+     * pass would report them — and all three already have a registry entry whose note is far better
+     * than the generic sentence. Listing them in {@link #EXTRACTED_ANNOTATIONS} would silence the
+     * duplicate but make that set claim something false about them, and the next reader would believe
+     * it. {@code @Schedule} is refused at build time (kernel ADR-057 Amendment A1), so it produces a
+     * compiler error and never a strict-mode warning.
      */
     private static boolean isAlreadyAudited(String simpleName) {
+        if ("Schedule".equals(simpleName)) {
+            return true;
+        }
         if (EXTRACTED_ANNOTATIONS.contains(simpleName)) {
             return true;
         }

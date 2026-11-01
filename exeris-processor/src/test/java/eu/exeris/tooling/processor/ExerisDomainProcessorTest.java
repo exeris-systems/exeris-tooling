@@ -4797,7 +4797,7 @@ class ExerisDomainProcessorTest {
             // Same gate as the attribute one, for the other registry. INERT_ANNOTATIONS
             // is driven by warnInertAnnotations call sites, and until D6 there were only
             // type-level ones — so a FIELD- or METHOD-targeted entry would have been dead
-            // on arrival. This fixture places all three registered annotations at their
+            // on arrival. This fixture places all registered annotations at their
             // declared targets in one compilation unit.
             Compilation compilation = javac()
                     .withOptions("-Aexeris.strict=true")
@@ -4807,7 +4807,8 @@ class ExerisDomainProcessorTest {
             assertThat(compilation).succeeded();
             assertThat(hasInertWarningFor(compilation, "@EventSourced")).isTrue();
             assertThat(hasInertWarningFor(compilation, "@Blob")).isTrue();
-            assertThat(hasInertWarningFor(compilation, "@Schedule")).isTrue();
+            assertThat(hasInertWarningFor(compilation, "@RowLevelSecurity")).isTrue();
+            assertThat(hasInertWarningFor(compilation, "@Encrypted")).isTrue();
             assertThat(compilation.warnings().stream()
                     .filter(d -> d.getMessage(null).contains("@RouteAccess is set but no code "
                             + "generator consumes it"))
@@ -4816,7 +4817,7 @@ class ExerisDomainProcessorTest {
                     .isEqualTo(2);
             assertThat(inertWarnings(compilation))
                     .as("one warning per registered inert annotation occurrence, no more")
-                    .isEqualTo(5);
+                    .isEqualTo(6);
         }
 
         @Test
@@ -4834,23 +4835,168 @@ class ExerisDomainProcessorTest {
             assertThat(compilation).succeeded();
             assertThat(hasInertWarningFor(compilation, "@Blob")).isTrue();
             assertThat(inertWarnings(compilation)).isEqualTo(1);
+            assertThat(compilation.warnings()).extracting(d -> d.getMessage(null))
+                    .anyMatch(m -> m.contains("@Blob is set but no code generator consumes it")
+                            && m.contains("frozen SDK surface (SDK ADR-072 amendment 2026-10-29)")
+                            && !m.contains("reserved (ADR-072)"));
         }
 
         @Test
-        @DisplayName("-Aexeris.strict warns on @Schedule on a method that carries no @Action")
-        void strictWarnsOnScheduleWithoutAction() {
+        @DisplayName("-Aexeris.strict warns on @RowLevelSecurity and cites kernel ADR-012 §4c.1 and replacements")
+        void strictWarnsOnRowLevelSecurity() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.security.RowLevelSecurity;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    @RowLevelSecurity(policy = RowLevelSecurity.Policy.TENANT_ISOLATION)
+                    public class Order {
+                        private java.util.UUID id;
+                    }
+                    """
+            );
+
             Compilation compilation = javac()
                     .withOptions("-Aexeris.strict=true")
                     .withProcessors(new ExerisDomainProcessor())
-                    .compile(scheduleOnAMethodWithoutAction());
+                    .compile(source);
 
             assertThat(compilation).succeeded();
-            assertThat(hasInertWarningFor(compilation, "@Schedule")).isTrue();
-            assertThat(inertWarnings(compilation)).isEqualTo(1);
+            assertThat(hasInertWarningFor(compilation, "@RowLevelSecurity")).isTrue();
+            assertThat(compilation.warnings()).extracting(d -> d.getMessage(null))
+                    .anyMatch(m -> m.contains("@RowLevelSecurity is set but no code generator consumes it")
+                            && m.contains("Kernel ADR-012 §4c.1")
+                            && m.contains("no principal session key at 1.0")
+                            && m.contains("field-level encryption at rest outside kernel scope in every tier")
+                            && m.contains("@ExerisDomain(dataScope = TENANT) for tenant isolation")
+                            && m.contains("roles / permissions / @RouteAccess for role checks"));
         }
 
         @Test
-        @DisplayName("Default build stays quiet on @Blob and @Schedule too")
+        @DisplayName("-Aexeris.strict warns on @Encrypted and cites kernel ADR-012 §4c.1 and replacements")
+        void strictWarnsOnEncrypted() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Secret",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.security.Encrypted;
+
+                    @ExerisDomain(module = "core", path = "/secrets")
+                    public class Secret {
+                        private java.util.UUID id;
+                        @Encrypted
+                        private String payload;
+                    }
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            assertThat(hasInertWarningFor(compilation, "@Encrypted")).isTrue();
+            assertThat(compilation.warnings()).extracting(d -> d.getMessage(null))
+                    .anyMatch(m -> m.contains("@Encrypted is set but no code generator consumes it")
+                            && m.contains("Kernel ADR-012 §4c.1")
+                            && m.contains("field-level encryption at rest outside kernel scope in every tier")
+                            && m.contains("no principal session key at 1.0")
+                            && m.contains("@ExerisDomain(dataScope = TENANT) for tenant isolation")
+                            && m.contains("roles / permissions / @RouteAccess for role checks"));
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict warns on @Field.encrypted and cites kernel ADR-012 §4c.1 and replacements")
+        void strictWarnsOnFieldEncrypted() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Vault",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+
+                    @ExerisDomain(module = "core", path = "/vault")
+                    public class Vault {
+                        private java.util.UUID id;
+                        @Field(label = "Secret Key", encrypted = true)
+                        private String secretKey;
+                    }
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            assertThat(hasInertWarningFor(compilation, "@Field.encrypted")).isTrue();
+            assertThat(compilation.warnings()).extracting(d -> d.getMessage(null))
+                    .anyMatch(m -> m.contains("@Field.encrypted is set but no code generator consumes it")
+                            && m.contains("Kernel ADR-012 §4c.1")
+                            && m.contains("field-level encryption at rest outside kernel scope in every tier")
+                            && m.contains("no principal session key at 1.0")
+                            && m.contains("@ExerisDomain(dataScope = TENANT) for tenant isolation")
+                            && m.contains("roles / permissions / @RouteAccess for role checks"));
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict warns on @RouteAccess and stops calling it reserved")
+        void strictWarnsOnRouteAccessWithoutReserved() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Route",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.RouteAccess;
+
+                    @ExerisDomain(module = "core", path = "/routes")
+                    @RouteAccess(RouteAccess.Level.AUTHENTICATED)
+                    public class Route {
+                        private java.util.UUID id;
+                    }
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            assertThat(hasInertWarningFor(compilation, "@RouteAccess")).isTrue();
+            assertThat(compilation.warnings()).extracting(d -> d.getMessage(null))
+                    .anyMatch(m -> m.contains("@RouteAccess is set but no code generator consumes it")
+                            && m.contains("frozen SDK surface (SDK ADR-072 amendment 2026-10-29)")
+                            && !m.contains("reserved (ADR-072)"));
+        }
+
+        @Test
+        @DisplayName("@Schedule is refused at build time with EXT-PROC-1030 (kernel ADR-057 Amendment A1)")
+        void scheduleIsRefusedAtBuildTime() {
+            Compilation compilation = javac()
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(scheduleOnAMethodWithoutAction());
+
+            assertThat(compilation).failed();
+            assertThat(compilation.errors()).extracting(d -> d.getMessage(null))
+                    .anyMatch(m -> m.contains("EXT-PROC-1030")
+                            && m.contains("@Schedule is refused at build time")
+                            && m.contains("kernel issues no service principal at 1.0")
+                            && m.contains("kernel ADR-057 Amendment A1"));
+        }
+
+        @Test
+        @DisplayName("Default build stays quiet on the registered inert annotations")
         void defaultBuildDoesNotWarnOnTheNewAnnotationEntries() {
             Compilation compilation = javac()
                     .withProcessors(new ExerisDomainProcessor())
@@ -4873,16 +5019,20 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.EventSourced;
                     import eu.exeris.sdk.annotation.ExerisDomain;
                     import eu.exeris.sdk.annotation.RouteAccess;
-                    import eu.exeris.sdk.annotation.Schedule;
+                    import eu.exeris.sdk.annotation.security.Encrypted;
+                    import eu.exeris.sdk.annotation.security.RowLevelSecurity;
 
                     @ExerisDomain(module = "core", path = "/documents")
                     @EventSourced
+                    @RowLevelSecurity(policy = RowLevelSecurity.Policy.TENANT_ISOLATION)
                     @RouteAccess(RouteAccess.Level.AUTHENTICATED)
                     public class Document { private java.util.UUID id;
                         @Blob
                         private byte[] content;
 
-                        @Schedule(cron = "0 0 * * *")
+                        @Encrypted
+                        private String secret;
+
                         @Action(name = "archive", label = "Archive")
                         public void archive() {
                         }

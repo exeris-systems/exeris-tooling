@@ -316,5 +316,11 @@
     "since": "0.11",
     "adr": "ADR-062",
     "justification": "The kernel flow resumes a parked saga by step identity (ADR-062), so the step sequence the source declares must be the one compiled: 1..N without a gap, a value shared only by parallel steps. The compensation the source names is the hook registered for its step, and two steps naming one method share it. A subclass overriding compensate<Step> renames the override to the declared name. A saga with no compensation and steps numbered from 1 regenerates byte-identically apart from a declared maxRetries = 0, which is kept. The TypeScript output does not change. docs/migration/0.11.0/java-14-saga-compensation-and-trigger.md carries the step."
+  },
+  {
+    "signature": "@Schedule (any element): refused at javac with EXT-PROC-1030, where it was inert",
+    "since": "0.11",
+    "adr": "ADR-057",
+    "justification": "Kernel ADR-057 Amendment A1: at 1.0 the kernel issues no service principal, so a declared job is refused at build time whatever its action requires. A source with @Schedule compiled and emitted nothing for it, so no generated output changes; the source no longer compiles. docs/migration/0.11.0/java-15-schedule-refused.md carries the step."
   }
 ]
