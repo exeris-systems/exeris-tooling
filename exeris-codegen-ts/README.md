@@ -558,6 +558,19 @@ Route requirements come from declared route access (`@RouteAccess`, `permissions
 version does not read: every route is public, so neither file is emitted and `app.config.ts`
 registers no interceptor. The stream clients do not go through `HttpClient` and send no token.
 
+## Grouped forms and detail views (@UIGroup)
+
+When an entity's metadata declares `@UIGroup` sections (`uiMetadata.groups` is non-empty), the generated
+create/edit form and detail view components organise fields into their declared group sections.
+
+- **Ordering**: Groups are rendered in `order` (ascending, defaulting to 999), with ties broken by declaration order.
+- **Headings and descriptions**: Each group renders with its `label` (or `name` if `label` is omitted) as the heading, and its `description` underneath when present.
+- **Collapsible groups**: A group declared with `collapsible: true` renders as a native `<details>` element with `<summary>` (open by default unless `collapsed: true`). Non-collapsible groups render as `<section>`.
+- **Test attributes**: Each group `<section>` or `<details>` element carries `data-testid="group-<name>"`.
+- **Field layout**: Fields listed in a group render inside it in the group's declared field order. Fields listed in a group but not rendered by that view (for example, `inCreate = false` in a create form, or hidden fields in a detail view) are skipped.
+- **Ungrouped fields**: Fields not assigned to any group continue to render after all group sections, exactly as in ungrouped forms and detail views.
+- **Entities without groups**: An entity without `@UIGroup` sections emits byte-identical output to earlier releases.
+
 ## Type Mapping
 
 | Java Type | TypeScript Type | Form Control |

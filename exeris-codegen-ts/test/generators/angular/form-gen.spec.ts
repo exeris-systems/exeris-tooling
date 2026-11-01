@@ -1651,3 +1651,178 @@ describe('FormGenerator — a MANY_TO_ONE foreign key is picked from its target 
     expect(generateForm(order(false), CTX.config)!.content).not.toContain('ProductService');
   });
 });
+
+// ---------- @UIGroup field grouping ----------
+
+describe('FormGenerator @UIGroup field grouping', () => {
+  const gen = new FormGenerator();
+
+  it('renders groups in order (ties by first declaration)', () => {
+    const content = gen.generate(domain({
+      entityName: 'Customer',
+      fields: [
+        field({ name: 'email', type: 'String' }),
+        field({ name: 'phone', type: 'String' }),
+        field({ name: 'firstName', type: 'String' }),
+        field({ name: 'lastName', type: 'String' }),
+        field({ name: 'notes', type: 'String' }),
+      ],
+      uiMetadata: {
+        groups: [
+          { name: 'second', label: 'Second Group', order: 2, fields: ['email', 'phone'] },
+          { name: 'firstA', label: 'First Group A', order: 1, fields: ['firstName'] },
+          { name: 'firstB', label: 'First Group B', order: 1, fields: ['lastName'] },
+        ],
+      },
+    }), CTX)!.content;
+
+    const firstAIdx = content.indexOf('data-testid="group-firstA"');
+    const firstBIdx = content.indexOf('data-testid="group-firstB"');
+    const secondIdx = content.indexOf('data-testid="group-second"');
+
+    expect(firstAIdx).toBeGreaterThan(-1);
+    expect(firstBIdx).toBeGreaterThan(-1);
+    expect(secondIdx).toBeGreaterThan(-1);
+    expect(firstAIdx).toBeLessThan(firstBIdx);
+    expect(firstBIdx).toBeLessThan(secondIdx);
+
+    // Heading fallback: uses label when present
+    expect(content).toContain('<h3 class="text-lg font-medium text-gray-900 dark:text-white">First Group A</h3>');
+  });
+
+  it('renders fields inside group in the group field order', () => {
+    const content = gen.generate(domain({
+      entityName: 'Customer',
+      fields: [
+        field({ name: 'a', type: 'String' }),
+        field({ name: 'b', type: 'String' }),
+        field({ name: 'c', type: 'String' }),
+      ],
+      uiMetadata: {
+        groups: [
+          { name: 'reversed', label: 'Reversed', order: 1, fields: ['c', 'a', 'b'] },
+        ],
+      },
+    }), CTX)!.content;
+
+    const cIdx = content.indexOf('data-testid="field-c"');
+    const aIdx = content.indexOf('data-testid="field-a"');
+    const bIdx = content.indexOf('data-testid="field-b"');
+
+    expect(cIdx).toBeLessThan(aIdx);
+    expect(aIdx).toBeLessThan(bIdx);
+  });
+
+  it('renders collapsible: true as native <details> with <summary> (open unless collapsed: true)', () => {
+    const content = gen.generate(domain({
+      entityName: 'Customer',
+      fields: [
+        field({ name: 'billingAddress', type: 'String' }),
+        field({ name: 'shippingAddress', type: 'String' }),
+        field({ name: 'accountType', type: 'String' }),
+      ],
+      uiMetadata: {
+        groups: [
+          { name: 'billing', label: 'Billing', order: 1, collapsible: true, collapsed: false, description: 'Enter billing details', fields: ['billingAddress'] },
+          { name: 'shipping', label: 'Shipping', order: 2, collapsible: true, collapsed: true, fields: ['shippingAddress'] },
+          { name: 'account', order: 3, collapsible: false, fields: ['accountType'] },
+        ],
+      },
+    }), CTX)!.content;
+
+    // Billing: collapsible + not collapsed -> <details data-testid="group-billing" open ...>
+    expect(content).toContain('<details data-testid="group-billing" open class="space-y-4">');
+    expect(content).toContain('<summary class="cursor-pointer text-lg font-medium text-gray-900 dark:text-white">Billing</summary>');
+    expect(content).toContain('<p class="text-sm text-gray-500 dark:text-gray-400">Enter billing details</p>');
+
+    // Shipping: collapsible + collapsed -> <details data-testid="group-shipping" ...> without open
+    expect(content).toContain('<details data-testid="group-shipping" class="space-y-4">');
+    expect(content).not.toContain('<details data-testid="group-shipping" open');
+    expect(content).toContain('<summary class="cursor-pointer text-lg font-medium text-gray-900 dark:text-white">Shipping</summary>');
+
+    // Account: not collapsible -> <section data-testid="group-account" ...>
+    expect(content).toContain('<section data-testid="group-account" class="space-y-4">');
+    // Name fallback when label is absent
+    expect(content).toContain('<h3 class="text-lg font-medium text-gray-900 dark:text-white">account</h3>');
+  });
+
+  it('renders ungrouped fields after groups and skips fields not rendered by the view', () => {
+    const content = gen.generate(domain({
+      entityName: 'Customer',
+      fields: [
+        field({ name: 'grouped1', type: 'String' }),
+        field({ name: 'grouped2', type: 'String' }),
+        field({ name: 'ungrouped1', type: 'String' }),
+        field({ name: 'hiddenField', type: 'String', hidden: true }),
+        field({ name: 'inUpdateOnly', type: 'String', inCreate: false, inUpdate: true }),
+        field({ name: 'notRendered', type: 'String', inCreate: false, inUpdate: false }),
+        field({ name: 'computedField', type: 'String', computed: true, computedFrom: ['grouped1'] }),
+      ],
+      uiMetadata: {
+        groups: [
+          { name: 'main', label: 'Main', order: 1, fields: ['grouped1', 'notRendered', 'hiddenField', 'grouped2', 'inUpdateOnly'] },
+        ],
+      },
+    }), CTX)!.content;
+
+    const groupMainIdx = content.indexOf('data-testid="group-main"');
+    const grouped1Idx = content.indexOf('data-testid="field-grouped1"');
+    const grouped2Idx = content.indexOf('data-testid="field-grouped2"');
+    const inUpdateOnlyIdx = content.indexOf('data-testid="field-inUpdateOnly"');
+    const ungrouped1Idx = content.indexOf('data-testid="field-ungrouped1"');
+    const computedFieldIdx = content.indexOf('data-testid="field-computedField"');
+
+    expect(groupMainIdx).toBeGreaterThan(-1);
+    expect(grouped1Idx).toBeGreaterThan(groupMainIdx);
+    expect(grouped2Idx).toBeGreaterThan(grouped1Idx);
+    expect(inUpdateOnlyIdx).toBeGreaterThan(grouped2Idx);
+
+    // Ungrouped fields come after the group closing tag
+    const groupCloseIdx = content.indexOf('</section>', groupMainIdx);
+    expect(ungrouped1Idx).toBeGreaterThan(groupCloseIdx);
+    expect(computedFieldIdx).toBeGreaterThan(ungrouped1Idx);
+
+    // Hidden and notRendered are skipped
+    expect(content).not.toContain('data-testid="field-notRendered"');
+    expect(content).not.toContain('data-testid="field-hiddenField"');
+  });
+
+  it('output is byte-identical without groups or with empty groups', () => {
+    const withoutGroups = gen.generate(domain({
+      entityName: 'Customer',
+      fields: [
+        field({ name: 'first', type: 'String' }),
+        field({ name: 'last', type: 'String' }),
+      ],
+    }), CTX)!.content;
+
+    const withEmptyGroups = gen.generate(domain({
+      entityName: 'Customer',
+      fields: [
+        field({ name: 'first', type: 'String' }),
+        field({ name: 'last', type: 'String' }),
+      ],
+      uiMetadata: {
+        groups: [],
+      },
+    }), CTX)!.content;
+
+    expect(withEmptyGroups).toBe(withoutGroups);
+    expect(withoutGroups).not.toContain('<section data-testid="group-');
+    expect(withoutGroups).not.toContain('<details data-testid="group-');
+  });
+
+describe('FormGenerator — group text is safe in the template', () => {
+  it('drops template-literal and markup characters from a group heading and description, and keeps the testid an identifier', () => {
+    const content = new FormGenerator().generate(domain({
+      entityName: 'Order',
+      fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'note', type: 'String', inCreate: true }],
+      uiMetadata: { groups: [{ name: 'a b', label: 'Total ${x} <b>`', description: '{{ y }}', fields: ['note'] }] },
+    }), CTX)!.content;
+    expect(content).toContain('data-testid="group-a-b"');
+    expect(content).toContain('Total x b');
+    expect(content).not.toContain('<b>');
+    expect(content).not.toContain('{{ y }}');
+  });
+});
+});

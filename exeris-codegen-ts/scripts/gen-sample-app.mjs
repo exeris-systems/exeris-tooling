@@ -283,6 +283,25 @@ const domains = [
     fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'amount', type: 'java.math.BigDecimal', dataType: 'currency' }],
     uiMetadata: { listView: false, detailView: true, createForm: true, editForm: false },
   }),
+  // Shipment lays its fields out in @UIGroup sections: a plain section first by order, a collapsed
+  // collapsible one second, and a field in no group after both, in the form and the detail view.
+  d({
+    entityName: 'Shipment',
+    fields: [
+      { name: 'id', type: 'java.util.UUID' },
+      { name: 'carrier', type: 'String', required: true, inCreate: true, inUpdate: true },
+      { name: 'trackingCode', type: 'String', inCreate: true, inUpdate: true },
+      { name: 'weightGrams', type: 'java.lang.Integer', inCreate: true, inUpdate: true },
+      { name: 'note', type: 'String', inCreate: true, inUpdate: true },
+    ],
+    uiMetadata: {
+      listView: true, detailView: true, createForm: true, editForm: true,
+      groups: [
+        { name: 'parcel', label: 'Parcel', order: 2, collapsible: true, collapsed: true, gridSpan: 12, fields: ['weightGrams'] },
+        { name: 'carriage', label: 'Carriage', description: 'Who carries it.', order: 1, collapsible: false, gridSpan: 12, fields: ['carrier', 'trackingCode'] },
+      ],
+    },
+  }),
   // Listing is the UNIVERSE entity: its rows are owned by a tenant and readable across the owner's
   // shared scope. The server owns the required tenantId (the owner), so the create and update
   // bodies omit it. The shared scope `scopeId` is declared through systemFields and stays out of

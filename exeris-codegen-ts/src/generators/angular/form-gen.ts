@@ -13,7 +13,7 @@ import { primaryKeyField } from '../../core/primary-key.js';
 import { outPath } from '../../core/paths.js';
 import { updateOmittedFields, updateVersionField } from '../api/type-gen.js';
 import { fieldRenderContext, resolveFieldRenders, toTitleCase, type FieldRenderModel } from './field-render.js';
-import { tsSingleQuoted } from './ts-literal.js';
+import { testIdSegment, tsSingleQuoted, tsTemplateText } from './ts-literal.js';
 import { entityExitRoute, entityViews, hasFormPage } from './entity-views.js';
 import { MAX_PAGE_SIZE } from './list-query.js';
 import { fileHeaderLines } from '../file-header.js';
@@ -159,91 +159,56 @@ export class FormGenerator implements CodeGenerator {
     // The form validates itself, so the browser's own validation of the bound attributes is off.
     lines.push('    <form (submit)="onSubmit($event)" novalidate class="space-y-6">');
 
-    for (const f of createFields) {
-      const blockStart = lines.length;
-      const { label, control, inputType, inputMode, enumType: enumTypeName } = f.form;
-      const requiredMark = f.form.required ? '<span class="text-red-500" aria-hidden="true">*</span>' : '';
-      const binding = `[formField]="form.${f.name}"`;
-      const state = `form.${f.name}()`;
-      // The kit's error border marks a field the error text below it describes.
-      const errorClass = `[class.exeris-input-error]="${state}.invalid() && ${state}.touched()"`;
-
-      lines.push('      <div class="form-group">');
-
-      if (control === 'select') {
-        lines.push(`        <label for="${f.name}" class="exeris-label">${label} ${requiredMark}</label>`);
-        lines.push(`        <select id="${f.name}" data-testid="field-${f.name}" ${binding} class="exeris-select mt-1" ${errorClass}>`);
-        lines.push('          <option value="">Select...</option>');
-        lines.push(`          @for (value of ${enumTypeName}Values; track value) {`);
-        lines.push(`            <option [value]="value">{{ ${enumTypeName}DisplayNames[value] }}</option>`);
-        lines.push('          }');
-        lines.push('        </select>');
-      } else if (control === 'picker') {
-        lines.push(`        <label for="${f.name}" class="exeris-label">${label} ${requiredMark}</label>`);
-        lines.push(`        <select id="${f.name}" data-testid="field-${f.name}" ${binding} class="exeris-select mt-1" ${errorClass} [attr.aria-describedby]="${pickerTruncatedName(f.name)}() ? 'options-truncated-${f.name}' : null">`);
-        // A required key cannot be set back to none; an optional one can.
-        lines.push(f.form.required
-          ? '          <option value="" disabled>Select...</option>'
-          : '          <option value="">—</option>');
-        // The value the control holds stays an option while the records load, and when the list
-        // does not return its record, so the select never shows another value or none.
-        lines.push(`          @if (${pickerUnlistedName(f.name)}()) {`);
-        lines.push(`            <option [value]="${state}.value()">{{ ${state}.value() }}</option>`);
-        lines.push('          }');
-        lines.push(`          @for (option of ${pickerOptionsName(f.name)}(); track option.value) {`);
-        lines.push('            <option [value]="option.value">{{ option.label }}</option>');
-        lines.push('          }');
-        lines.push('        </select>');
-        // A failed options request is reported beside the control; the held value stays an option.
-        lines.push(`        @if (${pickerErrorName(f.name)}()) {`);
-        lines.push(`          <p role="alert" class="exeris-error-text" data-testid="options-error-${f.name}">{{ ${pickerErrorName(f.name)}() }}</p>`);
-        lines.push('        }');
-        // A target with more rows than the page holds says so; the hint describes the select.
-        lines.push(`        @if (${pickerTruncatedName(f.name)}()) {`);
-        lines.push(`          <p id="options-truncated-${f.name}" class="exeris-help-text" data-testid="options-truncated-${f.name}">Showing the first ${MAX_PAGE_SIZE} options only.</p>`);
-        lines.push('        }');
-      } else if (control === 'checkbox') {
-        lines.push('        <div class="flex items-center gap-2">');
-        lines.push(`          <input id="${f.name}" data-testid="field-${f.name}" type="checkbox" ${binding} class="exeris-checkbox">`);
-        lines.push(`          <label for="${f.name}" class="exeris-label">${label} ${requiredMark}</label>`);
-        lines.push('        </div>');
-      } else {
-        const inputExtra = inputMode ? ` inputmode="${inputMode}"` : '';
-        lines.push(`        <label for="${f.name}" class="exeris-label">${label} ${requiredMark}</label>`);
-        lines.push(`        <input id="${f.name}" data-testid="field-${f.name}" type="${inputType}" ${binding} class="exeris-input mt-1" ${errorClass}${inputExtra}>`);
+    const hasGroups = (domain.uiMetadata?.groups?.length ?? 0) > 0;
+    if (!hasGroups) {
+      for (const f of createFields) {
+        lines.push(...this.renderFormControl(f));
       }
-      lines.push(`        @if (${state}.invalid() && ${state}.touched()) {`);
-      lines.push(`          <p class="exeris-error-text" data-testid="error-${f.name}">`);
-      lines.push(`            @if (${state}.getError('required')) { <span>${label} is required.</span> }`);
-      // A value the native control cannot parse (a partial date, a non-number) reads as a format error.
-      lines.push(`            @if (${state}.getError('pattern') || ${state}.getError('parse')) { <span>Invalid format.</span> }`);
-      lines.push(`            @if (${state}.getError('minLength')) { <span>Too short.</span> }`);
-      lines.push(`            @if (${state}.getError('maxLength')) { <span>Too long.</span> }`);
-      lines.push(`            @if (${state}.getError('min')) { <span>Too low.</span> }`);
-      lines.push(`            @if (${state}.getError('max')) { <span>Too high.</span> }`);
-      lines.push('          </p>');
-      lines.push('        }');
-      lines.push('      </div>');
-      // A control the create form does not offer renders in edit mode only.
-      if (!f.form.inCreate) {
-        const block = lines.splice(blockStart).map((line) => `  ${line}`);
-        lines.push('      @if (editMode()) {', ...block, '      }');
+      for (const f of computedFields) {
+        lines.push(...this.renderComputedField(f));
       }
-    }
+    } else {
+      const sortedGroups = [...domain.uiMetadata!.groups!].sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+      const groupedFieldNames = new Set<string>();
 
-    // Computed fields are shown for information: read-only, and not part of the form model.
-    for (const f of computedFields) {
-      const label = f.form.label;
-      const dependsOn = f.form.computedFrom.join(', ');
-
-      lines.push('      <div class="form-group">');
-      lines.push(`        <label for="${f.name}" class="exeris-label">${label} <span class="text-xs text-gray-500">(Auto)</span></label>`);
-      // Read-only: the field takes the kit's muted surface instead of the editable one.
-      lines.push(`        <input id="${f.name}" data-testid="field-${f.name}" type="${f.form.inputType}" [value]="${computedSignalName(f.name)}() ?? ''" readonly class="exeris-input mt-1 bg-[rgb(var(--exeris-bg-tertiary))] cursor-not-allowed opacity-75">`);
-      if (dependsOn) {
-        lines.push(`        <p class="exeris-help-text">Computed from: ${dependsOn}</p>`);
+      for (const g of sortedGroups) {
+        const heading = tsTemplateText(g.label || g.name);
+        const isCollapsible = g.collapsible === true;
+        if (isCollapsible) {
+          lines.push(`      <details data-testid="group-${testIdSegment(g.name)}"${g.collapsed ? '' : ' open'} class="space-y-4">`);
+          lines.push(`        <summary class="cursor-pointer text-lg font-medium text-gray-900 dark:text-white">${heading}</summary>`);
+        } else {
+          lines.push(`      <section data-testid="group-${testIdSegment(g.name)}" class="space-y-4">`);
+          lines.push(`        <h3 class="text-lg font-medium text-gray-900 dark:text-white">${heading}</h3>`);
+        }
+        if (g.description) {
+          lines.push(`        <p class="text-sm text-gray-500 dark:text-gray-400">${tsTemplateText(g.description)}</p>`);
+        }
+        for (const fieldName of g.fields) {
+          groupedFieldNames.add(fieldName);
+          const control = createFields.find((f) => f.name === fieldName);
+          if (control) {
+            lines.push(...this.renderFormControl(control).map((l) => `  ${l}`));
+            continue;
+          }
+          const computed = computedFields.find((f) => f.name === fieldName);
+          if (computed) {
+            lines.push(...this.renderComputedField(computed).map((l) => `  ${l}`));
+          }
+        }
+        lines.push(isCollapsible ? '      </details>' : '      </section>');
       }
-      lines.push('      </div>');
+
+      for (const f of createFields) {
+        if (!groupedFieldNames.has(f.name)) {
+          lines.push(...this.renderFormControl(f));
+        }
+      }
+      for (const f of computedFields) {
+        if (!groupedFieldNames.has(f.name)) {
+          lines.push(...this.renderComputedField(f));
+        }
+      }
     }
 
     lines.push('      @if (error()) {');
@@ -518,6 +483,90 @@ export class FormGenerator implements CodeGenerator {
     lines.push('}');
 
     return lines.join('\n');
+  }
+
+  private renderFormControl(f: FieldRenderModel): string[] {
+    const { label, control, inputType, inputMode, enumType: enumTypeName } = f.form;
+    const requiredMark = f.form.required ? '<span class="text-red-500" aria-hidden="true">*</span>' : '';
+    const binding = `[formField]="form.${f.name}"`;
+    const state = `form.${f.name}()`;
+    const errorClass = `[class.exeris-input-error]="${state}.invalid() && ${state}.touched()"`;
+    const result: string[] = [];
+
+    result.push('      <div class="form-group">');
+
+    if (control === 'select') {
+      result.push(`        <label for="${f.name}" class="exeris-label">${label} ${requiredMark}</label>`);
+      result.push(`        <select id="${f.name}" data-testid="field-${f.name}" ${binding} class="exeris-select mt-1" ${errorClass}>`);
+      result.push('          <option value="">Select...</option>');
+      result.push(`          @for (value of ${enumTypeName}Values; track value) {`);
+      result.push(`            <option [value]="value">{{ ${enumTypeName}DisplayNames[value] }}</option>`);
+      result.push('          }');
+      result.push('        </select>');
+    } else if (control === 'picker') {
+      result.push(`        <label for="${f.name}" class="exeris-label">${label} ${requiredMark}</label>`);
+      result.push(`        <select id="${f.name}" data-testid="field-${f.name}" ${binding} class="exeris-select mt-1" ${errorClass} [attr.aria-describedby]="${pickerTruncatedName(f.name)}() ? 'options-truncated-${f.name}' : null">`);
+      result.push(f.form.required
+        ? '          <option value="" disabled>Select...</option>'
+        : '          <option value="">—</option>');
+      result.push(`          @if (${pickerUnlistedName(f.name)}()) {`);
+      result.push(`            <option [value]="${state}.value()">{{ ${state}.value() }}</option>`);
+      result.push('          }');
+      result.push(`          @for (option of ${pickerOptionsName(f.name)}(); track option.value) {`);
+      result.push('            <option [value]="option.value">{{ option.label }}</option>');
+      result.push('          }');
+      result.push('        </select>');
+      result.push(`        @if (${pickerErrorName(f.name)}()) {`);
+      result.push(`          <p role="alert" class="exeris-error-text" data-testid="options-error-${f.name}">{{ ${pickerErrorName(f.name)}() }}</p>`);
+      result.push('        }');
+      result.push(`        @if (${pickerTruncatedName(f.name)}()) {`);
+      result.push(`          <p id="options-truncated-${f.name}" class="exeris-help-text" data-testid="options-truncated-${f.name}">Showing the first ${MAX_PAGE_SIZE} options only.</p>`);
+      result.push('        }');
+    } else if (control === 'checkbox') {
+      result.push('        <div class="flex items-center gap-2">');
+      result.push(`          <input id="${f.name}" data-testid="field-${f.name}" type="checkbox" ${binding} class="exeris-checkbox">`);
+      result.push(`          <label for="${f.name}" class="exeris-label">${label} ${requiredMark}</label>`);
+      result.push('        </div>');
+    } else {
+      const inputExtra = inputMode ? ` inputmode="${inputMode}"` : '';
+      result.push(`        <label for="${f.name}" class="exeris-label">${label} ${requiredMark}</label>`);
+      result.push(`        <input id="${f.name}" data-testid="field-${f.name}" type="${inputType}" ${binding} class="exeris-input mt-1" ${errorClass}${inputExtra}>`);
+    }
+    result.push(`        @if (${state}.invalid() && ${state}.touched()) {`);
+    result.push(`          <p class="exeris-error-text" data-testid="error-${f.name}">`);
+    result.push(`            @if (${state}.getError('required')) { <span>${label} is required.</span> }`);
+    result.push(`            @if (${state}.getError('pattern') || ${state}.getError('parse')) { <span>Invalid format.</span> }`);
+    result.push(`            @if (${state}.getError('minLength')) { <span>Too short.</span> }`);
+    result.push(`            @if (${state}.getError('maxLength')) { <span>Too long.</span> }`);
+    result.push(`            @if (${state}.getError('min')) { <span>Too low.</span> }`);
+    result.push(`            @if (${state}.getError('max')) { <span>Too high.</span> }`);
+    result.push('          </p>');
+    result.push('        }');
+    result.push('      </div>');
+
+    if (!f.form.inCreate) {
+      return [
+        '      @if (editMode()) {',
+        ...result.map((line) => `  ${line}`),
+        '      }',
+      ];
+    }
+    return result;
+  }
+
+  private renderComputedField(f: FieldRenderModel): string[] {
+    const label = f.form.label;
+    const dependsOn = f.form.computedFrom.join(', ');
+    const result: string[] = [];
+
+    result.push('      <div class="form-group">');
+    result.push(`        <label for="${f.name}" class="exeris-label">${label} <span class="text-xs text-gray-500">(Auto)</span></label>`);
+    result.push(`        <input id="${f.name}" data-testid="field-${f.name}" type="${f.form.inputType}" [value]="${computedSignalName(f.name)}() ?? ''" readonly class="exeris-input mt-1 bg-[rgb(var(--exeris-bg-tertiary))] cursor-not-allowed opacity-75">`);
+    if (dependsOn) {
+      result.push(`        <p class="exeris-help-text">Computed from: ${dependsOn}</p>`);
+    }
+    result.push('      </div>');
+    return result;
   }
 }
 

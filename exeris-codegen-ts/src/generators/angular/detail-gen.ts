@@ -19,9 +19,9 @@ import type { GeneratorConfig } from '../../config.js';
 import type { BackendType } from '../../core/backend-strategy.js';
 import { declaresPrimaryKey, primaryKeyField } from '../../core/primary-key.js';
 import { outPath } from '../../core/paths.js';
-import { tsSingleQuoted } from './ts-literal.js';
+import { testIdSegment, tsSingleQuoted, tsTemplateText } from './ts-literal.js';
 import { auditFieldNames, updateVersionField, viewSystemFieldNames } from '../api/type-gen.js';
-import { fieldRenderContext, isEnumField, resolveFieldRenders, toTitleCase } from './field-render.js';
+import { fieldRenderContext, isEnumField, resolveFieldRenders, toTitleCase, type FieldRenderModel } from './field-render.js';
 import { filterProperties, foreignKeyBase, foreignKeyParam } from './list-query.js';
 import type { RelationshipMetadata } from '../../models/domain-model.js';
 import { entityExitRoute, entityViews } from './entity-views.js';
@@ -118,15 +118,60 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`}`);
     lines.push(``);
 
+    const hasGroups = (domain.uiMetadata?.groups?.length ?? 0) > 0;
+    const sortedGroups = hasGroups
+      ? [...domain.uiMetadata!.groups!].sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
+      : [];
+    const groupedFieldNames = new Set<string>();
+    const groupFieldsMap = new Map<string, FieldRenderModel[]>();
+    if (hasGroups) {
+      for (const g of sortedGroups) {
+        const gFields: FieldRenderModel[] = [];
+        for (const fieldName of g.fields) {
+          const f = displayFields.find((df) => df.name === fieldName);
+          if (f) {
+            gFields.push(f);
+            groupedFieldNames.add(fieldName);
+          }
+        }
+        groupFieldsMap.set(g.name, gFields);
+      }
+    }
+    const ungroupedFields = hasGroups
+      ? displayFields.filter((f) => !groupedFieldNames.has(f.name))
+      : [];
+
+    const fieldDisplayEntry = (field: FieldRenderModel): string => {
+      const { display, enumType, dataType } = field.detail;
+      return `  { name: '${field.name}' as keyof ${modelName}, label: '${tsSingleQuoted(field.label)}', type: '${display}'${enumType ? `, enumType: '${enumType}'` : ''}${dataType ? `, dataType: '${dataType}'` : ''}${field.link !== undefined ? `, link: '${field.link}'` : ''} },`;
+    };
+
     lines.push(`const DISPLAY_FIELDS: FieldDisplay[] = [`);
     for (const field of displayFields) {
-      // Only the currency/percent/url facets of @Field.dataType drive a distinct render; any other
-      // value is absent here and the default formatValue() path applies.
-      const { display, enumType, dataType } = field.detail;
-      lines.push(`  { name: '${field.name}' as keyof ${modelName}, label: '${tsSingleQuoted(field.label)}', type: '${display}'${enumType ? `, enumType: '${enumType}'` : ''}${dataType ? `, dataType: '${dataType}'` : ''}${field.link !== undefined ? `, link: '${field.link}'` : ''} },`);
+      lines.push(fieldDisplayEntry(field));
     }
     lines.push(`];`);
     lines.push(``);
+
+    if (hasGroups) {
+      for (const g of sortedGroups) {
+        const constName = `GROUP_${DslMapper.toKebabCase(g.name).replace(/-/g, '_').toUpperCase()}_FIELDS`;
+        lines.push(`const ${constName}: FieldDisplay[] = [`);
+        for (const field of groupFieldsMap.get(g.name)!) {
+          lines.push(fieldDisplayEntry(field));
+        }
+        lines.push(`];`);
+        lines.push(``);
+      }
+      if (ungroupedFields.length > 0) {
+        lines.push(`const UNGROUPED_FIELDS: FieldDisplay[] = [`);
+        for (const field of ungroupedFields) {
+          lines.push(fieldDisplayEntry(field));
+        }
+        lines.push(`];`);
+        lines.push(``);
+      }
+    }
 
     lines.push(`@Component({`);
     lines.push(`  selector: 'app-${kebab}-detail',`);
@@ -166,49 +211,85 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`            <button (click)="onDelete()" class="exeris-btn exeris-btn-danger">Delete</button>`);
     lines.push(`          </nav>`);
     lines.push(`        </header>`);
-    lines.push(`        <section aria-labelledby="details-title" class="exeris-card overflow-hidden">`);
-    lines.push(`          <h2 id="details-title" class="exeris-card-header text-sm font-medium text-gray-500 dark:text-gray-400">Details</h2>`);
-    lines.push(`          <dl class="divide-y divide-gray-200 dark:divide-gray-700">`);
-    lines.push(`            @for (field of displayFields; track field.name) {`);
-    lines.push(`              <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">`);
-    lines.push(`                <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ field.label }}</dt>`);
-    lines.push(`                <dd class="mt-1 text-sm text-gray-900 dark:text-white sm:mt-0 sm:col-span-2">`);
-    // @Field.dataType render facets (Wave 1A): currency/percent pipes and url anchor
-    // operate on the raw entity value; every other field falls through to formatValue().
-    // A foreign key links to the target's detail page; an empty one falls through to the
-    // switch, so it renders exactly as an unlinked field does.
-    const sw = hasLinks ? '  ' : '';
-    if (hasLinks) {
-      lines.push(`                  @if (field.link && rawValue(field, entity()) !== null) {`);
-      lines.push(`                    <a [routerLink]="[field.link, rawValue(field, entity())]" [attr.data-testid]="'link-' + field.name" class="font-mono text-exeris-primary hover:underline">{{ rawValue(field, entity()) }}</a>`);
-      lines.push(`                  } @else {`);
-    }
-    lines.push(`${sw}                  @switch (field.dataType) {`);
-    lines.push(`${sw}                    @case ('currency') { {{ numericValue(field, entity()) | currency }} }`);
-    lines.push(`${sw}                    @case ('percent') { {{ numericValue(field, entity()) | percent }} }`);
-    lines.push(`${sw}                    @case ('url') { <a [href]="rawValue(field, entity())" class="text-exeris-primary hover:underline">{{ rawValue(field, entity()) }}</a> }`);
-    if (hasDateFields) {
-      // A date renders through DatePipe, which reads a LocalDate's yyyy-MM-dd as that calendar day
-      // in the viewer's zone rather than as midnight UTC.
-      lines.push(`${sw}                    @default {`);
-      lines.push(`${sw}                      @switch (field.type) {`);
-      lines.push(`${sw}                        @case ('date') { {{ (dateValue(field, entity()) | date:'mediumDate') ?? '—' }} }`);
-      lines.push(`${sw}                        @case ('datetime') { {{ (dateValue(field, entity()) | date:'medium') ?? '—' }} }`);
-      lines.push(`${sw}                        @default { {{ formatValue(field, entity()) }} }`);
-      lines.push(`${sw}                      }`);
-      lines.push(`${sw}                    }`);
+    const renderDlRows = (fieldsVar: string): string[] => {
+      const rows: string[] = [];
+      rows.push(`            @for (field of ${fieldsVar}; track field.name) {`);
+      rows.push(`              <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">`);
+      rows.push(`                <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ field.label }}</dt>`);
+      rows.push(`                <dd class="mt-1 text-sm text-gray-900 dark:text-white sm:mt-0 sm:col-span-2">`);
+      const sw = hasLinks ? '  ' : '';
+      if (hasLinks) {
+        rows.push(`                  @if (field.link && rawValue(field, entity()) !== null) {`);
+        rows.push(`                    <a [routerLink]="[field.link, rawValue(field, entity())]" [attr.data-testid]="'link-' + field.name" class="font-mono text-exeris-primary hover:underline">{{ rawValue(field, entity()) }}</a>`);
+        rows.push(`                  } @else {`);
+      }
+      rows.push(`${sw}                  @switch (field.dataType) {`);
+      rows.push(`${sw}                    @case ('currency') { {{ numericValue(field, entity()) | currency }} }`);
+      rows.push(`${sw}                    @case ('percent') { {{ numericValue(field, entity()) | percent }} }`);
+      rows.push(`${sw}                    @case ('url') { <a [href]="rawValue(field, entity())" class="text-exeris-primary hover:underline">{{ rawValue(field, entity()) }}</a> }`);
+      if (hasDateFields) {
+        rows.push(`${sw}                    @default {`);
+        rows.push(`${sw}                      @switch (field.type) {`);
+        rows.push(`${sw}                        @case ('date') { {{ (dateValue(field, entity()) | date:'mediumDate') ?? '—' }} }`);
+        rows.push(`${sw}                        @case ('datetime') { {{ (dateValue(field, entity()) | date:'medium') ?? '—' }} }`);
+        rows.push(`${sw}                        @default { {{ formatValue(field, entity()) }} }`);
+        rows.push(`${sw}                      }`);
+        rows.push(`${sw}                    }`);
+      } else {
+        rows.push(`${sw}                    @default { {{ formatValue(field, entity()) }} }`);
+      }
+      rows.push(`${sw}                  }`);
+      if (hasLinks) {
+        rows.push(`                  }`);
+      }
+      rows.push(`                </dd>`);
+      rows.push(`              </div>`);
+      rows.push(`            }`);
+      return rows;
+    };
+
+    if (!hasGroups) {
+      lines.push(`        <section aria-labelledby="details-title" class="exeris-card overflow-hidden">`);
+      lines.push(`          <h2 id="details-title" class="exeris-card-header text-sm font-medium text-gray-500 dark:text-gray-400">Details</h2>`);
+      lines.push(`          <dl class="divide-y divide-gray-200 dark:divide-gray-700">`);
+      lines.push(...renderDlRows('displayFields'));
+      lines.push(`          </dl>`);
+      lines.push(`        </section>`);
     } else {
-      lines.push(`${sw}                    @default { {{ formatValue(field, entity()) }} }`);
+      let isFirst = true;
+      for (const g of sortedGroups) {
+        const heading = tsTemplateText(g.label || g.name);
+        const member = `group${DslMapper.toTypeName(g.name)}Fields`;
+        const isCollapsible = g.collapsible === true;
+        const mtClass = isFirst ? '' : ' mt-8';
+        isFirst = false;
+
+        if (isCollapsible) {
+          lines.push(`        <details data-testid="group-${testIdSegment(g.name)}"${g.collapsed ? '' : ' open'} class="exeris-card overflow-hidden${mtClass}">`);
+          lines.push(`          <summary class="exeris-card-header text-sm font-medium text-gray-500 dark:text-gray-400 cursor-pointer">${heading}</summary>`);
+        } else {
+          lines.push(`        <section data-testid="group-${testIdSegment(g.name)}" class="exeris-card overflow-hidden${mtClass}">`);
+          lines.push(`          <h2 class="exeris-card-header text-sm font-medium text-gray-500 dark:text-gray-400">${heading}</h2>`);
+        }
+        if (g.description) {
+          lines.push(`          <p class="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">${tsTemplateText(g.description)}</p>`);
+        }
+        lines.push(`          <dl class="divide-y divide-gray-200 dark:divide-gray-700">`);
+        lines.push(...renderDlRows(member));
+        lines.push(`          </dl>`);
+        lines.push(isCollapsible ? `        </details>` : `        </section>`);
+      }
+
+      if (ungroupedFields.length > 0) {
+        const mtClass = isFirst ? '' : ' mt-8';
+        lines.push(`        <section aria-labelledby="details-title" class="exeris-card overflow-hidden${mtClass}">`);
+        lines.push(`          <h2 id="details-title" class="exeris-card-header text-sm font-medium text-gray-500 dark:text-gray-400">Details</h2>`);
+        lines.push(`          <dl class="divide-y divide-gray-200 dark:divide-gray-700">`);
+        lines.push(...renderDlRows('ungroupedFields'));
+        lines.push(`          </dl>`);
+        lines.push(`        </section>`);
+      }
     }
-    lines.push(`${sw}                  }`);
-    if (hasLinks) {
-      lines.push(`                  }`);
-    }
-    lines.push(`                </dd>`);
-    lines.push(`              </div>`);
-    lines.push(`            }`);
-    lines.push(`          </dl>`);
-    lines.push(`        </section>`);
     if (related.length > 0) {
       lines.push(`        <section aria-labelledby="related-title" class="exeris-card mt-8">`);
       lines.push(`          <h2 id="related-title" class="exeris-card-header text-sm font-medium text-gray-500 dark:text-gray-400">Related records</h2>`);
@@ -279,6 +360,16 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(``);
     lines.push(`  readonly id = input.required<string>();`);
     lines.push(`  readonly displayFields = DISPLAY_FIELDS;`);
+    if (hasGroups) {
+      for (const g of sortedGroups) {
+        const member = `group${DslMapper.toTypeName(g.name)}Fields`;
+        const constName = `GROUP_${DslMapper.toKebabCase(g.name).replace(/-/g, '_').toUpperCase()}_FIELDS`;
+        lines.push(`  readonly ${member} = ${constName};`);
+      }
+      if (ungroupedFields.length > 0) {
+        lines.push(`  readonly ungroupedFields = UNGROUPED_FIELDS;`);
+      }
+    }
     if (undeclaredRows.length > 0) {
       const members = undeclaredRows
         .map((row) => `${row.name}?: ${row.kind === 'date' ? 'string' : 'number'}`)
@@ -585,10 +676,6 @@ function detailActions(domain: DomainMetadata): DetailAction[] {
     });
 }
 
-/** Text placed between template tags, inside the component's template literal. */
-function tsTemplateText(text: string): string {
-  return text.replace(/[`$\\{}<>]/g, '');
-}
 
 /** A row of the detail view's system panel, after the id. */
 interface SystemPanelRow {

@@ -304,5 +304,11 @@
     "since": "0.11",
     "adr": "ADR-015",
     "justification": "The processor reads @QueryParam, so a parameter carrying it is bound from the query string under its key, as the SDK reader reads it. A parameter that carried both annotations was bound from the body, because @QueryParam was unread; after regenerating, the generated handler reads it from the query string, the OpenAPI document declares it in: query and the TypeScript client sends it as a query parameter. Such a parameter on a streaming action, or of a type with no conversion from text, is refused. docs/migration/0.11.0/java-09-action-query-param.md carries the step."
+  },
+  {
+    "signature": "<entity>-form.component.ts, <entity>-detail.component.ts: an entity with @UIGroup lays fields out in declared group sections (<section> or collapsible <details>), ungrouped fields rendered after groups",
+    "since": "0.11",
+    "adr": "ADR-092",
+    "justification": "The generated form and detail views organize fields into their declared @UIGroup sections in order (ties broken by declaration order), with collapsible groups rendered as native <details> with <summary>. Fields in no group render after the groups as before. An entity without @UIGroup regenerates byte-identically. docs/migration/0.11.0/ts-09-ui-group-sections.md carries the step."
   }
 ]
