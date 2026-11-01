@@ -242,6 +242,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     /** One {@code @Action} method, with the metadata extracted from it, for a check that needs the events too. */
     private record ActionSite(ActionMetadata action, ExecutableElement method, AnnotationMirror annotation) {}
 
+    /** One {@code @SagaStep} site, with its metadata, element and mirror, for contract validation. */
+    private record SagaStepSite(SagaStepMetadata metadata, ExecutableElement method, AnnotationMirror mirror) {}
+
     /**
      * An SDK annotation that <em>no</em> generator consumes — so applying it has no
      * effect on emitted output, whether or not the processor extracts it. Distinct
@@ -300,6 +303,11 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             String qualifiedName,
                             ViewMetadata view) {}
 
+    /** Why each {@code @Saga} compensation attribute is listed in {@link #INERT_ATTRIBUTES}. */
+    private static final String SAGA_COMPENSATION_NOT_EMITTED =
+            "the value reaches SagaMetadata in the JSON, and no emitter reads it: the emitted flow "
+                    + "registers the step compensators and sets only the saga timeout and retry count";
+
     /**
      * Why these registries exist: every SDK annotation is
      * {@code @Retention(SOURCE)}, so it is erased by the compiler and is absent
@@ -347,11 +355,10 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      *
      * <p>{@code Saga} and {@code SagaStep} do have call sites, on the one extraction path both a
      * standalone {@code @Saga} class and an {@code @ExerisDomain} entity carrying {@code @Saga} go
-     * through, so the entries for them below fire. The {@code @Saga.compensation*} family is unregistered for a
-     * different reason: none of it is extracted, half of it has no carrier, and what an emitter
-     * should compile it into against the kernel's compensation surface is an open question, not a
-     * generator that declines to act. C0's never-read pass does not cover these either — it works
-     * per annotation, and {@code @Saga} is read.
+     * through, so the entries for them below fire. The {@code @Saga.compensation*} family and {@code @Saga.trigger} are
+     * extracted into {@code SagaMetadata} and read by no emitter, so they are registered here: the
+     * emitted flow registers each step's compensation method and carries only the saga timeout and
+     * retry count.
      *
      * <p>When a generator starts consuming one of these, DELETE its entry in the
      * same change — a stale entry produces a false "no effect" warning on an
@@ -619,6 +626,23 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "schema declares the field, but no emitter renders it — the emitted "
                             + "flow class's Javadoc names only the entity, and the emitted Angular "
                             + "saga state machine does not carry it"),
+            new InertAttribute("Saga", "compensationTimeout",
+                    SAGA_COMPENSATION_NOT_EMITTED),
+            new InertAttribute("Saga", "compensationMaxRetries",
+                    SAGA_COMPENSATION_NOT_EMITTED),
+            new InertAttribute("Saga", "compensationRetryDelay",
+                    SAGA_COMPENSATION_NOT_EMITTED),
+            new InertAttribute("Saga", "continueCompensationOnFailure",
+                    SAGA_COMPENSATION_NOT_EMITTED),
+            new InertAttribute("Saga", "compensationDlq",
+                    SAGA_COMPENSATION_NOT_EMITTED),
+            new InertAttribute("Saga", "compensationFailureHandler",
+                    SAGA_COMPENSATION_NOT_EMITTED),
+            new InertAttribute("Saga", "manualInterventionOnCompensationFailure",
+                    SAGA_COMPENSATION_NOT_EMITTED),
+            new InertAttribute("Saga", "trigger",
+                    "the value reaches SagaMetadata.trigger in the JSON, and no emitter reads it: "
+                            + "the emitted saga starts only when the author calls schedule()"),
             new InertAttribute("SagaStep", "description",
                     "the value reaches SagaStepMetadata.description in the JSON, but no emitter "
                             + "renders it — the emitted step method's Javadoc names only the step, "
@@ -3806,12 +3830,166 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         if (values.containsKey(VERSION_ATTRIBUTE)) {
             builder.version(getInt(values, VERSION_ATTRIBUTE, 1));
         }
+        if (values.containsKey("compensationTimeout")) {
+            builder.compensationTimeout((String) values.get("compensationTimeout"));
+        }
+        if (values.containsKey("compensationMaxRetries")) {
+            builder.compensationMaxRetries((Integer) values.get("compensationMaxRetries"));
+        }
+        if (values.containsKey("compensationRetryDelay")) {
+            builder.compensationRetryDelay((String) values.get("compensationRetryDelay"));
+        }
+        if (values.containsKey("continueCompensationOnFailure")) {
+            builder.continueCompensationOnFailure((Boolean) values.get("continueCompensationOnFailure"));
+        }
+        if (values.containsKey("compensationDlq")) {
+            String dlq = (String) values.get("compensationDlq");
+            if (dlq != null && !dlq.isBlank()) {
+                builder.compensationDlq(dlq);
+            }
+        }
+        if (values.containsKey("compensationFailureHandler")) {
+            String handler = qualifiedClassFqn(values.get("compensationFailureHandler"));
+            if (handler != null) {
+                builder.compensationFailureHandler(handler);
+            }
+        }
+        if (values.containsKey("manualInterventionOnCompensationFailure")) {
+            builder.manualInterventionOnCompensationFailure(
+                    (Boolean) values.get("manualInterventionOnCompensationFailure"));
+        }
+        if (values.containsKey("trigger")) {
+            Object triggerValue = values.get("trigger");
+            if (triggerValue instanceof AnnotationMirror triggerMirror) {
+                builder.trigger(extractSagaTrigger(triggerMirror, element));
+            }
+        }
 
         // Extract saga steps from methods
         List<SagaStepMetadata> steps = extractSagaSteps(element);
         builder.steps(steps);
 
         return builder.build();
+    }
+
+    private SagaMetadata.SagaTrigger extractSagaTrigger(AnnotationMirror triggerMirror, TypeElement element) {
+        Map<String, Object> values = extractAnnotationValues(triggerMirror);
+        SagaMetadata.TriggerType kind = SagaMetadata.TriggerType.MANUAL;
+        if (values.containsKey("type")) {
+            String constantName = enumConstantName(values.get("type"));
+            if (constantName != null) {
+                String replacement = switch (constantName) {
+                    case "SCHEDULE" -> "SCHEDULED";
+                    case "HTTP" -> "API";
+                    case "COMMAND" -> "MANUAL";
+                    default -> null;
+                };
+                if (replacement != null) {
+                    warning(DiagnosticId.SAGA_TRIGGER_CONSTANT_DEPRECATED,
+                            "@Saga.SagaTrigger(type = " + constantName + ") is deprecated for removal in SDK 1.0.0; "
+                                    + "use " + replacement + " instead. See MIGRATION.md in exeris-sdk.",
+                            element, triggerMirror);
+                    constantName = replacement;
+                }
+                try {
+                    kind = SagaMetadata.TriggerType.valueOf(constantName);
+                } catch (IllegalArgumentException _) {
+                    kind = null;
+                }
+            }
+        }
+        String source = null;
+        if (values.containsKey("source")) {
+            source = qualifiedClassFqn(values.get("source"));
+        }
+        if (source == null && values.containsKey("sourceName")) {
+            String declaredSourceName = (String) values.get("sourceName");
+            if (declaredSourceName != null && !declaredSourceName.isBlank()) {
+                source = declaredSourceName;
+            }
+        }
+        String topic = null;
+        if (values.containsKey("topic")) {
+            String declaredTopic = (String) values.get("topic");
+            if (declaredTopic != null && !declaredTopic.isBlank()) {
+                topic = declaredTopic;
+            }
+        }
+        String cron = null;
+        if (values.containsKey("schedule")) {
+            String declaredSchedule = (String) values.get("schedule");
+            if (declaredSchedule != null && !declaredSchedule.isBlank()) {
+                cron = declaredSchedule;
+            }
+        }
+        return new SagaMetadata.SagaTrigger(kind, source, topic, cron, null);
+    }
+
+    private String qualifiedClassFqn(Object classValue) {
+        if (classValue instanceof TypeMirror tm) {
+            if (tm.getKind() == TypeKind.VOID) {
+                return null;
+            }
+            if (tm instanceof DeclaredType dt && dt.asElement() instanceof TypeElement te) {
+                return te.getQualifiedName().toString();
+            }
+            return tm.toString();
+        }
+        return null;
+    }
+
+    /**
+     * The name of the method the generated flow emits for a step named {@code stepName}: the name
+     * split on {@code -} and {@code _}, joined in camel case, {@code step} when nothing is left.
+     * It must equal {@code KernelSagaGenerator}'s step method name, or a compensation that collides
+     * with a step reaches the generator unrefused.
+     */
+    static String sagaStepMethodName(String stepName) {
+        if (stepName == null || stepName.isBlank()) {
+            return "step";
+        }
+        StringBuilder name = new StringBuilder(stepName.length());
+        for (String part : stepName.split("[-_]+")) {
+            if (part.isEmpty()) {
+                continue;
+            }
+            char head = name.isEmpty() ? Character.toLowerCase(part.charAt(0)) : Character.toUpperCase(part.charAt(0));
+            name.append(head).append(part, 1, part.length());
+        }
+        return name.isEmpty() ? "step" : name.toString();
+    }
+
+    private boolean hasCompensationMethod(TypeElement hostElement, String methodName) {
+        if (methodName == null || methodName.isBlank()) {
+            return false;
+        }
+        TypeElement current = hostElement;
+        while (current != null) {
+            for (Element enclosed : current.getEnclosedElements()) {
+                if (enclosed.getKind() == ElementKind.METHOD
+                        && enclosed.getSimpleName().contentEquals(methodName)) {
+                    ExecutableElement method = (ExecutableElement) enclosed;
+                    List<? extends VariableElement> params = method.getParameters();
+                    if (params.isEmpty()) {
+                        return true;
+                    }
+                    if (params.size() == 1) {
+                        TypeMirror paramType = params.getFirst().asType();
+                        String typeStr = paramType.toString();
+                        if ("eu.exeris.kernel.spi.flow.model.FlowContext".equals(typeStr)
+                                || typeStr.endsWith(".FlowContext")
+                                || "FlowContext".equals(typeStr)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            current = current.getSuperclass() instanceof DeclaredType superType
+                    && superType.asElement() instanceof TypeElement superElement
+                    && !superElement.getQualifiedName().contentEquals("java.lang.Object")
+                    ? superElement : null;
+        }
+        return false;
     }
 
     /**
@@ -3826,7 +4004,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * extraction already uses for {@code @Provides.List}.
      */
     private List<SagaStepMetadata> extractSagaSteps(TypeElement element) {
-        List<SagaStepMetadata> steps = new ArrayList<>();
+        List<SagaStepSite> sites = new ArrayList<>();
 
         for (Element enclosed : element.getEnclosedElements()) {
             if (enclosed.getKind() != ElementKind.METHOD) {
@@ -3837,14 +4015,52 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
             AnnotationMirror stepAnnotation = findAnnotation(method, SAGA_STEP_FQN);
             if (stepAnnotation != null) {
-                steps.add(sagaStep(stepAnnotation, method));
+                sites.add(new SagaStepSite(sagaStep(stepAnnotation, method), method, stepAnnotation));
             }
 
             // Repeated: javac put the singles inside the container and left no direct mirror.
             AnnotationMirror container = findAnnotation(method, SAGA_STEPS_FQN);
             if (container != null) {
-                forEachContained(container, contained -> steps.add(sagaStep(contained, method)));
+                forEachContained(container, contained ->
+                        sites.add(new SagaStepSite(sagaStep(contained, method), method, contained)));
             }
+        }
+
+        if (sites.isEmpty()) {
+            return List.of();
+        }
+
+        Set<String> stepMethodNames = new HashSet<>();
+        for (SagaStepSite site : sites) {
+            stepMethodNames.add(site.method().getSimpleName().toString());
+            stepMethodNames.add(sagaStepMethodName(site.metadata().name()));
+        }
+        for (SagaStepSite site : sites) {
+            String comp = site.metadata().compensation();
+            if (comp != null && stepMethodNames.contains(comp)) {
+                error(DiagnosticId.SAGA_STEP_COMPENSATION_NAMES_A_STEP,
+                        "@SagaStep(compensation = \"" + comp + "\") on method '"
+                                + site.method().getSimpleName() + "' names a saga step. The generated "
+                                + "flow emits one method per step and one per compensation; name a "
+                                + "method that is not a step.",
+                        site.method(), site.mirror());
+            } else if (comp != null && !comp.isBlank() && !hasCompensationMethod(element, comp)) {
+                error(DiagnosticId.SAGA_STEP_COMPENSATION_METHOD_NOT_FOUND,
+                        "@SagaStep(compensation = \"" + comp + "\") on method '"
+                                + site.method().getSimpleName()
+                                + "' names no method with a compatible signature on @Saga host '"
+                                + element.getSimpleName()
+                                + "'. Declare 'public void " + comp + "(FlowContext context)' or "
+                                + "'public void " + comp + "()' on the host class.",
+                        site.method(), site.mirror());
+            }
+        }
+
+        validateSagaStepOrders(sites);
+
+        List<SagaStepMetadata> steps = new ArrayList<>(sites.size());
+        for (SagaStepSite site : sites) {
+            steps.add(site.metadata());
         }
 
         // This is the saga-step sorter KernelSagaGenerator's Javadoc requires of its callers: the
@@ -3855,6 +4071,79 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         steps.sort(Comparator.comparingInt(SagaStepMetadata::order));
 
         return steps;
+    }
+
+    private void validateSagaStepOrders(List<SagaStepSite> sites) {
+        if (sites.isEmpty()) {
+            return;
+        }
+
+        int minOrder = Integer.MAX_VALUE;
+        for (SagaStepSite site : sites) {
+            if (site.metadata().order() < minOrder) {
+                minOrder = site.metadata().order();
+            }
+        }
+        if (minOrder != 1) {
+            SagaStepSite first = sites.getFirst();
+            for (SagaStepSite s : sites) {
+                if (s.metadata().order() == minOrder) {
+                    first = s;
+                    break;
+                }
+            }
+            error(DiagnosticId.SAGA_STEP_ORDER_NOT_STARTING_AT_ONE,
+                    "@SagaStep(order = " + first.metadata().order() + ") on method '"
+                            + first.method().getSimpleName()
+                            + "': saga step order sequence must start at 1.",
+                    first.method(), first.mirror());
+        }
+
+        Map<Integer, List<SagaStepSite>> byOrder = new LinkedHashMap<>();
+        for (SagaStepSite site : sites) {
+            byOrder.computeIfAbsent(site.metadata().order(), k -> new ArrayList<>()).add(site);
+        }
+        for (Map.Entry<Integer, List<SagaStepSite>> entry : byOrder.entrySet()) {
+            List<SagaStepSite> stepList = entry.getValue();
+            if (stepList.size() > 1) {
+                boolean allParallel = true;
+                for (SagaStepSite s : stepList) {
+                    if (!s.metadata().parallel()) {
+                        allParallel = false;
+                        break;
+                    }
+                }
+                if (!allParallel) {
+                    SagaStepSite offending = stepList.get(1);
+                    for (SagaStepSite s : stepList) {
+                        if (!s.metadata().parallel()) {
+                            offending = s;
+                            break;
+                        }
+                    }
+                    error(DiagnosticId.SAGA_STEP_ORDER_DUPLICATE,
+                            "@SagaStep(order = " + entry.getKey() + ") on method '"
+                                    + offending.method().getSimpleName()
+                                    + "' is duplicated among steps that are not all declared parallel = true.",
+                            offending.method(), offending.mirror());
+                }
+            }
+        }
+
+        List<Integer> distinctOrders = new ArrayList<>(byOrder.keySet());
+        distinctOrders.sort(null);
+        for (int i = 0; i < distinctOrders.size() - 1; i++) {
+            int current = distinctOrders.get(i);
+            int next = distinctOrders.get(i + 1);
+            if (next > current + 1) {
+                SagaStepSite offending = byOrder.get(next).getFirst();
+                error(DiagnosticId.SAGA_STEP_ORDER_GAP,
+                        "@SagaStep(order = " + next + ") on method '"
+                                + offending.method().getSimpleName()
+                                + "' has a gap in the order sequence; expected " + (current + 1) + ".",
+                        offending.method(), offending.mirror());
+            }
+        }
     }
 
     /** One {@code @SagaStep} mirror, whether it stood alone or came out of the container. */

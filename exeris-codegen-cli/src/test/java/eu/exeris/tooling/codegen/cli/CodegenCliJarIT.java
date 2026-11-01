@@ -268,7 +268,7 @@ class CodegenCliJarIT {
                     @Field(label = "Label", required = true) private String label;
                     @Action(name = "track", label = "Track", streaming = true)
                     public void track() { }
-                    @SagaStep(order = 0, name = "relay", service = "relay", command = "Relay")
+                    @SagaStep(order = 1, name = "relay", service = "relay", command = "Relay")
                     public void relay() { }
                 }
                 """);

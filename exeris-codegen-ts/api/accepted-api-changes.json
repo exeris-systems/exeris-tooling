@@ -310,5 +310,11 @@
     "since": "0.11",
     "adr": "ADR-092",
     "justification": "The generated form and detail views organize fields into their declared @UIGroup sections in order (ties broken by declaration order), with collapsible groups rendered as native <details> with <summary>. Fields in no group render after the groups as before. An entity without @UIGroup regenerates byte-identically. docs/migration/0.11.0/ts-09-ui-group-sections.md carries the step."
+  },
+  {
+    "signature": "<Entity>SagaFlow (Java): the compensation hook takes the @SagaStep.compensation name (was compensate<Step>), one method per distinct name; @Saga sources numbered from 0, with an order gap, a shared order among sequential steps, or a compensation naming a step or no host method fail at javac (EXT-PROC-1025..1029)",
+    "since": "0.11",
+    "adr": "ADR-062",
+    "justification": "The kernel flow resumes a parked saga by step identity (ADR-062), so the step sequence the source declares must be the one compiled: 1..N without a gap, a value shared only by parallel steps. The compensation the source names is the hook registered for its step, and two steps naming one method share it. A subclass overriding compensate<Step> renames the override to the declared name. A saga with no compensation and steps numbered from 1 regenerates byte-identically apart from a declared maxRetries = 0, which is kept. The TypeScript output does not change. docs/migration/0.11.0/java-14-saga-compensation-and-trigger.md carries the step."
   }
 ]

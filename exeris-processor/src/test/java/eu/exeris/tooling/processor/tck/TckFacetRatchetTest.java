@@ -17,8 +17,6 @@ import org.junit.jupiter.api.Test;
 class TckFacetRatchetTest {
 
     private static final Set<Facet> CEILING = EnumSet.of(
-            Facet.SAGA_COMPENSATION,
-            Facet.SAGA_TRIGGER,
             Facet.ROUTE_ACCESS,
             Facet.NAV_MENU,
             Facet.TABS,

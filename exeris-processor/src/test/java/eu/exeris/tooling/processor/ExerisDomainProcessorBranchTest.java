@@ -255,11 +255,11 @@ class ExerisDomainProcessorBranchTest {
 
                     @Saga(name = "PaymentFlow", timeout = "PT30M", maxRetries = 3)
                     public class PaymentFlow {
-                        @SagaStep(order = 0, name = "reserveFunds", service = "payments",
+                        @SagaStep(order = 1, name = "reserveFunds", service = "payments",
                                 command = "ReserveFunds")
                         public void reserve() {}
 
-                        @SagaStep(order = 1, name = "chargeCard", service = "payments",
+                        @SagaStep(order = 2, name = "chargeCard", service = "payments",
                                 command = "ChargeCard")
                         public void charge() {}
                     }
@@ -295,7 +295,7 @@ class ExerisDomainProcessorBranchTest {
                     @ExerisDomain(module = "sales", path = "/order-flow")
                     @Saga(name = "OrderFlow")
                     public class OrderFlow { private java.util.UUID id;
-                        @SagaStep(order = 0, name = "validate", service = "orders",
+                        @SagaStep(order = 1, name = "validate", service = "orders",
                                 command = "Validate")
                         public void step1() {}
                     }
@@ -491,7 +491,7 @@ class ExerisDomainProcessorBranchTest {
                     @Saga(name = "RichSaga", description = "Saga with rich step metadata")
                     public class RichSaga {
                         @SagaStep(
-                            order = 0,
+                            order = 1,
                             name = "richStep",
                             description = "Step with every attribute set",
                             service = "payments",
@@ -501,6 +501,7 @@ class ExerisDomainProcessorBranchTest {
                             parallel = true
                         )
                         public void rich() {}
+                        public void RichCompensation() {}
                     }
                     """
             );

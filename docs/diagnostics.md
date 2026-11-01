@@ -74,6 +74,11 @@ Printed by `javac` while it compiles your sources. `-Aexeris.strict=true` enable
 | `EXT-PROC-1022` | An `@Action` parameter carrying `@QueryParam` has a type the generated handler cannot read from a query-string value. | Use a primitive or its box, `String`, `BigDecimal`, `UUID`, `LocalDate`, `LocalDateTime`, `Instant`, `OffsetDateTime` or an enum, or bind the parameter from the body with `@ActionParam` alone. |
 | `EXT-PROC-1023` | A streaming `@Action` declares a `@QueryParam` parameter. The generated stream handler reads an action's parameters from the request body only. | Bind the parameter with `@ActionParam` alone, or make the action respond once. |
 | `EXT-PROC-1024` | `@ActionParam(name)` declares a name that is not a Java name, such as `start-date`. The generated request record, handler and TypeScript client use the parameter's name as an identifier. | Use a Java identifier, or leave `name` unset to take the parameter's own name. |
+| `EXT-PROC-1025` | `@SagaStep(compensation)` names no method with a compatible signature on the `@Saga` host type. A compensation action must take either no arguments or one `FlowContext` parameter. | Declare the named compensation method on the `@Saga` host class (`public void <name>(FlowContext context)` or `public void <name>()`), or correct the attribute value. |
+| `EXT-PROC-1026` | `@SagaStep(order)` is duplicated among steps that are not all declared `parallel = true`. Steps with the same order must all be parallel. | Give each sequential step a distinct `order`, or set `parallel = true` on every step sharing the order. |
+| `EXT-PROC-1027` | The sequence of `@SagaStep(order)` values contains a gap. Orders must run sequentially 1..N without gaps. | Renumber `@SagaStep(order)` so that orders run sequentially without gaps (e.g. 1, 2, 3). |
+| `EXT-PROC-1028` | The sequence of `@SagaStep(order)` values does not start at 1. Orders must be numbered 1..N. | Renumber `@SagaStep(order)` starting at 1. |
+| `EXT-PROC-1029` | `@SagaStep(compensation)` names a saga step: a `@SagaStep` method, or the method the generated flow emits for a step. | Name a method that is not a step. Two steps may share one compensation method. |
 
 ### 11xx — warnings on an ordinary build
 
@@ -85,6 +90,7 @@ Printed by `javac` while it compiles your sources. `-Aexeris.strict=true` enable
 | `EXT-PROC-1105` | `@SharedScope` is on an entity that is not `DataScope.UNIVERSE`, so it has no effect. | Declare `dataScope = DataScope.UNIVERSE`, or remove the marker. |
 | `EXT-PROC-1106` | `@Bind` with `source = STATIC` or `NONE` carries attributes that are ignored. | Put authored content in `@Block(props)`, or bind with `source = ENTITY`, `PROJECTION` or `ACTION`. |
 | `EXT-PROC-1108` | `@Field` is on a static or transient field, which is not persisted. | Remove `@Field` if the field is a constant or an in-memory helper, or make it an instance field if it should be persisted. |
+| `EXT-PROC-1109` | A deprecated `@Saga.SagaTrigger.TriggerType` constant is set (`SCHEDULE`, `HTTP` or `COMMAND`); it is read as its replacement (`SCHEDULED`, `API` or `MANUAL`). | Replace `SCHEDULE` with `SCHEDULED`, `HTTP` with `API`, or `COMMAND` with `MANUAL`. |
 
 ### 12xx — the `-Aexeris.strict` audit (warning)
 

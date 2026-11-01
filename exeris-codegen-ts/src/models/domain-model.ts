@@ -274,6 +274,18 @@ export type GraphMetadata = z.infer<typeof GraphMetadataSchema>;
 // Saga Metadata
 // ============================================================================
 
+export const SagaTriggerTypeSchema = z.enum(['EVENT', 'SCHEDULED', 'API', 'MANUAL']);
+export type SagaTriggerType = z.infer<typeof SagaTriggerTypeSchema>;
+
+export const SagaTriggerSchema = z.object({
+  type: SagaTriggerTypeSchema.optional(),
+  source: z.string().optional(),
+  topic: z.string().optional(),
+  cronExpression: z.string().optional(),
+  condition: z.string().optional(),
+});
+export type SagaTrigger = z.infer<typeof SagaTriggerSchema>;
+
 // Every key is a component of eu.exeris.sdk.sourcemodel.ast.SagaStepMetadata;
 // `SAGA_STEP_CONTRACT_COVERAGE` in contract-coverage.ts records where each is acted on.
 export const SagaStepMetadataSchema = z.object({
@@ -305,6 +317,13 @@ export const SagaMetadataSchema = z.object({
   retryBackoff: z.string().optional(),
   persistent: z.boolean().optional(),
   permissions: z.array(z.string()).optional(),
+  trigger: SagaTriggerSchema.optional(),
+  compensationMaxRetries: z.number().optional(),
+  compensationRetryDelay: z.string().optional(),
+  continueCompensationOnFailure: z.boolean().optional(),
+  compensationDlq: z.string().optional(),
+  compensationFailureHandler: z.string().optional(),
+  manualInterventionOnCompensationFailure: z.boolean().optional(),
 });
 
 export type SagaMetadata = z.infer<typeof SagaMetadataSchema>;

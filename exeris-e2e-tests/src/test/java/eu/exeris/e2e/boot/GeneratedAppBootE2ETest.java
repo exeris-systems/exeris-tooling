@@ -390,7 +390,7 @@ class GeneratedAppBootE2ETest {
                         this.label = label;
                     }
 
-                    @SagaStep(order = 0, name = "relay", service = "relay", command = "Relay")
+                    @SagaStep(order = 1, name = "relay", service = "relay", command = "Relay")
                     public void relay() {
                     }
                 }
