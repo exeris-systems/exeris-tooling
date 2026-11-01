@@ -94,6 +94,30 @@ application requires at boot.**
 
 - A signed-URL download can be added later behind the same `GET` route without changing it.
 
+### 🚫 Non-Goals
+
+- `multipart/form-data`, on these routes or on the entity's create and update routes.
+- An upload together with the row's create: the bytes go to the field's route after the row exists.
+- A signed-URL upload or a redirect to a signed URL on download.
+- Uploads above the kernel's `maxRequestBodyBytes`, and streaming transfers.
+- Cleanup of a soft-deleted row's objects, and of objects orphaned by a failed delete.
+- `@Blob` on a `GLOBAL` entity, and blob fields of any type other than `BlobRef`.
+
+### ⚠️ Risks and Assumptions
+
+- **Assumes:** kernel 0.13's blob SPI and HTTP layer as obligation 2 states them: a known length before
+  `beginUpload`, buffer transfers, and one request and response buffer.
+- **Assumes:** the deployment's `maxRequestBodyBytes` is large enough for the application's files; the
+  generated code does not raise it.
+- **Risk:** the descriptor costs a `stat` per `@Blob` field on every get and list. On a store where
+  `stat` is a network round trip, a list of many rows multiplies it.
+- **Risk:** an object whose delete fails after a hard delete stays in the store with no row pointing at
+  it.
+- **Reversed by:** a kernel HTTP layer with streaming request bodies or a multipart parser, which
+  would let uploads exceed one buffer and travel with the row's create; a signed-URL capability on
+  every driver, which would make the redirect the default download; or a measured `stat` cost on
+  list responses large enough to move the descriptor to the download route.
+
 ## Cross-references
 
 - `docs/rfc/RFC-2026-11-01-blob-field-routes.md` — the options and the founder's choices.
