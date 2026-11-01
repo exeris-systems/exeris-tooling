@@ -225,6 +225,13 @@ public enum DiagnosticId {
     SAGA_STEP_COMPENSATION_NAMES_A_STEP("EXT-PROC-1029",
             "@SagaStep(compensation) names a saga step, not a separate compensation method."),
 
+    /**
+     * {@code @Schedule} is declared on an element; the kernel issues no service principal at 1.0, so
+     * a declared job is refused whatever its action requires (kernel ADR-057 Amendment A1).
+     */
+    SCHEDULE_REFUSED("EXT-PROC-1030",
+            "@Schedule is refused at build time."),
+
     // -----------------------------------------------------------------------
     // EXT-PROC-11xx — warnings on an ordinary build (javac WARNING)
     // -----------------------------------------------------------------------

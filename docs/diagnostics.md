@@ -79,6 +79,7 @@ Printed by `javac` while it compiles your sources. `-Aexeris.strict=true` enable
 | `EXT-PROC-1027` | The sequence of `@SagaStep(order)` values contains a gap. Orders must run sequentially 1..N without gaps. | Renumber `@SagaStep(order)` so that orders run sequentially without gaps (e.g. 1, 2, 3). |
 | `EXT-PROC-1028` | The sequence of `@SagaStep(order)` values does not start at 1. Orders must be numbered 1..N. | Renumber `@SagaStep(order)` starting at 1. |
 | `EXT-PROC-1029` | `@SagaStep(compensation)` names a saga step: a `@SagaStep` method, or the method the generated flow emits for a step. | Name a method that is not a step. Two steps may share one compensation method. |
+| `EXT-PROC-1030` | `@Schedule` is declared on an element. At 1.0 the kernel issues no service principal, so a declared background job is refused whatever its action requires (kernel ADR-057 Amendment A1). | Remove `@Schedule`; schedule the work outside the generated application until the kernel issues a service principal. |
 
 ### 11xx — warnings on an ordinary build
 
