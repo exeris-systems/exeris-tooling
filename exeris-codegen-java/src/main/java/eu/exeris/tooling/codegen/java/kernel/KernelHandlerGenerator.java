@@ -762,14 +762,14 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
     }
 
     private static String queryParamLocal(ActionParamMetadata p) {
-        return "query" + NameCasing.pascal(p.name());
+        return "query_" + p.name();
     }
 
     private static void appendQueryParamRead(
             MethodSpec.Builder method, ActionParamMetadata p) {
         String varName = queryParamLocal(p);
-        // The underscore keeps the raw local apart from every camelCase local the handler declares
-        // (rawQuery, request, entity, ...) and from every queryX value local, whatever the name.
+        // The underscore keeps the value and raw locals apart from every camelCase local the
+        // handler declares (rawQuery, request, entity, ...), whatever the parameter name.
         String rawName = "raw_" + p.name();
         String key = p.effectiveQueryKey();
         method.addStatement("String $L = queryParam(rawQuery, $S)", rawName, key);

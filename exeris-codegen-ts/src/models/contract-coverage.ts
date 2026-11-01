@@ -184,8 +184,8 @@ export const ACTION_CONTRACT_COVERAGE = {
   params: { state: 'READ', written: true },
   resultType: {
     state: 'RESERVED',
-    written: false,
-    reason: `${NOT_WRITTEN} The action route answers with the updated aggregate on both sides, whatever the method returns.`,
+    written: true,
+    reason: 'The action route answers with the updated aggregate on both sides, whatever the method returns.',
   },
   async: { state: 'RESERVED', written: true, reason: 'Written from @Action; no emitted route or client behaves differently for it.' },
   permissions: {

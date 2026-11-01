@@ -35,7 +35,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static com.google.testing.compile.CompilationSubject.assertThat;
@@ -1114,6 +1116,98 @@ class ExerisDomainProcessorTest {
                     .contains("\"entityName\" : \"Order\"")
                     .contains("\"actions\"")
                     .contains("\"module\" : \"sales\"");
+        }
+
+        @Test
+        @DisplayName("action resultType extracts void, entity, nested type, generic, primitive, and strips type-use annotations")
+        void actionResultTypeForms() throws IOException {
+            JavaFileObject markerSource = JavaFileObjects.forSourceString(
+                    "com.example.Marker",
+                    """
+                    package com.example;
+
+                    import java.lang.annotation.ElementType;
+                    import java.lang.annotation.Target;
+
+                    @Target(ElementType.TYPE_USE)
+                    public @interface Marker {}
+                    """
+            );
+            JavaFileObject customerSource = JavaFileObjects.forSourceString(
+                    "com.example.Customer",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "sales", path = "/customers")
+                    public class Customer {
+                        private java.util.UUID id;
+                    }
+                    """
+            );
+            JavaFileObject orderSource = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import java.util.List;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    public class Order {
+                        private java.util.UUID id;
+
+                        public record Receipt(String ref) {}
+
+                        @Action(name = "submit", label = "Submit")
+                        public void submit() {}
+
+                        @Action(name = "customer", label = "Customer")
+                        public Customer customer() { return null; }
+
+                        @Action(name = "receipt", label = "Receipt")
+                        public Receipt receipt() { return null; }
+
+                        @Action(name = "receipts", label = "Receipts")
+                        public List<Receipt> receipts() { return null; }
+
+                        @Action(name = "lineCount", label = "Line count")
+                        public int lineCount() { return 0; }
+
+                        @Action(name = "annotated", label = "Annotated")
+                        public @Marker String annotated() { return null; }
+
+                        @Action(name = "annotatedNested", label = "Annotated Nested")
+                        public List<@Marker Receipt> annotatedNested() { return null; }
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(markerSource, customerSource, orderSource);
+            assertThat(compilation).succeededWithoutWarnings();
+
+            Optional<JavaFileObject> metadataFile = compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT,
+                    "exeris-metadata/Order.json"
+            );
+            assertThat(metadataFile).isPresent();
+
+            JsonNode actions = new ObjectMapper().readTree(readContent(metadataFile.get())).path("actions");
+            Map<String, String> resultTypes = new HashMap<>();
+            for (JsonNode action : actions) {
+                resultTypes.put(action.path("name").asText(), action.path("resultType").asText());
+            }
+
+            assertThat(resultTypes)
+                    .containsEntry("submit", "void")
+                    .containsEntry("customer", "com.example.Customer")
+                    .containsEntry("receipt", "com.example.Order.Receipt")
+                    .containsEntry("receipts", "java.util.List<com.example.Order.Receipt>")
+                    .containsEntry("lineCount", "int")
+                    .containsEntry("annotated", "java.lang.String")
+                    .containsEntry("annotatedNested", "java.util.List<com.example.Order.Receipt>");
         }
 
         @Test

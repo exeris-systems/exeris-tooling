@@ -751,8 +751,8 @@ class KernelCodegenCompileTest {
                 .contains("queryParam(rawQuery, \"limit\")")
                 .contains("Integer.parseInt(raw_limit)")
                 .contains("String raw_query = queryParam(rawQuery, \"query\");")
-                .contains("queryGrade = raw_grade.charAt(0);")
-                .contains("querySince = Instant.parse(raw_since);");
+                .contains("query_grade = raw_grade.charAt(0);")
+                .contains("query_since = Instant.parse(raw_since);");
 
         List<String> files = new ArrayList<>();
         try (Stream<Path> tree = Files.walk(generatedMain)) {

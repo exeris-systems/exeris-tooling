@@ -1051,18 +1051,18 @@ class KernelHandlerGeneratorTest {
         // The handler reads query params, converts them, and handles missing required
         assertThat(handler).contains("void handleSearch(HttpExchange exchange)");
         assertThat(handler).contains("String rawQuery = rawQuery(exchange);");
-        assertThat(handler).contains("String queryTerm;");
-        assertThat(handler).contains("int queryLimit;");
+        assertThat(handler).contains("String query_term;");
+        assertThat(handler).contains("int query_limit;");
         assertThat(handler).contains("String raw_term = queryParam(rawQuery, \"q\");");
         assertThat(handler).contains("if (raw_term == null) {");
         assertThat(handler).contains("throw new IllegalArgumentException(\"missing required query parameter: \" + \"q\");");
         assertThat(handler).contains("String raw_limit = queryParam(rawQuery, \"limit\");");
         assertThat(handler).contains("if (raw_limit == null) {");
         assertThat(handler).contains("raw_limit = \"50\";");
-        assertThat(handler).contains("queryLimit = Integer.parseInt(raw_limit);");
+        assertThat(handler).contains("query_limit = Integer.parseInt(raw_limit);");
         assertThat(handler).contains("catch (IllegalArgumentException | DateTimeParseException e) {");
         assertThat(handler).contains("exchange.respond(HttpStatus.BAD_REQUEST);");
-        assertThat(handler).contains("entity.searchOrders(queryTerm, queryLimit);");
+        assertThat(handler).contains("entity.searchOrders(query_term, query_limit);");
     }
 
     @Test
@@ -1074,7 +1074,7 @@ class KernelHandlerGeneratorTest {
                         .params(List.of(
                                 ActionParamMetadata.builder("query", "String").bindingSource(ParamSource.QUERY).build(),
                                 ActionParamMetadata.builder("grade", "char").bindingSource(ParamSource.QUERY)
-                                        .required(false).build()))
+                                         .required(false).build()))
                         .build()))
                 .build();
 
@@ -1083,8 +1083,8 @@ class KernelHandlerGeneratorTest {
         assertThat(handler).contains("String rawQuery = rawQuery(exchange);");
         assertThat(handler).contains("String raw_query = queryParam(rawQuery, \"query\");");
         assertThat(handler).contains("if (raw_grade != null && raw_grade.length() != 1) {");
-        assertThat(handler).contains("queryGrade = raw_grade.charAt(0);");
-        assertThat(handler).contains("entity.lookup(queryQuery, queryGrade);");
+        assertThat(handler).contains("query_grade = raw_grade.charAt(0);");
+        assertThat(handler).contains("entity.lookup(query_query, query_grade);");
     }
 
     @Test
@@ -1096,14 +1096,14 @@ class KernelHandlerGeneratorTest {
                         .params(List.of(
                                 ActionParamMetadata.builder("from", "java.time.Instant").bindingSource(ParamSource.QUERY).build(),
                                 ActionParamMetadata.builder("at", "java.time.LocalDateTime").bindingSource(ParamSource.QUERY)
-                                        .required(false).build()))
+                                         .required(false).build()))
                         .build()))
                 .build();
 
         String handler = new KernelHandlerGenerator().generate(metadata).content();
 
-        assertThat(handler).contains("queryFrom = Instant.parse(raw_from);");
-        assertThat(handler).contains("queryAt = LocalDateTime.parse(raw_at);");
+        assertThat(handler).contains("query_from = Instant.parse(raw_from);");
+        assertThat(handler).contains("query_at = LocalDateTime.parse(raw_at);");
         assertThat(handler).contains("catch (IllegalArgumentException | DateTimeParseException e) {");
     }
 
@@ -1135,7 +1135,29 @@ class KernelHandlerGeneratorTest {
         assertThat(handler).contains("public static record ReassignRequest(String assignee) {");
         assertThat(handler).doesNotContain("boolean notify");
         assertThat(handler).contains("parseBody(exchange, ReassignRequest.class)");
-        assertThat(handler).contains("boolean queryNotify;");
-        assertThat(handler).contains("entity.reassignOrder(queryNotify, request.assignee());");
+        assertThat(handler).contains("boolean query_notify;");
+        assertThat(handler).contains("entity.reassignOrder(query_notify, request.assignee());");
+    }
+
+    @Test
+    @DisplayName("two @QueryParam parameters whose names differ only in casing do not collide")
+    void queryParamsDifferingOnlyInCasingDoNotCollide() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .actions(List.of(ActionMetadata.builder("filter").methodName("filter")
+                        .params(List.of(
+                                ActionParamMetadata.builder("fooBar", "String").bindingSource(ParamSource.QUERY).build(),
+                                ActionParamMetadata.builder("FooBar", "String").bindingSource(ParamSource.QUERY).build()))
+                        .build()))
+                .build();
+
+        String handler = new KernelHandlerGenerator().generate(metadata).content();
+
+        assertThat(handler)
+                .contains("String query_fooBar;")
+                .contains("String query_FooBar;")
+                .contains("String raw_fooBar = queryParam(rawQuery, \"fooBar\");")
+                .contains("String raw_FooBar = queryParam(rawQuery, \"FooBar\");")
+                .contains("entity.filter(query_fooBar, query_FooBar);");
     }
 }

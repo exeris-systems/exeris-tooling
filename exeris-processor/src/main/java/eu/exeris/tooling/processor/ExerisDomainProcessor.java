@@ -59,6 +59,8 @@ import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.type.TypeVariable;
+import javax.lang.model.type.WildcardType;
 import javax.lang.model.util.ElementFilter;
 import javax.tools.Diagnostic;
 import javax.tools.FileObject;
@@ -72,8 +74,10 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -931,6 +935,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
     /** The one type a primary key may have (ADR-104), and one of the two a shared-scope key may. */
     private static final String UUID_FQN = "java.util.UUID";
+
+    /** A type-use annotation as {@code TypeMirror.toString()} renders it, with its arguments. */
+    private static final Pattern TYPE_USE_ANNOTATION = Pattern.compile("@(?:[\\w.]+\\.)?\\w+(?:\\([^()]*\\))?\\s*");
 
     /** The declared types a generated handler converts from a query-string value; enums as well. */
     private static final Set<String> QUERY_PARAMETER_TYPES = Set.of(
@@ -2775,7 +2782,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 // Carry the real JVM method name so the handler generator can emit
                 // server-side dispatch to the actual aggregate method. This is distinct
                 // from `name` (the @Action identity), which may differ.
-                .methodName(method.getSimpleName().toString());
+                .methodName(method.getSimpleName().toString())
+                .resultType(actionResultType(method.getReturnType()));
 
         // @Action attribute surface (see exeris-sdk-annotations Action.java).
         // Each check below is verified live against the SDK declaration
@@ -2841,6 +2849,60 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         builder.params(params);
 
         return builder.build();
+    }
+
+    /**
+     * Extracts an action method's return type into canonical form: fully qualified,
+     * nested types joined by {@code .}, generic arguments joined by {@code ,} with no space,
+     * primitives as keywords, {@code void} for void, and type variables by simple name,
+     * with type-use annotations omitted.
+     */
+    static String actionResultType(TypeMirror returnType) {
+        return resultTypeName(returnType);
+    }
+
+    /** One type in the result-type form; recursive over arrays, type arguments and wildcards. */
+    private static String resultTypeName(TypeMirror type) {
+        return switch (type.getKind()) {
+            case VOID -> "void";
+            case BOOLEAN, BYTE, SHORT, INT, LONG, CHAR, FLOAT, DOUBLE ->
+                    type.getKind().name().toLowerCase(Locale.ROOT);
+            case ARRAY -> resultTypeName(((ArrayType) type).getComponentType()) + "[]";
+            case TYPEVAR -> ((TypeVariable) type).asElement().getSimpleName().toString();
+            case WILDCARD -> wildcardName((WildcardType) type);
+            case DECLARED -> declaredName((DeclaredType) type);
+            default -> TYPE_USE_ANNOTATION.matcher(type.toString()).replaceAll("");
+        };
+    }
+
+    private static String declaredName(DeclaredType type) {
+        if (!(type.asElement() instanceof TypeElement element)) {
+            return TYPE_USE_ANNOTATION.matcher(type.toString()).replaceAll("");
+        }
+        StringBuilder name = new StringBuilder();
+        if (type.getEnclosingType() instanceof DeclaredType enclosing
+                && enclosing.getKind() == TypeKind.DECLARED
+                && !enclosing.getTypeArguments().isEmpty()) {
+            name.append(declaredName(enclosing)).append('.').append(element.getSimpleName());
+        } else {
+            name.append(element.getQualifiedName());
+        }
+        List<? extends TypeMirror> arguments = type.getTypeArguments();
+        if (!arguments.isEmpty()) {
+            name.append(arguments.stream().map(ExerisDomainProcessor::resultTypeName)
+                    .collect(Collectors.joining(",", "<", ">")));
+        }
+        return name.toString();
+    }
+
+    private static String wildcardName(WildcardType type) {
+        if (type.getExtendsBound() != null) {
+            return "? extends " + resultTypeName(type.getExtendsBound());
+        }
+        if (type.getSuperBound() != null) {
+            return "? super " + resultTypeName(type.getSuperBound());
+        }
+        return "?";
     }
 
     /**
