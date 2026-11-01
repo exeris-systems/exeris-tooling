@@ -1,12 +1,22 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
+import static eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator.ASSERTIONS;
+import static eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator.FIXED_ID;
+import static eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator.HTTP_KERNEL_PROVIDERS;
+import static eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator.HTTP_STATUS;
+import static eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator.KERNEL_PROVIDERS;
+import static eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator.LIST;
+import static eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator.OPTIONAL;
+import static eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator.SCOPED_VALUE;
+import static eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator.UUID;
+import static eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator.invoke;
+import static eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator.test;
+
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
-import com.palantir.javapoet.TypeName;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 
-import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -15,21 +25,6 @@ import java.util.Map;
  * Emits the generated handler test cases for optimistic-lock versioning and soft delete (ADR-058, ADR-076).
  */
 final class KernelHandlerStateTests {
-
-    private static final String FIXED_ID = "00000000-0000-4000-8000-000000000001";
-    private static final String AS_TENANT = "asTenant";
-
-    private static final ClassName TEST = ClassName.get("org.junit.jupiter.api", "Test");
-    private static final ClassName ASSERTIONS = ClassName.get("org.assertj.core.api", "Assertions");
-    private static final ClassName HTTP_STATUS = ClassName.get("eu.exeris.kernel.spi.http", "HttpStatus");
-    private static final ClassName UUID = ClassName.get("java.util", "UUID");
-    private static final ClassName LIST = ClassName.get("java.util", "List");
-    private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
-    private static final ClassName SCOPED_VALUE = ClassName.get("java.lang", "ScopedValue");
-    private static final ClassName HTTP_KERNEL_PROVIDERS =
-            ClassName.get("eu.exeris.kernel.spi.http", "HttpKernelProviders");
-    private static final ClassName KERNEL_PROVIDERS =
-            ClassName.get("eu.exeris.kernel.spi.context", "KernelProviders");
 
     private KernelHandlerStateTests() {
     }
@@ -190,17 +185,5 @@ final class KernelHandlerStateTests {
         m.addStatement("$T.assertThat(exchange.status()).isEqualTo($T.NOT_FOUND)", ASSERTIONS, HTTP_STATUS)
                 .addStatement("$T.assertThat(service.updatedId).isNull()", ASSERTIONS);
         return m.build();
-    }
-
-    private static String invoke(String handlerMethod, boolean tenantScoped) {
-        String call = "handler." + handlerMethod + "(exchange)";
-        return tenantScoped ? AS_TENANT + "(() -> " + call + ")" : call;
-    }
-
-    private static MethodSpec.Builder test(String name) {
-        return MethodSpec.methodBuilder(name)
-                .addAnnotation(TEST)
-                .addModifiers(Modifier.PUBLIC)
-                .returns(TypeName.VOID);
     }
 }

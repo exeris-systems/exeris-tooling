@@ -1,16 +1,26 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
+import static eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator.ASSERTIONS;
+import static eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator.FIXED_ID;
+import static eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator.HTTP_KERNEL_PROVIDERS;
+import static eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator.HTTP_STATUS;
+import static eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator.KERNEL_PROVIDERS;
+import static eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator.OPTIONAL;
+import static eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator.REQUEST_BODY_DECODE_EXCEPTION;
+import static eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator.SCOPED_VALUE;
+import static eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator.UUID;
+import static eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator.invoke;
+import static eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator.test;
+
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
-import com.palantir.javapoet.TypeName;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ParamSource;
 import eu.exeris.tooling.codegen.java.support.NameCasing;
 
-import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -19,23 +29,27 @@ import java.util.List;
  */
 final class KernelHandlerActionTests {
 
-    private static final String FIXED_ID = "00000000-0000-4000-8000-000000000001";
-    private static final String AS_TENANT = "asTenant";
-
-    private static final ClassName TEST = ClassName.get("org.junit.jupiter.api", "Test");
-    private static final ClassName ASSERTIONS = ClassName.get("org.assertj.core.api", "Assertions");
-    private static final ClassName HTTP_STATUS = ClassName.get("eu.exeris.kernel.spi.http", "HttpStatus");
-    private static final ClassName UUID = ClassName.get("java.util", "UUID");
-    private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
-    private static final ClassName SCOPED_VALUE = ClassName.get("java.lang", "ScopedValue");
-    private static final ClassName HTTP_KERNEL_PROVIDERS =
-            ClassName.get("eu.exeris.kernel.spi.http", "HttpKernelProviders");
-    private static final ClassName KERNEL_PROVIDERS =
-            ClassName.get("eu.exeris.kernel.spi.context", "KernelProviders");
-    private static final ClassName REQUEST_BODY_DECODE_EXCEPTION =
-            ClassName.get("eu.exeris.kernel.spi.exceptions.http", "RequestBodyDecodeException");
+    private static final String HANDLE = "handle";
+    private static final String ID = "id";
+    private static final String ASSERT_NOT_UPDATED = "$T.assertThat(service.updatedId).isNull()";
+    private static final String ASSERT_STATUS = "$T.assertThat(exchange.status()).isEqualTo($T.$L)";
 
     private KernelHandlerActionTests() {
+    }
+
+    /** What every case of one action shares: the types it names and how its request is shaped. */
+    private record ActionCase(ActionMetadata action, ClassName entityType, ClassName handlerType,
+                              ClassName exchangeType, ClassName bodyType, ClassName stubType,
+                              ClassName requestType, List<ActionParamMetadata> bodyParams,
+                              boolean tenantScoped) {
+
+        boolean hasBodyParams() {
+            return requestType != null;
+        }
+
+        String handlerMethod() {
+            return HANDLE + NameCasing.pascal(action.name());
+        }
     }
 
     /**
@@ -51,196 +65,130 @@ final class KernelHandlerActionTests {
             if (action.streaming()) {
                 continue;
             }
-            List<ActionParamMetadata> queryParams = action.params().stream()
-                    .filter(p -> p.effectiveBindingSource() == ParamSource.QUERY)
-                    .toList();
             List<ActionParamMetadata> bodyParams = action.params().stream()
                     .filter(p -> p.effectiveBindingSource() == ParamSource.BODY)
                     .toList();
-
-            boolean hasBodyParams = !bodyParams.isEmpty();
-            ClassName requestType = hasBodyParams
-                    ? handlerType.nestedClass(KernelHandlerGenerator.actionRequestName(action))
-                    : null;
-            String actionName = action.name();
-            String pascalAction = NameCasing.pascal(actionName);
-            String handlerMethod = "handle" + pascalAction;
-            String actionPath = basePath + "/" + FIXED_ID + "/actions/" + NameCasing.kebab(actionName);
-            String fullQuery = actionQueryString(queryParams, null);
-            String url = fullQuery.isEmpty() ? actionPath : actionPath + "?" + fullQuery;
-
-            cases.add(actionSuccessTest(action, entityType, handlerType, exchangeType, bodyType,
-                    stubType, url, handlerMethod, hasBodyParams, requestType, bodyParams, tenantScoped));
-
-            cases.add(actionMissingRowTest(action, handlerType, exchangeType, bodyType,
-                    stubType, url, handlerMethod, hasBodyParams, requestType, bodyParams, tenantScoped));
-
-            if (hasBodyParams) {
-                cases.add(actionUndecodableBodyTest(action, handlerType, exchangeType,
-                        bodyType, stubType, url, handlerMethod, requestType, tenantScoped));
-            }
-
-            if (metadata.versioned()) {
-                cases.add(actionStaleVersionTest(action, entityType, handlerType, exchangeType,
-                        bodyType, stubType, url, handlerMethod, hasBodyParams, requestType, bodyParams, tenantScoped));
-            }
-
-            ActionParamMetadata requiredQuery = queryParams.stream()
-                    .filter(p -> p.required() && (p.defaultValue() == null || p.defaultValue().isBlank()))
-                    .findFirst()
-                    .orElse(null);
-            if (requiredQuery != null) {
-                String missingQuery = actionQueryString(queryParams, requiredQuery);
-                String missingUrl = missingQuery.isEmpty() ? actionPath : actionPath + "?" + missingQuery;
-                cases.add(actionMissingRequiredQueryParamTest(action, handlerType,
-                        exchangeType, bodyType, stubType, missingUrl, handlerMethod, hasBodyParams,
-                        requestType, bodyParams, tenantScoped));
-            }
+            ClassName requestType = bodyParams.isEmpty()
+                    ? null
+                    : handlerType.nestedClass(KernelHandlerGenerator.actionRequestName(action));
+            ActionCase actionCase = new ActionCase(action, entityType, handlerType, exchangeType, bodyType,
+                    stubType, requestType, bodyParams, tenantScoped);
+            cases.addAll(casesFor(actionCase, metadata.versioned(), basePath));
         }
         return List.copyOf(cases);
     }
 
-    private static MethodSpec actionSuccessTest(ActionMetadata action, ClassName entityType,
-                                                ClassName handlerType, ClassName exchangeType,
-                                                ClassName bodyType, ClassName stubType,
-                                                String url, String handlerMethod, boolean hasBodyParams,
-                                                ClassName requestType, List<ActionParamMetadata> bodyParams,
-                                                boolean tenantScoped) {
-        String pascalAction = NameCasing.pascal(action.name());
-        MethodSpec.Builder m = test("handle" + pascalAction + "RespondsOkWithUpdatedEntity");
-        m.addJavadoc("An action call on an existing entity updates the aggregate and responds 200 OK.\n");
-        m.addStatement("$T entity = new $T()", entityType, entityType)
-                .addStatement("$T service = new $T()", stubType, stubType)
-                .addStatement("service.byId = $T.of(entity)", OPTIONAL);
-        if (hasBodyParams) {
-            m.addStatement("$T body = new $T()", bodyType, bodyType)
-                    .addStatement("$T handler = newHandler(service, body)", handlerType)
-                    .addStatement("body.next = new $T($L)", requestType, actionRequestArgs(bodyParams))
-                    .addStatement("$T exchange = $T.post($S, body).withPathParam($S, $S)",
-                            exchangeType, exchangeType, url, "id", FIXED_ID);
-            appendActionDispatch(m, handlerMethod, true, tenantScoped);
-            m.addStatement("$T.assertThat(body.decodedType).isEqualTo($T.class)", ASSERTIONS, requestType);
-        } else {
-            m.addStatement("$T handler = newHandler(service)", handlerType)
-                    .addStatement("$T exchange = $T.post($S).withPathParam($S, $S)",
-                            exchangeType, exchangeType, url, "id", FIXED_ID);
-            appendActionDispatch(m, handlerMethod, false, tenantScoped);
+    private static List<MethodSpec> casesFor(ActionCase c, boolean versioned, String basePath) {
+        List<ActionParamMetadata> queryParams = c.action().params().stream()
+                .filter(p -> p.effectiveBindingSource() == ParamSource.QUERY)
+                .toList();
+        String actionPath = basePath + "/" + FIXED_ID + "/actions/" + NameCasing.kebab(c.action().name());
+        String url = withQuery(actionPath, actionQueryString(queryParams, null));
+
+        List<MethodSpec> cases = new ArrayList<>();
+        cases.add(actionSuccessTest(c, url));
+        cases.add(actionMissingRowTest(c, url));
+        if (c.hasBodyParams()) {
+            cases.add(actionUndecodableBodyTest(c, url));
         }
-        m.addStatement("$T.assertThat(exchange.status()).isEqualTo($T.OK)", ASSERTIONS, HTTP_STATUS)
+        if (versioned) {
+            cases.add(actionStaleVersionTest(c, url));
+        }
+        queryParams.stream()
+                .filter(p -> p.required() && (p.defaultValue() == null || p.defaultValue().isBlank()))
+                .findFirst()
+                .ifPresent(missing -> cases.add(actionMissingRequiredQueryParamTest(c,
+                        withQuery(actionPath, actionQueryString(queryParams, missing)))));
+        return cases;
+    }
+
+    private static String withQuery(String path, String query) {
+        return query.isEmpty() ? path : path + "?" + query;
+    }
+
+    /**
+     * The handler, the request body when the action decodes one, and the exchange for {@code url},
+     * then the dispatch.
+     */
+    private static void arrangeAndDispatch(MethodSpec.Builder m, ActionCase c, String url) {
+        if (c.hasBodyParams()) {
+            m.addStatement("$T body = new $T()", c.bodyType(), c.bodyType())
+                    .addStatement("$T handler = newHandler(service, body)", c.handlerType())
+                    .addStatement("body.next = new $T($L)", c.requestType(), actionRequestArgs(c.bodyParams()))
+                    .addStatement("$T exchange = $T.post($S, body).withPathParam($S, $S)",
+                            c.exchangeType(), c.exchangeType(), url, ID, FIXED_ID);
+        } else {
+            m.addStatement("$T handler = newHandler(service)", c.handlerType())
+                    .addStatement("$T exchange = $T.post($S).withPathParam($S, $S)",
+                            c.exchangeType(), c.exchangeType(), url, ID, FIXED_ID);
+        }
+        appendActionDispatch(m, c.handlerMethod(), c.hasBodyParams(), c.tenantScoped());
+    }
+
+    private static MethodSpec actionSuccessTest(ActionCase c, String url) {
+        MethodSpec.Builder m = test(c.handlerMethod() + "RespondsOkWithUpdatedEntity");
+        m.addJavadoc("An action call on an existing entity updates the aggregate and responds 200 OK.\n");
+        m.addStatement("$T entity = new $T()", c.entityType(), c.entityType())
+                .addStatement("$T service = new $T()", c.stubType(), c.stubType())
+                .addStatement("service.byId = $T.of(entity)", OPTIONAL);
+        arrangeAndDispatch(m, c, url);
+        if (c.hasBodyParams()) {
+            m.addStatement("$T.assertThat(body.decodedType).isEqualTo($T.class)", ASSERTIONS, c.requestType());
+        }
+        m.addStatement(ASSERT_STATUS, ASSERTIONS, HTTP_STATUS, "OK")
                 .addStatement("$T.assertThat(exchange.body()).isSameAs(entity)", ASSERTIONS)
                 .addStatement("$T.assertThat(service.updatedId).isEqualTo($T.fromString($S))",
                         ASSERTIONS, UUID, FIXED_ID);
         return m.build();
     }
 
-    private static MethodSpec actionMissingRowTest(ActionMetadata action,
-                                                   ClassName handlerType, ClassName exchangeType,
-                                                   ClassName bodyType, ClassName stubType,
-                                                   String url, String handlerMethod, boolean hasBodyParams,
-                                                   ClassName requestType, List<ActionParamMetadata> bodyParams,
-                                                   boolean tenantScoped) {
-        String pascalAction = NameCasing.pascal(action.name());
-        MethodSpec.Builder m = test("handle" + pascalAction + "RespondsNotFoundWhenRowIsAbsent");
+    private static MethodSpec actionMissingRowTest(ActionCase c, String url) {
+        MethodSpec.Builder m = test(c.handlerMethod() + "RespondsNotFoundWhenRowIsAbsent");
         m.addJavadoc("An action call on an absent entity responds 404 Not Found.\n");
-        m.addStatement("$T service = new $T()", stubType, stubType)
+        m.addStatement("$T service = new $T()", c.stubType(), c.stubType())
                 .addStatement("service.byId = $T.empty()", OPTIONAL);
-        if (hasBodyParams) {
-            m.addStatement("$T body = new $T()", bodyType, bodyType)
-                    .addStatement("$T handler = newHandler(service, body)", handlerType)
-                    .addStatement("body.next = new $T($L)", requestType, actionRequestArgs(bodyParams))
-                    .addStatement("$T exchange = $T.post($S, body).withPathParam($S, $S)",
-                            exchangeType, exchangeType, url, "id", FIXED_ID);
-            appendActionDispatch(m, handlerMethod, true, tenantScoped);
-        } else {
-            m.addStatement("$T handler = newHandler(service)", handlerType)
-                    .addStatement("$T exchange = $T.post($S).withPathParam($S, $S)",
-                            exchangeType, exchangeType, url, "id", FIXED_ID);
-            appendActionDispatch(m, handlerMethod, false, tenantScoped);
-        }
-        m.addStatement("$T.assertThat(exchange.status()).isEqualTo($T.NOT_FOUND)", ASSERTIONS, HTTP_STATUS)
-                .addStatement("$T.assertThat(service.updatedId).isNull()", ASSERTIONS);
+        arrangeAndDispatch(m, c, url);
+        m.addStatement(ASSERT_STATUS, ASSERTIONS, HTTP_STATUS, "NOT_FOUND")
+                .addStatement(ASSERT_NOT_UPDATED, ASSERTIONS);
         return m.build();
     }
 
-    private static MethodSpec actionUndecodableBodyTest(ActionMetadata action,
-                                                        ClassName handlerType, ClassName exchangeType,
-                                                        ClassName bodyType, ClassName stubType,
-                                                        String url, String handlerMethod,
-                                                        ClassName requestType, boolean tenantScoped) {
-        String pascalAction = NameCasing.pascal(action.name());
-        MethodSpec.Builder m = test("handle" + pascalAction + "RespondsBadRequestOnAnUndecodableBody");
+    private static MethodSpec actionUndecodableBodyTest(ActionCase c, String url) {
+        MethodSpec.Builder m = test(c.handlerMethod() + "RespondsBadRequestOnAnUndecodableBody");
         m.addJavadoc("An undecodable action request body responds 400 Bad Request.\n");
-        m.addStatement("$T service = new $T()", stubType, stubType)
-                .addStatement("$T body = new $T()", bodyType, bodyType)
+        m.addStatement("$T service = new $T()", c.stubType(), c.stubType())
+                .addStatement("$T body = new $T()", c.bodyType(), c.bodyType())
                 .addStatement("body.failure = $T.malformedBody($T.class.getName(), 0L, null)",
-                        REQUEST_BODY_DECODE_EXCEPTION, requestType)
-                .addStatement("$T handler = newHandler(service, body)", handlerType)
+                        REQUEST_BODY_DECODE_EXCEPTION, c.requestType())
+                .addStatement("$T handler = newHandler(service, body)", c.handlerType())
                 .addStatement("$T exchange = $T.post($S, body).withPathParam($S, $S)",
-                        exchangeType, exchangeType, url, "id", FIXED_ID);
-        appendActionDispatch(m, handlerMethod, true, tenantScoped);
-        m.addStatement("$T.assertThat(exchange.status()).isEqualTo($T.BAD_REQUEST)", ASSERTIONS, HTTP_STATUS)
-                .addStatement("$T.assertThat(service.updatedId).isNull()", ASSERTIONS);
+                        c.exchangeType(), c.exchangeType(), url, ID, FIXED_ID);
+        appendActionDispatch(m, c.handlerMethod(), true, c.tenantScoped());
+        m.addStatement(ASSERT_STATUS, ASSERTIONS, HTTP_STATUS, "BAD_REQUEST")
+                .addStatement(ASSERT_NOT_UPDATED, ASSERTIONS);
         return m.build();
     }
 
-    private static MethodSpec actionStaleVersionTest(ActionMetadata action, ClassName entityType,
-                                                     ClassName handlerType, ClassName exchangeType,
-                                                     ClassName bodyType, ClassName stubType,
-                                                     String url, String handlerMethod, boolean hasBodyParams,
-                                                     ClassName requestType, List<ActionParamMetadata> bodyParams,
-                                                     boolean tenantScoped) {
-        String pascalAction = NameCasing.pascal(action.name());
-        MethodSpec.Builder m = test("handle" + pascalAction + "RespondsConflictOnStaleVersion");
+    private static MethodSpec actionStaleVersionTest(ActionCase c, String url) {
+        MethodSpec.Builder m = test(c.handlerMethod() + "RespondsConflictOnStaleVersion");
         m.addJavadoc("A stale optimistic-lock version on an action call answers 409 Conflict.\n");
-        m.addStatement("$T entity = new $T()", entityType, entityType)
-                .addStatement("$T service = new $T()", stubType, stubType)
+        m.addStatement("$T entity = new $T()", c.entityType(), c.entityType())
+                .addStatement("$T service = new $T()", c.stubType(), c.stubType())
                 .addStatement("service.byId = $T.of(entity)", OPTIONAL)
                 .addStatement("service.rowExists = false");
-        if (hasBodyParams) {
-            m.addStatement("$T body = new $T()", bodyType, bodyType)
-                    .addStatement("$T handler = newHandler(service, body)", handlerType)
-                    .addStatement("body.next = new $T($L)", requestType, actionRequestArgs(bodyParams))
-                    .addStatement("$T exchange = $T.post($S, body).withPathParam($S, $S)",
-                            exchangeType, exchangeType, url, "id", FIXED_ID);
-            appendActionDispatch(m, handlerMethod, true, tenantScoped);
-        } else {
-            m.addStatement("$T handler = newHandler(service)", handlerType)
-                    .addStatement("$T exchange = $T.post($S).withPathParam($S, $S)",
-                            exchangeType, exchangeType, url, "id", FIXED_ID);
-            appendActionDispatch(m, handlerMethod, false, tenantScoped);
-        }
-        m.addStatement("$T.assertThat(exchange.status()).isEqualTo($T.CONFLICT)", ASSERTIONS, HTTP_STATUS)
-                .addStatement("$T.assertThat(service.updatedId).isNull()", ASSERTIONS);
+        arrangeAndDispatch(m, c, url);
+        m.addStatement(ASSERT_STATUS, ASSERTIONS, HTTP_STATUS, "CONFLICT")
+                .addStatement(ASSERT_NOT_UPDATED, ASSERTIONS);
         return m.build();
     }
 
-    private static MethodSpec actionMissingRequiredQueryParamTest(ActionMetadata action,
-                                                                  ClassName handlerType, ClassName exchangeType,
-                                                                  ClassName bodyType, ClassName stubType,
-                                                                  String missingUrl, String handlerMethod,
-                                                                  boolean hasBodyParams, ClassName requestType,
-                                                                  List<ActionParamMetadata> bodyParams,
-                                                                  boolean tenantScoped) {
-        String pascalAction = NameCasing.pascal(action.name());
-        MethodSpec.Builder m = test("handle" + pascalAction
-                + "RespondsBadRequestWhenRequiredQueryParameterIsMissing");
+    private static MethodSpec actionMissingRequiredQueryParamTest(ActionCase c, String missingUrl) {
+        MethodSpec.Builder m = test(c.handlerMethod() + "RespondsBadRequestWhenRequiredQueryParameterIsMissing");
         m.addJavadoc("Omitting a required query parameter answers 400 Bad Request.\n");
-        m.addStatement("$T service = new $T()", stubType, stubType);
-        if (hasBodyParams) {
-            m.addStatement("$T body = new $T()", bodyType, bodyType)
-                    .addStatement("$T handler = newHandler(service, body)", handlerType)
-                    .addStatement("body.next = new $T($L)", requestType, actionRequestArgs(bodyParams))
-                    .addStatement("$T exchange = $T.post($S, body).withPathParam($S, $S)",
-                            exchangeType, exchangeType, missingUrl, "id", FIXED_ID);
-            appendActionDispatch(m, handlerMethod, true, tenantScoped);
-        } else {
-            m.addStatement("$T handler = newHandler(service)", handlerType)
-                    .addStatement("$T exchange = $T.post($S).withPathParam($S, $S)",
-                            exchangeType, exchangeType, missingUrl, "id", FIXED_ID);
-            appendActionDispatch(m, handlerMethod, false, tenantScoped);
-        }
-        m.addStatement("$T.assertThat(exchange.status()).isEqualTo($T.BAD_REQUEST)", ASSERTIONS, HTTP_STATUS)
-                .addStatement("$T.assertThat(service.updatedId).isNull()", ASSERTIONS);
+        m.addStatement("$T service = new $T()", c.stubType(), c.stubType());
+        arrangeAndDispatch(m, c, missingUrl);
+        m.addStatement(ASSERT_STATUS, ASSERTIONS, HTTP_STATUS, "BAD_REQUEST")
+                .addStatement(ASSERT_NOT_UPDATED, ASSERTIONS);
         return m.build();
     }
 
@@ -322,17 +270,5 @@ final class KernelHandlerActionTests {
             sb.append(p.effectiveQueryKey()).append("=").append(sampleQueryValue(p));
         }
         return sb.toString();
-    }
-
-    private static String invoke(String handlerMethod, boolean tenantScoped) {
-        String call = "handler." + handlerMethod + "(exchange)";
-        return tenantScoped ? AS_TENANT + "(() -> " + call + ")" : call;
-    }
-
-    private static MethodSpec.Builder test(String name) {
-        return MethodSpec.methodBuilder(name)
-                .addAnnotation(TEST)
-                .addModifiers(Modifier.PUBLIC)
-                .returns(TypeName.VOID);
     }
 }

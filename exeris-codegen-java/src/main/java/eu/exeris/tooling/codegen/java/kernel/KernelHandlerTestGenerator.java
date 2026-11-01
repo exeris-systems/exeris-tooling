@@ -87,30 +87,30 @@ public final class KernelHandlerTestGenerator {
      * {@code UUID.randomUUID()} in the emitted source would still be deterministic <em>as text</em>,
      * but it would make the generated test's own failure output differ run to run for no benefit.
      */
-    private static final String FIXED_ID = "00000000-0000-4000-8000-000000000001";
-
+    static final String FIXED_ID = "00000000-0000-4000-8000-000000000001";
     /**
      * The tenant a tenant-partitioned entity's handler tests dispatch under — the same literal the
      * generated repository test binds, and deliberately not {@link #FIXED_ID}.
      */
-    private static final String TENANT_KEY = "00000000-0000-4000-8000-000000000002";
-    private static final String AS_TENANT = "asTenant";
-
-    private static final ClassName TEST = ClassName.get("org.junit.jupiter.api", "Test");
-    private static final ClassName ASSERTIONS = ClassName.get("org.assertj.core.api", "Assertions");
-    private static final ClassName HTTP_STATUS = ClassName.get("eu.exeris.kernel.spi.http", "HttpStatus");
-    private static final ClassName UUID = ClassName.get("java.util", "UUID");
-    private static final ClassName LIST = ClassName.get("java.util", "List");
-    private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
-    private static final ClassName MAP = ClassName.get("java.util", "Map");
-    private static final ClassName SCOPED_VALUE = ClassName.get("java.lang", "ScopedValue");
-    private static final ClassName HTTP_KERNEL_PROVIDERS =
+    static final String AS_TENANT = "asTenant";
+    static final ClassName TEST = ClassName.get("org.junit.jupiter.api", "Test");
+    static final ClassName ASSERTIONS = ClassName.get("org.assertj.core.api", "Assertions");
+    static final ClassName HTTP_STATUS = ClassName.get("eu.exeris.kernel.spi.http", "HttpStatus");
+    static final ClassName UUID = ClassName.get("java.util", "UUID");
+    static final ClassName LIST = ClassName.get("java.util", "List");
+    static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
+    static final ClassName SCOPED_VALUE = ClassName.get("java.lang", "ScopedValue");
+    static final ClassName HTTP_KERNEL_PROVIDERS =
             ClassName.get("eu.exeris.kernel.spi.http", "HttpKernelProviders");
-    private static final ClassName KERNEL_PROVIDERS =
+    static final ClassName KERNEL_PROVIDERS =
             ClassName.get("eu.exeris.kernel.spi.context", "KernelProviders");
-    private static final ClassName BIG_DECIMAL = ClassName.get("java.math", "BigDecimal");
-    private static final ClassName REQUEST_BODY_DECODE_EXCEPTION =
+    static final ClassName REQUEST_BODY_DECODE_EXCEPTION =
             ClassName.get("eu.exeris.kernel.spi.exceptions.http", "RequestBodyDecodeException");
+
+    private static final String TENANT_KEY = "00000000-0000-4000-8000-000000000002";
+
+    private static final ClassName MAP = ClassName.get("java.util", "Map");
+    private static final ClassName BIG_DECIMAL = ClassName.get("java.math", "BigDecimal");
     private static final ClassName EXERIS_KERNEL_EXCEPTION =
             ClassName.get("eu.exeris.kernel.spi.exceptions", "ExerisKernelException");
 
@@ -1408,12 +1408,12 @@ public final class KernelHandlerTestGenerator {
      * The statement that dispatches one route: a bare call, or — for a tenant-partitioned entity —
      * the same call inside {@code asTenant(...)}.
      */
-    private static String invoke(String handlerMethod, boolean tenantScoped) {
+    static String invoke(String handlerMethod, boolean tenantScoped) {
         String call = "handler." + handlerMethod + "(exchange)";
         return tenantScoped ? AS_TENANT + "(() -> " + call + ")" : call;
     }
 
-    private static MethodSpec.Builder test(String name) {
+    static MethodSpec.Builder test(String name) {
         return MethodSpec.methodBuilder(name)
                 .addAnnotation(TEST)
                 .addModifiers(Modifier.PUBLIC)
