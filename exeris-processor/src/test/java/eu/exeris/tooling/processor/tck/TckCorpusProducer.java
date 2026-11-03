@@ -39,7 +39,6 @@ final class TckCorpusProducer {
      * same change, and {@code TckFacetRatchetTest} holds the set to shrinking only.
      */
     static final Set<Facet> UNSUPPORTED = Collections.unmodifiableSet(EnumSet.of(
-            Facet.ROUTE_ACCESS,
             Facet.BLOBS));
 
     private static final Pattern PACKAGE = Pattern.compile("^package\\s+([\\w.]+)\\s*;", Pattern.MULTILINE);

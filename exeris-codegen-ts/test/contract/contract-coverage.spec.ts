@@ -302,6 +302,8 @@ const MAXIMAL = {
     expanded: true,
     divider: 'NONE',
   },
+  permissions: ['order:read', 'order:write'],
+  routeAccess: 'AUTHENTICATED',
 } as const;
 
 type AnySchema = { shape: Record<string, unknown>; parse(input: unknown): unknown };

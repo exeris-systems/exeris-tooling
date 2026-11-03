@@ -497,6 +497,8 @@ export const DomainMetadataSchema = z.object({
   eventSourced: EventSourcedMetadataSchema.optional(),
   internalApi: InternalApiMetadataSchema.optional(),
   navMenu: NavMenuMetadataSchema.optional(),
+  permissions: z.array(z.string()).optional(),
+  routeAccess: z.enum(['PUBLIC', 'AUTHENTICATED']).optional(),
 });
 
 export type DomainMetadata = z.infer<typeof DomainMetadataSchema>;

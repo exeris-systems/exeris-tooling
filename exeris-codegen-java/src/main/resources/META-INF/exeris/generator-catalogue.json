@@ -388,7 +388,7 @@
     {
       "id": "generated-route-policy",
       "generator": "KernelApplicationGenerator",
-      "artefact": "The generated half of the route policy the application binds; its table holds no row, so it abstains on every route (ADR-105).",
+      "artefact": "The generated half of the route policy the application binds: a table mirroring the router's matching, answering each declared route's requirement (nearest declaration wins, any-of over permissions) and abstaining on every other route; with no declaration anywhere it holds no row (ADR-105).",
       "outputRoot": "main",
       "pathPattern": "^(?:[^/]+/)*GeneratedRoutePolicy\\.java$",
       "pathTemplate": "{app}/GeneratedRoutePolicy.java",

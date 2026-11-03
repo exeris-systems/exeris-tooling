@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.testing.compile.Compilation;
+import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.BindSource;
 import eu.exeris.sdk.sourcemodel.ast.BindingMetadata;
 import eu.exeris.sdk.sourcemodel.ast.BlockType;
@@ -11,6 +12,7 @@ import eu.exeris.sdk.sourcemodel.ast.ComponentNodeMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.NavMenuMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RegionMetadata;
+import eu.exeris.sdk.sourcemodel.ast.RouteAccess;
 import eu.exeris.sdk.sourcemodel.ast.UIMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ViewKind;
 import eu.exeris.sdk.sourcemodel.ast.ViewMetadata;
@@ -3926,7 +3928,7 @@ class ExerisDomainProcessorTest {
     }
 
     @Nested
-    @DisplayName("@RouteAccess — PUBLIC beside permissions is refused, the level is not extracted")
+    @DisplayName("@RouteAccess — PUBLIC beside permissions is refused, access level and permissions extracted")
     class RouteAccessTests {
 
         private static final String CONTRADICTION = "a permission on it can never be satisfied";
@@ -4084,33 +4086,108 @@ class ExerisDomainProcessorTest {
             assertThat(compilation).succeeded();
         }
 
+        private DomainMetadata readDomainMetadata(Compilation compilation) throws IOException {
+            JavaFileObject file = compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Order.json").orElseThrow();
+            return new ObjectMapper()
+                    .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                    .readValue(readContent(file), DomainMetadata.class);
+        }
+
         @Test
-        @DisplayName("the level is not written into the metadata JSON")
-        void routeAccessDoesNotReachTheMetadata() throws IOException {
+        @DisplayName("entity-level and action-level routeAccess are extracted and PUBLIC is written explicitly")
+        void routeAccessReachesMetadataAndPublicWrittenExplicitly() throws IOException {
             Compilation compilation = compileWithProcessor(order(
                     "@RouteAccess(RouteAccess.Level.PUBLIC)", "", """
                         @RouteAccess(RouteAccess.Level.AUTHENTICATED)
                         @Action(name = "approve", label = "Approve")
                         public void approve() {
                         }
+
+                        @RouteAccess(RouteAccess.Level.PUBLIC)
+                        @Action(name = "track", label = "Track")
+                        public void track() {
+                        }
                     """));
 
             assertThat(compilation).succeeded();
-            String metadata = readContent(compilation.generatedFile(
+            String metadataJson = readContent(compilation.generatedFile(
                     StandardLocation.CLASS_OUTPUT, "exeris-metadata/Order.json").orElseThrow());
-            assertThat(metadata).doesNotContain("routeAccess");
+            assertThat(metadataJson).contains("\"routeAccess\" : \"PUBLIC\"");
+
+            DomainMetadata dm = readDomainMetadata(compilation);
+            assertThat(dm.routeAccess()).isEqualTo(RouteAccess.PUBLIC);
+
+            ActionMetadata approve = dm.actions().stream()
+                    .filter(a -> a.name().equals("approve"))
+                    .findFirst().orElseThrow();
+            assertThat(approve.routeAccess()).isEqualTo(RouteAccess.AUTHENTICATED);
+
+            ActionMetadata track = dm.actions().stream()
+                    .filter(a -> a.name().equals("track"))
+                    .findFirst().orElseThrow();
+            assertThat(track.routeAccess()).isEqualTo(RouteAccess.PUBLIC);
         }
 
         @Test
-        @DisplayName("-Aexeris.strict reports @RouteAccess as inert at the type and the method, "
-                + "never as unread")
-        void strictReportsRouteAccessAtBothTargets() {
+        @DisplayName("permissions are extracted in declaration order on entity and action")
+        void permissionsOrderPreserved() throws IOException {
+            Compilation compilation = compileWithProcessor(order(
+                    "@RouteAccess(RouteAccess.Level.AUTHENTICATED)",
+                    ", permissions = {\"order:read\", \"order:write\", \"order:admin\"}", """
+                        @Action(name = "approve", label = "Approve",
+                                permissions = {"order:approve", "order:audit"})
+                        public void approve() {
+                        }
+                    """));
+
+            assertThat(compilation).succeeded();
+            DomainMetadata dm = readDomainMetadata(compilation);
+            assertThat(dm.permissions()).containsExactly("order:read", "order:write", "order:admin");
+
+            ActionMetadata approve = dm.actions().stream()
+                    .filter(a -> a.name().equals("approve"))
+                    .findFirst().orElseThrow();
+            assertThat(approve.permissions()).containsExactly("order:approve", "order:audit");
+        }
+
+        @Test
+        @DisplayName("an inheriting action carries null routeAccess and empty permissions")
+        void inheritingActionCarriesNullRouteAccessAndEmptyPermissions() throws IOException {
+            Compilation compilation = compileWithProcessor(order(
+                    "@RouteAccess(RouteAccess.Level.AUTHENTICATED)",
+                    ", permissions = {\"order:read\"}", """
+                        @Action(name = "submit", label = "Submit")
+                        public void submit() {
+                        }
+                    """));
+
+            assertThat(compilation).succeeded();
+            DomainMetadata dm = readDomainMetadata(compilation);
+            assertThat(dm.routeAccess()).isEqualTo(RouteAccess.AUTHENTICATED);
+            assertThat(dm.permissions()).containsExactly("order:read");
+
+            ActionMetadata submit = dm.actions().stream()
+                    .filter(a -> a.name().equals("submit"))
+                    .findFirst().orElseThrow();
+            assertThat(submit.routeAccess()).isNull();
+            assertThat(submit.permissions()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict reports @RouteAccess and permissions neither as inert nor as unread")
+        void strictDoesNotReportRouteAccessOrPermissionsAsInert() {
             Compilation compilation = javac()
                     .withOptions("-Aexeris.strict=true")
                     .withProcessors(new ExerisDomainProcessor())
-                    .compile(order("@RouteAccess(RouteAccess.Level.PUBLIC)", "", """
-                        @RouteAccess(RouteAccess.Level.AUTHENTICATED)
-                        @Action(name = "approve", label = "Approve")
+                    .compile(order("@RouteAccess(RouteAccess.Level.AUTHENTICATED)",
+                            ", permissions = {\"order:read\"}", """
+                        @RouteAccess(RouteAccess.Level.PUBLIC)
+                        @Action(name = "track", label = "Track")
+                        public void track() {
+                        }
+
+                        @Action(name = "approve", label = "Approve", permissions = {"order:approve"})
                         public void approve() {
                         }
                     """));
@@ -4118,14 +4195,9 @@ class ExerisDomainProcessorTest {
             assertThat(compilation).succeeded();
             assertThat(compilation.warnings().stream()
                     .map(d -> d.getMessage(null))
-                    .filter(m -> m.contains("@RouteAccess is set but no code generator consumes it"))
-                    .filter(m -> m.contains("validated at compile time"))
-                    .filter(m -> m.contains("not compiled into a route policy"))
-                    .count())
-                    .isEqualTo(2);
-            assertThat(compilation.warnings().stream()
-                    .map(d -> d.getMessage(null))
-                    .noneMatch(m -> m.contains("@RouteAccess is set but this processor never reads it")))
+                    .noneMatch(m -> m.contains("@RouteAccess is set")
+                            || m.contains("@ExerisDomain.permissions is set")
+                            || m.contains("@Action.permissions is set")))
                     .isTrue();
         }
     }
@@ -4337,7 +4409,7 @@ class ExerisDomainProcessorTest {
             return compilation.warnings().stream()
                     .anyMatch(d -> d.getMessage(null) != null
                             && d.getMessage(null).contains("no code generator consumes it")
-                            && d.getMessage(null).contains(attribute));
+                            && d.getMessage(null).contains(attribute + " is set"));
         }
 
         @Test
@@ -4446,7 +4518,7 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("-Aexeris.strict warns on the four access attributes nothing extracts (T53)")
+        @DisplayName("-Aexeris.strict warns on the access attributes nothing extracts")
         void strictWarnsOnInertAccessAttributes() {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.Order",
@@ -4473,16 +4545,13 @@ class ExerisDomainProcessorTest {
                     .compile(source);
 
             assertThat(compilation).succeeded();
-            // An author who writes a permission today gets no enforcement anywhere and, until this
-            // entry existed, no warning either: the processor never extracts these, so the fields
-            // that carry them are empty in every build.
             assertThat(hasInertWarningFor(compilation, "@ExerisDomain.roles")).isTrue();
-            assertThat(hasInertWarningFor(compilation, "@ExerisDomain.permissions")).isTrue();
+            assertThat(hasInertWarningFor(compilation, "@ExerisDomain.permissions")).isFalse();
             assertThat(hasInertWarningFor(compilation, "@Action.roles")).isTrue();
-            assertThat(hasInertWarningFor(compilation, "@Action.permissions")).isTrue();
+            assertThat(hasInertWarningFor(compilation, "@Action.permissions")).isFalse();
             assertThat(inertWarnings(compilation))
-                    .as("exactly four inert warnings, one per access attribute set")
-                    .isEqualTo(4);
+                    .as("two inert warnings, one per role attribute set")
+                    .isEqualTo(2);
         }
 
         @Test
@@ -4811,15 +4880,10 @@ class ExerisDomainProcessorTest {
             assertThat(hasInertWarningFor(compilation, "@Blob")).isTrue();
             assertThat(hasInertWarningFor(compilation, "@RowLevelSecurity")).isTrue();
             assertThat(hasInertWarningFor(compilation, "@Encrypted")).isTrue();
-            assertThat(compilation.warnings().stream()
-                    .filter(d -> d.getMessage(null).contains("@RouteAccess is set but no code "
-                            + "generator consumes it"))
-                    .count())
-                    .as("@RouteAccess reported at both of its targets, the type and the method")
-                    .isEqualTo(2);
+            assertThat(hasInertWarningFor(compilation, "@RouteAccess")).isFalse();
             assertThat(inertWarnings(compilation))
                     .as("one warning per registered inert annotation occurrence, no more")
-                    .isEqualTo(6);
+                    .isEqualTo(4);
         }
 
         @Test
@@ -4951,8 +5015,8 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("-Aexeris.strict warns on @RouteAccess and stops calling it reserved")
-        void strictWarnsOnRouteAccessWithoutReserved() {
+        @DisplayName("-Aexeris.strict does not report @RouteAccess as inert or unread")
+        void strictDoesNotReportRouteAccessAsInert() {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.Route",
                     """
@@ -4975,11 +5039,7 @@ class ExerisDomainProcessorTest {
                     .compile(source);
 
             assertThat(compilation).succeeded();
-            assertThat(hasInertWarningFor(compilation, "@RouteAccess")).isTrue();
-            assertThat(compilation.warnings()).extracting(d -> d.getMessage(null))
-                    .anyMatch(m -> m.contains("@RouteAccess is set but no code generator consumes it")
-                            && m.contains("frozen SDK surface (SDK ADR-072 amendment 2026-10-29)")
-                            && !m.contains("reserved (ADR-072)"));
+            assertThat(hasInertWarningFor(compilation, "@RouteAccess")).isFalse();
         }
 
         @Test
@@ -5027,7 +5087,6 @@ class ExerisDomainProcessorTest {
                     @ExerisDomain(module = "core", path = "/documents")
                     @EventSourced
                     @RowLevelSecurity(policy = RowLevelSecurity.Policy.TENANT_ISOLATION)
-                    @RouteAccess(RouteAccess.Level.AUTHENTICATED)
                     public class Document { private java.util.UUID id;
                         @Blob
                         private byte[] content;
@@ -5039,7 +5098,6 @@ class ExerisDomainProcessorTest {
                         public void archive() {
                         }
 
-                        @RouteAccess(RouteAccess.Level.PUBLIC)
                         @Action(name = "preview", label = "Preview")
                         public void preview() {
                         }

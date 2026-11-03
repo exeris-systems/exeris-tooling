@@ -29,6 +29,7 @@ import eu.exeris.sdk.sourcemodel.ast.ProvidesMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RegionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RequiresMetadata;
+import eu.exeris.sdk.sourcemodel.ast.RouteAccess;
 import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SagaStepMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
@@ -400,14 +401,6 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "Serving another verb changes the route and the published contract on "
                             + "both sides, so it waits on a decision — the per-action GET spectate "
                             + "route, an ADR-044 amendment — rather than being honoured silently"),
-            new InertAttribute("Action", "permissions",
-                    "the processor does not extract it, so ActionMetadata's permissions field is "
-                            + "empty in every build — and no generator reads that field, so closing "
-                            + "the extraction alone would still produce no effect. Of the two access "
-                            + "attributes this is nonetheless the half with a destination in "
-                            + "principle: the kernel's RouteRequirement decides on named scopes, so "
-                            + "a permission is what a generated URL-to-policy table would carry — "
-                            + "and that table is this repository's to emit and is not built (T53)"),
             new InertAttribute("Action", "roles",
                     "the processor does not extract it, and unlike permissions it has no route-level "
                             + "destination: the kernel decides a route on scopes and never on roles, "
@@ -576,13 +569,6 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "carry it into the metadata. No emitted artifact has a version segment: "
                             + "the router, the OpenAPI document and every generated client serve and "
                             + "request the entity at its path. A versioned route is spelled in path"),
-            new InertAttribute("ExerisDomain", "permissions",
-                    "the processor does not extract it, so DomainMetadata's permissions field — "
-                            + "which exists, and is mirrored in the TypeScript model — is empty in "
-                            + "every build and no emitter can read it. The destination exists: the "
-                            + "kernel's RouteRequirement decides on named scopes, and a generated "
-                            + "URL-to-policy table would carry these. That table is this "
-                            + "repository's to emit and is not built (T53)"),
             new InertAttribute("ExerisDomain", "roles",
                     "the processor does not extract it, and unlike permissions it has no route-level "
                             + "destination: the kernel decides a route on scopes and never on roles, "
@@ -869,15 +855,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "deprecated for removal at 1.0.0. Kernel ADR-012 §4c.1 rules no principal "
                             + "session key at 1.0, and field-level encryption at rest outside kernel "
                             + "scope in every tier. Use @ExerisDomain(dataScope = TENANT) for tenant "
-                            + "isolation; roles / permissions / @RouteAccess for role checks"),
-            new InertAnnotation(ROUTE_ACCESS_FQN, "RouteAccess",
-                    "it is validated at compile time — PUBLIC beside a non-empty permissions, "
-                            + "declared or inherited from the type, is refused — but it is not "
-                            + "compiled into a route policy: no generator emits a URL-to-policy "
-                            + "table, so every generated route is registered exactly as if the "
-                            + "annotation were absent, and DomainMetadata / ActionMetadata carry no "
-                            + "routeAccess. It is frozen SDK surface (SDK ADR-072 amendment 2026-10-29) "
-                            + "whose transcription is pending in tooling (T53 / J3-3, tracked in ROADMAP.md)"));
+                            + "isolation; roles / permissions / @RouteAccess for role checks"));
 
     /**
      * Every SDK annotation this processor extracts, by simple name. <strong>C0: this set is the
@@ -908,7 +886,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             "AuditUpdatedBy", "Bind", "Block", "CapabilityLifecycle", "CapabilityModule",
             DOMAIN_EVENT, "EventSourced", "ExerisDomain", "Field", "Graph", "GraphEdge",
             "GraphProperty", "InternalApi", "NavMenu", "PrimaryKey", "Provides", "QueryParam", "Region",
-            "Relationship", "Requires", "Saga", "SagaStep", "SharedScope", "SoftDelete",
+            "Relationship", "Requires", "RouteAccess", "Saga", "SagaStep", "SharedScope", "SoftDelete",
             "SoftDeleteTimestamp", "SoftDeletedBy", "Tab", "TenantId", "UI", "UIGroup", "Validation",
             "Version", "View");
 
@@ -1738,10 +1716,6 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      *   <li>an action without one: the entity's level, inherited, against
      *       {@code @Action.permissions}.</li>
      * </ul>
-     *
-     * <p>Only the refusal is implemented. The level is not carried into {@code DomainMetadata} or
-     * {@code ActionMetadata} and reaches no generated route, which {@link #INERT_ANNOTATIONS}
-     * reports under {@code -Aexeris.strict}.
      */
     private void validateRouteAccess(TypeElement element, AnnotationMirror domainAnnotation) {
         AnnotationMirror typeAccess = findAnnotation(element, ROUTE_ACCESS_FQN);
@@ -1795,6 +1769,15 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         return routeAccess != null
                 && "PUBLIC".equals(enumConstantName(
                         extractAnnotationValues(routeAccess).get(VALUE_ELEMENT)));
+    }
+
+    /** Maps a {@code @RouteAccess} annotation mirror to the AST {@link RouteAccess}; null when unset. */
+    private RouteAccess extractRouteAccess(AnnotationMirror mirror) {
+        if (mirror == null) {
+            return null;
+        }
+        String constant = enumConstantName(extractAnnotationValues(mirror).get(VALUE_ELEMENT));
+        return constant != null ? RouteAccess.valueOf(constant) : null;
     }
 
     /** Whether an explicit {@code permissions} attribute names at least one permission. */
@@ -2085,6 +2068,11 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             builder.navMenu(navMenu);
         }
 
+        AnnotationMirror routeAccessAnnotation = findAnnotation(element, ROUTE_ACCESS_FQN);
+        if (routeAccessAnnotation != null) {
+            builder.routeAccess(extractRouteAccess(routeAccessAnnotation));
+        }
+
         validateRouteAccess(element, domainAnnotation);
 
         // Under -Aexeris.strict, flag type-level annotations that are
@@ -2310,6 +2298,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         }
 
         // Security
+        if (values.containsKey("permissions")) {
+            builder.permissions(getStringArray(values, "permissions"));
+        }
         if (values.containsKey("sensitive")) {
             builder.sensitive((Boolean) values.get("sensitive"));
         }
@@ -2917,6 +2908,14 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         // separate "subscribe-to-progress" affordance (response shape vs. progress
         // channel) with no generator consumer. Extracting it would only create an inert
         // ActionMetadata attribute; add extraction when the consumer exists.
+
+        if (values.containsKey("permissions")) {
+            builder.permissions(getStringArray(values, "permissions"));
+        }
+        AnnotationMirror routeAccessAnnotation = findAnnotation(method, ROUTE_ACCESS_FQN);
+        if (routeAccessAnnotation != null) {
+            builder.routeAccess(extractRouteAccess(routeAccessAnnotation));
+        }
 
         // Extract parameters
         List<ActionParamMetadata> params = new ArrayList<>();

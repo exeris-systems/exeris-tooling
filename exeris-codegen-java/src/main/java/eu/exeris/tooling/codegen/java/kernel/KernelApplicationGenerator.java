@@ -11,6 +11,7 @@ import com.palantir.javapoet.WildcardTypeName;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.core.access.RouteRequirements;
 import eu.exeris.tooling.codegen.core.driver.RequiredSubsystems;
 import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
 import eu.exeris.tooling.codegen.java.support.ForeignKeys;
@@ -282,7 +283,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 RequiredSubsystems.selector(domains)));
         files.add(buildRuntimeComponents(domains, basePackage));
         files.add(buildRuntimeLifecycle(domains, basePackage));
-        files.add(buildRoutePolicy(basePackage));
+        files.add(buildRoutePolicy(domains, basePackage));
         return files;
     }
 
@@ -760,10 +761,16 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     /**
      * Emits {@code GeneratedRoutePolicy}, the generated half of the route policy.
      *
-     * <p>Its table holds no row, so the policy abstains on every route and the application's
-     * {@code unmatchedRoutes()} decides it.
+     * <p>When some entity or action declares access, the policy carries the route table
+     * {@link KernelRoutePolicyTable} builds. When none does, it holds no row and abstains on every
+     * route, so the application's {@code unmatchedRoutes()} decides each one.
      */
-    private GeneratedFile buildRoutePolicy(String basePackage) {
+    private GeneratedFile buildRoutePolicy(List<DomainMetadata> domains, String basePackage) {
+        if (RouteRequirements.anyDeclared(domains)) {
+            TypeSpec table = KernelRoutePolicyTable.emit(ClassName.get(basePackage, ROUTE_POLICY_TYPE_NAME), domains);
+            return new GeneratedFile(basePackage, ROUTE_POLICY_TYPE_NAME,
+                    KernelScaffold.render(basePackage, table), ArtifactType.APPLICATION);
+        }
         FieldSpec abstain = FieldSpec.builder(ROUTE_REQUIREMENT, "ABSTAIN",
                         Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                 .initializer("$T.abstain()", ROUTE_REQUIREMENT)

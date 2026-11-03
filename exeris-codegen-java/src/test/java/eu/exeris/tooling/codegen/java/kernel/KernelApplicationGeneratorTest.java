@@ -1074,7 +1074,7 @@ class KernelApplicationGeneratorTest {
     }
 
     @Test
-    @DisplayName("ADR-105: GeneratedRoutePolicy sits in the base package and abstains on every route")
+    @DisplayName("ADR-105: with no access declared, GeneratedRoutePolicy sits in the base package and abstains on every route")
     void generatedRoutePolicyAbstainsEverywhere() {
         KernelApplicationGenerator gen = new KernelApplicationGenerator();
         List<GeneratedFile> files = gen.generateAll(
@@ -1098,7 +1098,50 @@ class KernelApplicationGeneratorTest {
     }
 
     @Test
-    @DisplayName("ADR-105: the emitted route policy does not depend on the domains, so every build emits the same bytes")
+    @DisplayName("ADR-105: declared access becomes a table mirroring the router; undeclared routes abstain")
+    void declaredAccessBecomesTheRouteTable() {
+        DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain").path("/orders")
+                .realTimeApi(true)
+                .permissions(List.of("order:read", "order:read", "order:write"))
+                .actions(List.of(
+                        ActionMetadata.builder("approve").methodName("approve")
+                                .permissions(List.of("order:approve")).build(),
+                        ActionMetadata.builder("cancel").methodName("cancel").build()))
+                .build();
+        DomainMetadata tag = DomainMetadata.builder("Tag", "com.example.domain").path("/tags").build();
+
+        String policy = routePolicy(new KernelApplicationGenerator().generateAll(List.of(order, tag),
+                "com.example.foundation"));
+
+        assertThat(policy)
+                .contains("private static final RouteRequirement ORDER_ACCESS = "
+                        + "RouteRequirement.requiringAnyScope(Set.of(\"order:read\", \"order:write\"));")
+                .contains("private static final RouteRequirement ORDER_APPROVE_ACCESS = "
+                        + "RouteRequirement.requiringAnyScope(Set.of(\"order:approve\"));")
+                .contains("row(\"/orders/{id}/actions/approve\", ORDER_APPROVE_ACCESS)")
+                .contains("row(\"/orders/{id}/actions/cancel\", ORDER_ACCESS)")
+                .contains("row(\"/tags/{id}\", ABSTAIN)")
+                .contains("case HEAD -> HEAD_ROWS;");
+        String getRows = section(policy, "GET_ROWS = {", "};");
+        assertThat(getRows.indexOf("row(\"/orders/stream\", ORDER_ACCESS)"))
+                .as("stream rows before respond-once rows")
+                .isLessThan(getRows.indexOf("row(\"/orders\", ORDER_ACCESS)"));
+        assertThat(getRows.indexOf("row(\"/tags\", ABSTAIN)"))
+                .as("exact rows before templates")
+                .isLessThan(getRows.indexOf("row(\"/orders/{id}\", ORDER_ACCESS)"));
+        assertThat(section(policy, "HEAD_ROWS = {", "};"))
+                .as("HEAD is served from GET respond-once routes only")
+                .doesNotContain("/stream");
+    }
+
+    private static String section(String text, String start, String end) {
+        int from = text.indexOf(start);
+        assertThat(from).as(start).isNotNegative();
+        return text.substring(from, text.indexOf(end, from));
+    }
+
+    @Test
+    @DisplayName("ADR-105: with no access declared, the route policy does not depend on the domains")
     void routePolicyIsTheSameForEveryDomainSet() {
         KernelApplicationGenerator gen = new KernelApplicationGenerator();
         DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain").path("/orders").build();

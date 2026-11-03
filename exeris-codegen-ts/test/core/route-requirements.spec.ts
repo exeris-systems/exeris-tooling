@@ -30,9 +30,9 @@ describe('demandsIdentity', () => {
     expect(demandsIdentity(example)).toBe(true);
   });
 
-  it('does not hold for the committed table, which declares no row', () => {
-    expect(committed).toEqual([]);
-    expect(demandsIdentity(committed)).toBe(false);
+  it('holds for the committed table, which carries authenticated and anyScope rows', () => {
+    expect(committed.length).toBeGreaterThan(0);
+    expect(demandsIdentity(committed)).toBe(true);
   });
 
   it('does not hold when every row is permitAll', () => {
@@ -51,18 +51,44 @@ describe('demandsIdentity', () => {
 });
 
 describe('deriveRouteRequirements', () => {
-  it('declares no row while no declared access is read, whatever an action carries', () => {
-    const order = DomainMetadataSchema.parse({
-      packageName: 'com.shop',
-      entityName: 'Order',
-      path: '/orders',
-      actions: [
-        { name: 'approve', permissions: ['order:approve'] },
-        { name: 'export', routeAccess: 'PUBLIC' },
-        { name: 'cancel', routeAccess: 'AUTHENTICATED' },
-      ],
-    });
+  const base = { packageName: 'com.shop', path: '/orders' };
+
+  it('declares no row for an entity and actions that declare nothing', () => {
+    const order = DomainMetadataSchema.parse({ ...base, entityName: 'Order', actions: [{ name: 'cancel' }] });
     expect(deriveRouteRequirements([order])).toEqual([]);
     expect(deriveRouteRequirements([])).toEqual([]);
+  });
+
+  it('gives an undeclared entity no row but its declaring action one, sourced from the action', () => {
+    const order = DomainMetadataSchema.parse({
+      ...base,
+      entityName: 'Order',
+      actions: [{ name: 'approve', permissions: ['order:approve', 'order:approve'] }, { name: 'cancel' }],
+    });
+    expect(deriveRouteRequirements([order])).toEqual([
+      {
+        entity: 'Order',
+        method: 'POST',
+        path: '{base}/{id}/actions/{action}',
+        action: 'approve',
+        requirement: { kind: 'anyScope', scopes: ['order:approve'] },
+        source: 'action',
+      },
+    ]);
+  });
+
+  it('lets PUBLIC win over the entity and AUTHENTICATED apply only without permissions', () => {
+    const order = DomainMetadataSchema.parse({
+      ...base,
+      entityName: 'Order',
+      routeAccess: 'AUTHENTICATED',
+      permissions: ['order:read'],
+      actions: [{ name: 'export', routeAccess: 'PUBLIC' }],
+    });
+    const rows = deriveRouteRequirements([order]);
+    expect(rows.filter((r) => r.source === 'entity').map((r) => r.requirement)).toEqual(
+      Array(5).fill({ kind: 'anyScope', scopes: ['order:read'] }),
+    );
+    expect(rows.find((r) => r.action === 'export')?.requirement).toEqual({ kind: 'permitAll' });
   });
 });

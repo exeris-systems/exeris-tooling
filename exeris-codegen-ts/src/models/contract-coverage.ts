@@ -36,8 +36,8 @@ import type {
 export type ContractState = 'READ' | 'JAVA_ONLY' | 'RESERVED' | 'GAP';
 
 export type ContractCoverageEntry =
-  | { readonly state: 'READ' }
-  | { readonly state: 'JAVA_ONLY' | 'RESERVED' | 'GAP'; readonly reason: string };
+  | { readonly state: 'READ'; readonly written?: boolean }
+  | { readonly state: 'JAVA_ONLY' | 'RESERVED' | 'GAP'; readonly reason: string; readonly written?: boolean };
 
 export const CONTRACT_COVERAGE = {
   entityName: { state: 'READ' },
@@ -84,6 +84,8 @@ export const CONTRACT_COVERAGE = {
     reason: 'Written as internal = true for an @InternalApi entity; no emitter on either side gates on it.',
   },
   navMenu: { state: 'READ' },
+  permissions: { state: 'READ', written: true },
+  routeAccess: { state: 'READ', written: true },
 } as const satisfies { readonly [K in keyof DomainMetadata]-?: ContractCoverageEntry };
 
 export type ContractField = keyof typeof CONTRACT_COVERAGE;
@@ -192,17 +194,9 @@ export const ACTION_CONTRACT_COVERAGE = {
     reason: 'The action route answers with the updated aggregate on both sides, whatever the method returns.',
   },
   async: { state: 'RESERVED', written: true, reason: 'Written from @Action; no emitted route or client behaves differently for it.' },
-  permissions: {
-    state: 'RESERVED',
-    written: false,
-    reason: `${NOT_WRITTEN} @Action.permissions is only checked against @RouteAccess at compile time.`,
-  },
+  permissions: { state: 'READ', written: true },
   producesEvents: { state: 'RESERVED', written: false, reason: NOT_WRITTEN },
-  routeAccess: {
-    state: 'RESERVED',
-    written: false,
-    reason: `${NOT_WRITTEN} @RouteAccess is validated, not transcribed: no route policy is emitted on either side.`,
-  },
+  routeAccess: { state: 'READ', written: true },
   streaming: { state: 'READ', written: true },
   streamEventType: { state: 'READ', written: true },
 } as const satisfies { readonly [K in keyof ActionMetadata]-?: NestedContractCoverageEntry };
