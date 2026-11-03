@@ -1225,3 +1225,57 @@ describe('DetailGenerator — @Tab layout and navigation', () => {
     expect(withoutTabs).not.toContain('activeTab = signal');
   });
 });
+
+describe('DetailGenerator — blob fields', () => {
+  const gen = new DetailGenerator();
+
+  it('renders blob descriptor, formatSize, download button, and rxResource stat call', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [
+        field({ name: 'id', type: 'java.util.UUID' }),
+        field({ name: 'total', type: 'java.math.BigDecimal' }),
+        field({
+          name: 'receipt',
+          type: 'eu.exeris.kernel.spi.storage.blob.BlobRef',
+          blob: { contentTypes: ['application/pdf'] },
+        }),
+      ],
+    }), CTX)!.content;
+
+    // Type import
+    expect(content).toContain("import type { BlobDescriptor } from '../types';");
+
+    // Template row
+    expect(content).toContain('Receipt</dt>');
+    expect(content).toContain("{{ receiptDescriptor() ? receiptDescriptor()!.contentType + ' (' + formatSize(receiptDescriptor()!.sizeBytes) + ')' : '—' }}");
+    expect(content).toContain('data-testid="download-receipt"');
+    expect(content).toContain('(click)="downloadReceipt()"');
+
+    // Class stat resource and descriptor
+    expect(content).toContain('this.service.statReceipt(params)');
+    expect(content).toContain('readonly receiptDescriptor = computed<BlobDescriptor | null>');
+
+    // Download method and formatSize
+    expect(content).toContain('downloadReceipt(): void {');
+    expect(content).toContain('this.service.downloadReceipt(id).subscribe');
+    expect(content).toContain('URL.createObjectURL(blob)');
+    expect(content).toContain('URL.revokeObjectURL(url)');
+    expect(content).toContain('formatSize(bytes: number): string {');
+
+    // Blob field left out of displayFields array
+    expect(content).not.toContain("name: 'receipt'");
+  });
+
+  it('does not emit blob resources, download methods or formatSize when domain has no blob fields', () => {
+    const content = gen.generate(domain({
+      entityName: 'Tag',
+      fields: [field({ name: 'name', type: 'String' })],
+    }), CTX)!.content;
+
+    expect(content).not.toContain('Descriptor');
+    expect(content).not.toContain('download');
+    expect(content).not.toContain('formatSize');
+    expect(content).not.toContain('BlobDescriptor');
+  });
+});

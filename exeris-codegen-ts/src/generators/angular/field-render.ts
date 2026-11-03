@@ -277,6 +277,7 @@ export function resolveFieldRender(
 ): FieldRenderModel {
   void override;
   const system = context.systemFieldNames.includes(field.name);
+  const isBlob = field.blob !== undefined;
   const link = context.links.get(field.name);
   const dataType = field.dataType !== undefined && DATA_TYPE_FACETS.has(field.dataType)
     ? (field.dataType as DataTypeFacet)
@@ -285,7 +286,7 @@ export function resolveFieldRender(
     name: field.name,
     label: DslMapper.mapField(field).label,
     system,
-    displayed: !field.hidden && !system,
+    displayed: !field.hidden && !system && !isBlob,
     link,
     list: listRender(field, link, context.enums ?? [], context.listQuery),
     detail: {
@@ -533,6 +534,7 @@ function isObjectValued(field: FieldMetadata, enums: readonly KnownEnum[]): bool
  * renders in both modes, so a computed field the create form leaves out has none.
  */
 function formPlacement(field: FieldMetadata, system: boolean, enums: readonly KnownEnum[]): FormPlacement {
+  if (field.blob !== undefined) return 'none';
   if (LIFECYCLE_FIELDS.has(field.name) || system) return 'none';
   if (!field.inCreate && (!field.inUpdate || field.computed)) return 'none';
   if (isCollectionType(field.type) || isObjectValued(field, enums)) return 'none';

@@ -109,6 +109,7 @@ function peerInterface(peerName: string, metadata: DomainMetadata): string {
 
   lines.push(`export interface ${typeName} {`);
   for (const field of metadata.fields) {
+    if (field.blob !== undefined) continue;
     const optional = field.required ? '' : '?';
     const comment = field.description ? ` // ${field.description}` : '';
     lines.push(`  ${field.name}${optional}: ${DslMapper.mapType(field.type).tsType};${comment}`);
@@ -141,6 +142,7 @@ function peerZodSchema(peerName: string, metadata: DomainMetadata): string {
 
   lines.push(`export const ${typeName}Schema = z.object({`);
   for (const field of metadata.fields) {
+    if (field.blob !== undefined) continue;
     lines.push(`  ${field.name}: ${buildZodType(field)},`);
   }
   lines.push(...undeclaredReadSchemaMembers(metadata));

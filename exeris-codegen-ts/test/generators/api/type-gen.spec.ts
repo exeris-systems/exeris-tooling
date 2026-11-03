@@ -1042,3 +1042,52 @@ describe('TypeGenerator — fields typed by another entity or by an undescribed 
     expect(buildZodType(f, { domains })).toBe('z.lazy((): z.ZodType<Customer> => CustomerSchema).optional()');
   });
 });
+
+describe('TypeGenerator — blob fields', () => {
+  const gen = new TypeGenerator();
+  const orderWithBlob = domain({
+    entityName: 'Order',
+    fields: [
+      field({ name: 'id', type: 'UUID', required: true }),
+      field({ name: 'total', type: 'BigDecimal', required: true }),
+      field({
+        name: 'receipt',
+        type: 'eu.exeris.kernel.spi.storage.blob.BlobRef',
+        blob: { contentTypes: ['application/pdf'] },
+      }),
+    ],
+  });
+
+  it('omits blob field from the emitted entity interface, Create DTO and Update DTO', () => {
+    const file = gen.generate(orderWithBlob, CTX)!;
+    expect(file).not.toBeNull();
+    const content = file.content;
+
+    // Entity interface contains id and total, but NOT receipt
+    expect(content).toContain('export interface Order {');
+    expect(content).toContain('  id: string;');
+    expect(content).toContain('  total: string;');
+    expect(content).not.toContain('receipt');
+
+    // Create DTO contains total, but NOT receipt
+    expect(content).toContain('export interface OrderCreate {');
+    expect(content).toContain('  total: string;');
+    expect(content).not.toContain('  receipt');
+  });
+
+  it('exports BlobDescriptor once in the shared types barrel (types/index.ts)', () => {
+    const files = gen.generateAggregate([orderWithBlob], CTX);
+    const barrel = files.find((f) => f.path === 'types/index.ts');
+    expect(barrel).toBeDefined();
+    expect(barrel!.content).toContain('export interface BlobDescriptor {');
+    expect(barrel!.content).toContain('readonly contentType: string;');
+    expect(barrel!.content).toContain('readonly sizeBytes: number;');
+  });
+
+  it('omits blob field from emitted Zod schemas', () => {
+    const files = gen.generateAggregate([orderWithBlob], createGeneratorContext({ generateZod: true }));
+    const schemaFile = files.find((f) => f.path === 'schemas/order.schema.ts');
+    expect(schemaFile).toBeDefined();
+    expect(schemaFile!.content).not.toContain('receipt:');
+  });
+});

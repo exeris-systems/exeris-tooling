@@ -3,7 +3,7 @@
  * Generates Angular 22+ form components with Signals from domain metadata.
  */
 
-import type { DomainMetadata, UIGroupMetadata } from '../../models/domain-model.js';
+import type { DomainMetadata, FieldMetadata, UIGroupMetadata } from '../../models/domain-model.js';
 import { modelTypeName } from '../../models/model-naming.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import type { GeneratorConfig } from '../../config.js';
@@ -85,6 +85,7 @@ export class FormGenerator implements CodeGenerator {
       target === entityName ? 'service' : `${target.charAt(0).toLowerCase()}${target.slice(1)}Service`;
     // Computed fields render read-only, for information, and are kept out of the submitted DTO.
     const computedFields = renders.filter((r) => r.form.placement === 'computed');
+    const blobFields = (domain.fields ?? []).filter((f) => f.blob !== undefined);
 
     const lines: string[] = [];
     lines.push(
@@ -106,6 +107,9 @@ export class FormGenerator implements CodeGenerator {
     lines.push("import { rxResource } from '@angular/core/rxjs-interop';");
     lines.push(`import { ${signalFormsImports(validation).join(', ')} } from '@angular/forms/signals';`);
     lines.push("import { ActivatedRoute, Router } from '@angular/router';");
+    if (blobFields.length > 0) {
+      lines.push("import { firstValueFrom } from 'rxjs';");
+    }
     lines.push(`import { ${modelName}, ${modelName}Create, ${modelName}Update, ${entityName}Service } from '../services/${kebabName}.service';`);
     lines.push("import { httpErrorMessage } from '../core/http-error';");
     for (const target of pickerTargets) {
@@ -179,12 +183,15 @@ export class FormGenerator implements CodeGenerator {
         for (const f of computedFields) {
           lines.push(...this.renderComputedField(f));
         }
+        for (const f of blobFields) {
+          lines.push(...this.renderBlobControl(f));
+        }
       } else {
         const sortedGroups = [...domain.uiMetadata!.groups!].sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
         const groupedFieldNames = new Set<string>();
 
         for (const g of sortedGroups) {
-          lines.push(...this.renderFormGroupSection(g, g.fields, createFields, computedFields, '      '));
+          lines.push(...this.renderFormGroupSection(g, g.fields, createFields, computedFields, '      ', blobFields));
           for (const fieldName of g.fields) {
             groupedFieldNames.add(fieldName);
           }
@@ -198,6 +205,11 @@ export class FormGenerator implements CodeGenerator {
         for (const f of computedFields) {
           if (!groupedFieldNames.has(f.name)) {
             lines.push(...this.renderComputedField(f));
+          }
+        }
+        for (const f of blobFields) {
+          if (!groupedFieldNames.has(f.name)) {
+            lines.push(...this.renderBlobControl(f));
           }
         }
       }
@@ -229,6 +241,11 @@ export class FormGenerator implements CodeGenerator {
             const computed = computedFields.find((f) => f.name === fieldName);
             if (computed) {
               lines.push(...this.renderComputedField(computed).map((l) => `  ${l}`));
+              continue;
+            }
+            const blob = blobFields.find((f) => f.name === fieldName);
+            if (blob) {
+              lines.push(...this.renderBlobControl(blob, '        '));
             }
           }
         } else {
@@ -236,7 +253,7 @@ export class FormGenerator implements CodeGenerator {
           for (const g of sortedGroups) {
             const gTabFieldNames = g.fields.filter((fn) => tabFields.includes(fn));
             if (gTabFieldNames.length === 0) continue;
-            lines.push(...this.renderFormGroupSection(g, gTabFieldNames, createFields, computedFields, '        '));
+            lines.push(...this.renderFormGroupSection(g, gTabFieldNames, createFields, computedFields, '        ', blobFields));
             for (const fn of gTabFieldNames) {
               tabGroupedFieldNames.add(fn);
             }
@@ -251,6 +268,11 @@ export class FormGenerator implements CodeGenerator {
               const computed = computedFields.find((f) => f.name === fieldName);
               if (computed) {
                 lines.push(...this.renderComputedField(computed).map((l) => `  ${l}`));
+                continue;
+              }
+              const blob = blobFields.find((f) => f.name === fieldName);
+              if (blob) {
+                lines.push(...this.renderBlobControl(blob, '        '));
               }
             }
           }
@@ -270,12 +292,17 @@ export class FormGenerator implements CodeGenerator {
             lines.push(...this.renderComputedField(f));
           }
         }
+        for (const f of blobFields) {
+          if (!tabbedFieldNames.has(f.name)) {
+            lines.push(...this.renderBlobControl(f));
+          }
+        }
       } else {
         const untabbedGroupedFieldNames = new Set<string>();
         for (const g of sortedGroups) {
           const gUntabbedFieldNames = g.fields.filter((fn) => !tabbedFieldNames.has(fn));
           if (gUntabbedFieldNames.length === 0) continue;
-          lines.push(...this.renderFormGroupSection(g, gUntabbedFieldNames, createFields, computedFields, '      '));
+          lines.push(...this.renderFormGroupSection(g, gUntabbedFieldNames, createFields, computedFields, '      ', blobFields));
           for (const fn of gUntabbedFieldNames) {
             untabbedGroupedFieldNames.add(fn);
           }
@@ -288,6 +315,11 @@ export class FormGenerator implements CodeGenerator {
         for (const f of computedFields) {
           if (!tabbedFieldNames.has(f.name) && !untabbedGroupedFieldNames.has(f.name)) {
             lines.push(...this.renderComputedField(f));
+          }
+        }
+        for (const f of blobFields) {
+          if (!tabbedFieldNames.has(f.name) && !untabbedGroupedFieldNames.has(f.name)) {
+            lines.push(...this.renderBlobControl(f));
           }
         }
       }
@@ -364,6 +396,9 @@ export class FormGenerator implements CodeGenerator {
     lines.push('');
     lines.push('  readonly saving = signal(false);');
     lines.push('  readonly error = signal<string | null>(null);');
+    for (const f of blobFields) {
+      lines.push(`  readonly ${f.name}File = signal<File | null>(null);`);
+    }
     if (version) {
       lines.push('  readonly conflict = signal(false);');
       lines.push('');
@@ -500,16 +535,43 @@ export class FormGenerator implements CodeGenerator {
     lines.push('');
     lines.push('    return new Promise((resolve) => {');
     lines.push('      request$.subscribe({');
-    lines.push('        next: (result) => {');
-    lines.push('          this.saving.set(false);');
-    lines.push('          resolve(undefined);');
-    lines.push('          this.saved.emit(result);');
-    lines.push('          if (this.routed) {');
-    lines.push(views.detail
-      ? `            void this.router.navigate(['/${plural}', String(result.${idField})]);`
-      : `            void this.router.navigate(['${exitRoute}']);`);
-    lines.push('          }');
-    lines.push('        },');
+    if (blobFields.length === 0) {
+      lines.push('        next: (result) => {');
+      lines.push('          this.saving.set(false);');
+      lines.push('          resolve(undefined);');
+      lines.push('          this.saved.emit(result);');
+      lines.push('          if (this.routed) {');
+      lines.push(views.detail
+        ? `            void this.router.navigate(['/${plural}', String(result.${idField})]);`
+        : `            void this.router.navigate(['${exitRoute}']);`);
+      lines.push('          }');
+      lines.push('        },');
+    } else {
+      lines.push('        next: async (result) => {');
+      lines.push('          try {');
+      lines.push(`            const id = String(result.${idField});`);
+      for (const f of blobFields) {
+        const pascal = f.name.charAt(0).toUpperCase() + f.name.slice(1);
+        lines.push(`            const ${f.name} = this.${f.name}File();`);
+        lines.push(`            if (${f.name}) {`);
+        lines.push(`              await firstValueFrom(this.service.upload${pascal}(id, ${f.name}));`);
+        lines.push('            }');
+      }
+      lines.push('            this.saving.set(false);');
+      lines.push('            resolve(undefined);');
+      lines.push('            this.saved.emit(result);');
+      lines.push('            if (this.routed) {');
+      lines.push(views.detail
+        ? `              void this.router.navigate(['/${plural}', String(result.${idField})]);`
+        : `              void this.router.navigate(['${exitRoute}']);`);
+      lines.push('            }');
+      lines.push('          } catch (uploadErr) {');
+      lines.push('            this.saving.set(false);');
+      lines.push('            resolve(undefined);');
+      lines.push(`            this.error.set(httpErrorMessage(uploadErr, { entity: '${noun}', action: 'save' }));`);
+      lines.push('          }');
+      lines.push('        },');
+    }
     lines.push('        error: (err) => {');
     lines.push('          this.saving.set(false);');
     lines.push('          resolve(undefined);');
@@ -527,6 +589,14 @@ export class FormGenerator implements CodeGenerator {
     lines.push('  }');
     lines.push('');
     lines.push(...updateBody);
+    for (const f of blobFields) {
+      const pascal = f.name.charAt(0).toUpperCase() + f.name.slice(1);
+      lines.push(`  on${pascal}Change(event: Event): void {`);
+      lines.push('    const input = event.target as HTMLInputElement;');
+      lines.push(`    this.${f.name}File.set(input.files?.[0] ?? null);`);
+      lines.push('  }');
+      lines.push('');
+    }
     lines.push('  onCancel(): void {');
     lines.push('    this.cancelled.emit();');
     lines.push('    if (this.routed) {');
@@ -576,6 +646,7 @@ export class FormGenerator implements CodeGenerator {
     createFields: FieldRenderModel[],
     computedFields: FieldRenderModel[],
     indent: string,
+    blobFields: FieldMetadata[] = [],
   ): string[] {
     const lines: string[] = [];
     const heading = tsTemplateText(g.label || g.name);
@@ -600,10 +671,29 @@ export class FormGenerator implements CodeGenerator {
       const computed = computedFields.find((f) => f.name === fieldName);
       if (computed) {
         lines.push(...this.renderComputedField(computed).map((l) => `${extraIndent}${l}`));
+        continue;
+      }
+      const blob = blobFields.find((f) => f.name === fieldName);
+      if (blob) {
+        lines.push(...this.renderBlobControl(blob, `${indent}  `));
       }
     }
     lines.push(isCollapsible ? `${indent}</details>` : `${indent}</section>`);
     return lines;
+  }
+
+  private renderBlobControl(f: FieldMetadata, indent = '      '): string[] {
+    const label = f.displayName ?? toTitleCase(f.name);
+    const contentTypes = f.blob?.contentTypes ?? [];
+    const accept = contentTypes.length > 0 ? ` accept="${contentTypes.join(',')}"` : '';
+    const pascal = f.name.charAt(0).toUpperCase() + f.name.slice(1);
+    const result: string[] = [];
+
+    result.push(`${indent}<div class="form-group">`);
+    result.push(`${indent}  <label for="${f.name}" class="exeris-label">${label}</label>`);
+    result.push(`${indent}  <input id="${f.name}" data-testid="field-${f.name}" type="file"${accept} (change)="on${pascal}Change($event)" class="exeris-input mt-1">`);
+    result.push(`${indent}</div>`);
+    return result;
   }
 
   private renderFormControl(f: FieldRenderModel): string[] {

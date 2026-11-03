@@ -1973,4 +1973,69 @@ describe('FormGenerator @Tab tabs layout', () => {
     expect(withoutTabs).not.toContain('activeTab = signal');
   });
 });
+
+describe('FormGenerator — blob fields', () => {
+  const gen = new FormGenerator();
+
+  it('renders file input with accept, file signal, change handler, and post-save upload', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [
+        field({ name: 'id', type: 'java.util.UUID' }),
+        field({ name: 'total', type: 'java.math.BigDecimal' }),
+        field({
+          name: 'receipt',
+          type: 'eu.exeris.kernel.spi.storage.blob.BlobRef',
+          blob: { contentTypes: ['application/pdf'] },
+        }),
+        field({
+          name: 'attachment',
+          type: 'eu.exeris.kernel.spi.storage.blob.BlobRef',
+          blob: { contentTypes: [] },
+        }),
+      ],
+    }), CTX)!.content;
+
+    // RxJS firstValueFrom import
+    expect(content).toContain("import { firstValueFrom } from 'rxjs';");
+
+    // File inputs in template
+    expect(content).toContain('id="receipt" data-testid="field-receipt" type="file" accept="application/pdf" (change)="onReceiptChange($event)"');
+    expect(content).toContain('id="attachment" data-testid="field-attachment" type="file" (change)="onAttachmentChange($event)"');
+
+    // Signals
+    expect(content).toContain('readonly receiptFile = signal<File | null>(null);');
+    expect(content).toContain('readonly attachmentFile = signal<File | null>(null);');
+
+    // Handlers
+    expect(content).toContain('onReceiptChange(event: Event): void {');
+    expect(content).toContain('this.receiptFile.set(input.files?.[0] ?? null);');
+    expect(content).toContain('onAttachmentChange(event: Event): void {');
+    expect(content).toContain('this.attachmentFile.set(input.files?.[0] ?? null);');
+
+    // Post-save upload
+    expect(content).toContain('next: async (result) => {');
+    expect(content).toContain('const receipt = this.receiptFile();');
+    expect(content).toContain('if (receipt) {');
+    expect(content).toContain('await firstValueFrom(this.service.uploadReceipt(id, receipt));');
+    expect(content).toContain('const attachment = this.attachmentFile();');
+    expect(content).toContain('if (attachment) {');
+    expect(content).toContain('await firstValueFrom(this.service.uploadAttachment(id, attachment));');
+
+    // Excluded from formModel
+    expect(content).not.toContain('receipt:');
+    expect(content).not.toContain('attachment:');
+  });
+
+  it('does not emit blob inputs, signals or firstValueFrom when domain has no blob fields', () => {
+    const content = gen.generate(domain({
+      entityName: 'Tag',
+      fields: [field({ name: 'name', type: 'String' })],
+    }), CTX)!.content;
+
+    expect(content).not.toContain("firstValueFrom");
+    expect(content).not.toContain('type="file"');
+    expect(content).not.toContain('File = signal');
+  });
+});
 });
