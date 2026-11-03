@@ -245,8 +245,10 @@ binds, and only where the policy demands identity:
 2. **No document-level requirement.** `security` is set per operation, never at the root, so an
    operation whose route demands nothing carries no requirement.
 3. **Per operation.** The requirement is the one the route policy binds for the operation's route:
-   the entity's declaration for its collection, item and `@Blob` field routes, and an action's own
-   declaration for its action route, the nearest one winning (ADR-105 obligations 10 to 12).
+   the entity's declaration for its collection, item and `@Blob` field routes and for its live-view
+   and spectate stream routes, and an action's own declaration for its action route, streaming or
+   not, the nearest one winning (ADR-105 obligations 10 to 12). The kernel authorizes a stream
+   before it opens, so a stream operation answers `401` and `403` as a respond-once one does.
    - `authenticated` → `security: [{ bearerAuth: [] }]`, and the response set gains `401`.
    - `anyScope(s1, …, sn)` → `security: [{ bearerAuth: [s1] }, …, { bearerAuth: [sn] }]`, one
      requirement object per scope in declaration order, because OpenAPI reads alternatives across
