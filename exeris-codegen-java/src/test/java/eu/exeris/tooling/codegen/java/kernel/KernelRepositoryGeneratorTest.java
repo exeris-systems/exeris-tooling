@@ -783,6 +783,81 @@ class KernelRepositoryGeneratorTest {
     }
 
     @Test
+    @DisplayName("EXT-GEN-3003: a field typed as another entity of the build is refused, with or without "
+            + "@Relationship, naming the UUID key to hold instead")
+    void entityReferenceFieldIsRefused() {
+        DomainMetadata category = DomainMetadata.builder("Category", "com.example.domain")
+                .fields(List.of(FieldMetadata.builder("name", "java.lang.String").build())).build();
+        DomainMetadata customer = DomainMetadata.builder("Customer", "com.example.domain")
+                .fields(List.of(FieldMetadata.builder("name", "java.lang.String").build())).build();
+        // A @GraphEdge-only reference: a field, no relationship.
+        DomainMetadata product = DomainMetadata.builder("Product", "com.example.domain")
+                .fields(List.of(FieldMetadata.builder("name", "java.lang.String").build(),
+                        FieldMetadata.builder("category", "com.example.domain.Category").build()))
+                .build();
+        DomainMetadata invoice = DomainMetadata.builder("Invoice", "com.example.domain")
+                .fields(List.of(FieldMetadata.builder("customer", "com.example.domain.Customer").build()))
+                .relationships(List.of(RelationshipMetadata.builder("customer", "Customer")
+                        .type(RelationshipMetadata.RelationType.MANY_TO_ONE).build()))
+                .build();
+        DomainMetadata line = DomainMetadata.builder("InvoiceLine", "com.example.domain")
+                .fields(List.of(FieldMetadata.builder("invoice", "com.example.domain.Invoice").build()))
+                .relationships(List.of(RelationshipMetadata.builder("invoice", "Invoice")
+                        .type(RelationshipMetadata.RelationType.MANY_TO_ONE).build()))
+                .build();
+        List<DomainMetadata> build = List.of(category, customer, product, invoice, line);
+
+        assertThatThrownBy(() -> KernelRepositoryGenerator.requirePersistableFields(build))
+                .isInstanceOfSatisfying(UnpersistableFieldTypeException.class, e -> assertThat(e.fields())
+                        .containsExactly(
+                                "com.example.domain.Invoice.customer : com.example.domain.Customer (a reference"
+                                        + " to the entity Customer, which no column stores; hold its key instead:"
+                                        + " UUID customerId, with @Relationship(targetEntity = Customer.class)"
+                                        + " for a foreign key)",
+                                "com.example.domain.InvoiceLine.invoice : com.example.domain.Invoice (a reference"
+                                        + " to the entity Invoice, which no column stores; hold its key instead:"
+                                        + " UUID invoiceId, with @Relationship(targetEntity = Invoice.class)"
+                                        + " for a foreign key)",
+                                "com.example.domain.Product.category : com.example.domain.Category (a reference"
+                                        + " to the entity Category, which no column stores; hold its key instead:"
+                                        + " UUID categoryId, with @Relationship(targetEntity = Category.class)"
+                                        + " for a foreign key)"))
+                .hasMessageStartingWith("[Exeris] EXT-GEN-3003: ")
+                .hasMessageContaining("UUID key in place of a reference to another entity");
+        KernelRepositoryGenerator generator = new KernelRepositoryGenerator();
+        for (DomainMetadata referencing : List.of(product, invoice, line)) {
+            assertThatThrownBy(() -> generator.generateMultiple(referencing, build))
+                    .isInstanceOf(UnpersistableFieldTypeException.class);
+        }
+        assertThat(generator.generateMultiple(customer, build).get(0).content())
+                .contains("public class CustomerRepository");
+        assertThat(generator.generateMultiple(category, build).get(0).content())
+                .isEqualTo(generator.generate(category).content());
+    }
+
+    @Test
+    @DisplayName("EXT-GEN-3003: an entity referencing itself is refused on its own, by either spelling")
+    void selfReferenceIsRefused() {
+        for (String type : List.of("Shipment", "com.example.domain.Shipment")) {
+            assertThatThrownBy(() -> repositoryFor(FieldMetadata.builder("parent", type).build()))
+                    .isInstanceOf(UnpersistableFieldTypeException.class)
+                    .hasMessageContaining("com.example.domain.Shipment.parent : " + type
+                            + " (a reference to the entity Shipment");
+        }
+    }
+
+    @Test
+    @DisplayName("a type that shares an entity's simple name in another package is not a reference to it")
+    void sameSimpleNameElsewhereIsNotAReference() {
+        DomainMetadata money = DomainMetadata.builder("Money", "com.example.billing").build();
+        DomainMetadata shipment = shipment(FieldMetadata.builder("price", "com.example.domain.Money").build());
+
+        KernelRepositoryGenerator.requirePersistableFields(List.of(shipment, money));
+        assertThat(new KernelRepositoryGenerator().generateMultiple(shipment, List.of(shipment, money))
+                .get(0).content()).contains("entity.setPrice(Money.valueOf(v));");
+    }
+
+    @Test
     @DisplayName("a field that is not a column (it shadows a system column) is not refused, whatever its type")
     void shadowedFieldIsNotRefused() {
         DomainMetadata metadata = DomainMetadata.builder("Shipment", "com.example.domain")

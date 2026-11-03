@@ -87,6 +87,10 @@ import java.util.Set;
  *       element is not a plain type ({@code List<Map<String, String>>},
  *       {@code List<List<X>>}), is refused before anything is emitted
  *       ({@link UnpersistableFieldTypeException}, {@code EXT-GEN-3003}).</li>
+ *   <li>A field typed as another entity of the build ({@code Customer customer}) is refused the
+ *       same way. A reference is persisted as the referenced row's key — a {@code UUID} field,
+ *       which a {@code @Relationship} makes a foreign key — and no column holds the entity
+ *       itself.</li>
  * </ul>
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
@@ -218,8 +222,9 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     /**
      * Refuses the entity set when any entity has a domain column whose type the repository cannot
      * store and read back — a {@link DomainTypeKind#UNSTORABLE} field, or a {@code List} whose
-     * element type is not a plain type name (a parameterised type, an array, a wildcard). An enum
-     * field is never refused, whatever its type is named, when its {@code enumType} is set.
+     * element type is not a plain type name (a parameterised type, an array, a wildcard), or a field
+     * typed as an entity of {@code domains}. An enum field is never refused, whatever its type is
+     * named, when its {@code enumType} is set.
      * A field that is not a column — a {@code @Blob} field, or one shadowing the primary key or an
      * active system column — is not checked, since nothing binds or reads it.
      *
@@ -230,24 +235,63 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      * @throws UnpersistableFieldTypeException naming every refused field, sorted
      */
     public static void requirePersistableFields(List<DomainMetadata> domains) {
+        requirePersistableFields(domains, domains);
+    }
+
+    /**
+     * Refuses {@code checked} as {@link #requirePersistableFields(List)} does, a field typed as an
+     * entity of {@code build} included.
+     */
+    private static void requirePersistableFields(List<DomainMetadata> checked, List<DomainMetadata> build) {
         List<String> refused = new ArrayList<>();
-        for (DomainMetadata metadata : domains) {
-            refused.addAll(unpersistableFields(metadata));
+        for (DomainMetadata metadata : checked) {
+            refused.addAll(unpersistableFields(metadata, build));
         }
         if (!refused.isEmpty()) {
             throw new UnpersistableFieldTypeException(refused.stream().sorted().toList());
         }
     }
 
-    private static List<String> unpersistableFields(DomainMetadata metadata) {
+    private static List<String> unpersistableFields(DomainMetadata metadata, List<DomainMetadata> build) {
         List<String> refused = new ArrayList<>();
         for (Column col : buildColumnLayout(metadata.fields(), metadata, resolveSystemFieldNames(metadata))) {
-            if (col.kind() == ColumnKind.DOMAIN && !storable(kindOf(col, metadata), col.javaType())) {
+            if (col.kind() != ColumnKind.DOMAIN) {
+                continue;
+            }
+            DomainTypeKind kind = kindOf(col, metadata);
+            String referenced = kind == DomainTypeKind.OPAQUE
+                    ? referencedEntity(col.javaType(), metadata, build) : null;
+            String reason = referenced != null
+                    ? entityReferenceReason(referenced, col.javaName())
+                    : storable(kind, col.javaType()) ? null : refusalReason(col.javaType());
+            if (reason != null) {
                 refused.add(metadata.packageName() + "." + metadata.entityName() + "." + col.javaName()
-                        + " : " + col.javaType() + " (" + refusalReason(col.javaType()) + ")");
+                        + " : " + col.javaType() + " (" + reason + ")");
             }
         }
         return refused;
+    }
+
+    /**
+     * The entity of {@code build} that {@code type} names, or {@code null}: its qualified name, or
+     * its simple name when it shares {@code owner}'s package — the package an unqualified type is
+     * resolved against on read.
+     */
+    private static String referencedEntity(String type, DomainMetadata owner, List<DomainMetadata> build) {
+        for (DomainMetadata domain : build) {
+            String entity = domain.entityName();
+            if (type.equals(domain.packageName() + "." + entity)
+                    || (type.equals(entity) && domain.packageName().equals(owner.packageName()))) {
+                return entity;
+            }
+        }
+        return null;
+    }
+
+    private static String entityReferenceReason(String entity, String field) {
+        return "a reference to the entity " + entity + ", which no column stores; hold its key instead:"
+                + " UUID " + ColumnNaming.foreignKeyBase(field) + "Id, with @Relationship(targetEntity = "
+                + entity + ".class) for a foreign key";
     }
 
     /**
@@ -344,7 +388,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      * @return the repository
      */
     GeneratedFile generate(DomainMetadata metadata, List<DomainMetadata> build) {
-        requirePersistableFields(List.of(metadata));
+        requirePersistableFields(List.of(metadata), build);
         String basePackage = metadata.packageName().replace(".domain", "");
         String packageName = basePackage + ".repository";
         String entity = metadata.entityName();
