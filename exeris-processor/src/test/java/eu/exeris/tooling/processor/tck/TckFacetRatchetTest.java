@@ -16,8 +16,7 @@ import org.junit.jupiter.api.Test;
  */
 class TckFacetRatchetTest {
 
-    private static final Set<Facet> CEILING = EnumSet.of(
-            Facet.BLOBS);
+    private static final Set<Facet> CEILING = EnumSet.noneOf(Facet.class);
 
     @Test
     @DisplayName("the binding declares no facet unsupported beyond the ceiling")

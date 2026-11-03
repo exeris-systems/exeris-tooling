@@ -232,6 +232,21 @@ public enum DiagnosticId {
     SCHEDULE_REFUSED("EXT-PROC-1030",
             "@Schedule is refused at build time."),
 
+    /**
+     * {@code @Blob} is declared on a field of an entity whose {@code dataScope} is {@code GLOBAL}.
+     * Global scope leaves the storage isolation key empty, so blob operations are unstorable by
+     * construction (SDK ADR-072 obligation 30, kernel ADR-056).
+     */
+    BLOB_ON_GLOBAL_ENTITY("EXT-PROC-1031",
+            "@Blob is declared on a field of an entity whose dataScope is GLOBAL."),
+
+    /**
+     * {@code @Blob} is declared on a field whose type is not {@code BlobRef}. The generated routes,
+     * repository and client handle the attachment through the kernel blob reference type.
+     */
+    BLOB_FIELD_NOT_BLOB_REF("EXT-PROC-1032",
+            "@Blob is declared on a field whose type is not eu.exeris.kernel.spi.storage.blob.BlobRef."),
+
     // -----------------------------------------------------------------------
     // EXT-PROC-11xx — warnings on an ordinary build (javac WARNING)
     // -----------------------------------------------------------------------
