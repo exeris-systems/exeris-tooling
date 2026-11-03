@@ -228,12 +228,10 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
             emittedColumns.add(toSnakeCase(field.name()));
         }
 
-        // T8: a plain UUID column for each MANY_TO_ONE FK that is not already a
-        // declared field column (the entity-typed `@Relationship Customer customer`
-        // style has no FieldMetadata, so its `customer_id` column would otherwise
-        // never be created — and the T8 FK index would then target a non-existent
-        // column). No REFERENCES / FK constraint is emitted here: the trailing
-        // foreign-key migration adds it, after every table exists.
+        // A plain UUID column for each MANY_TO_ONE foreign key that no declared field
+        // already provides, so the foreign-key index and constraint always have a
+        // column to target. No REFERENCES / FK constraint is emitted here: the
+        // trailing foreign-key migration adds it, after every table exists.
         for (String fkCol : foreignKeyColumns(metadata)) {
             if (emittedColumns.add(fkCol)) {
                 columns.add("    " + fkCol + " UUID");
