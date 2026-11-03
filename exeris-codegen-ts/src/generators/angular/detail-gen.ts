@@ -23,7 +23,7 @@ import { testIdSegment, tsSingleQuoted, tsTemplateText } from './ts-literal.js';
 import { auditFieldNames, updateVersionField, viewSystemFieldNames } from '../api/type-gen.js';
 import { fieldRenderContext, isEnumField, resolveFieldRenders, toTitleCase, type FieldRenderModel } from './field-render.js';
 import { filterProperties, foreignKeyBase, foreignKeyParam } from './list-query.js';
-import type { RelationshipMetadata } from '../../models/domain-model.js';
+import type { FieldMetadata, RelationshipMetadata } from '../../models/domain-model.js';
 import { entityExitRoute, entityViews } from './entity-views.js';
 import { fileHeaderLines } from '../file-header.js';
 
@@ -35,8 +35,9 @@ function renderDetailSection(params: {
   description?: string;
   fieldsMember: string;
   mtClass: string;
-  renderDlRows: (member: string) => string[];
+  renderDlRows: (member: string, blobList?: FieldMetadata[]) => string[];
   ariaLabelledBy?: string;
+  blobList?: FieldMetadata[];
 }): string[] {
   const lines: string[] = [];
   const testIdAttr = params.testId ? ` data-testid="${params.testId}"` : '';
@@ -53,7 +54,7 @@ function renderDetailSection(params: {
     lines.push(`          <p class="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">${tsTemplateText(params.description)}</p>`);
   }
   lines.push(`          <dl class="divide-y divide-gray-200 dark:divide-gray-700">`);
-  lines.push(...params.renderDlRows(params.fieldsMember));
+  lines.push(...params.renderDlRows(params.fieldsMember, params.blobList));
   lines.push(`          </dl>`);
   lines.push(params.isCollapsible ? `        </details>` : `        </section>`);
   return lines;
@@ -94,6 +95,7 @@ export class DetailGenerator implements CodeGenerator {
       fieldRenderContext(domain, context.allDomains, context.config.generateDetails !== false, context.enums ?? []),
     );
     const displayFields = renders.filter((r) => r.displayed);
+    const blobFields = (domain.fields ?? []).filter((f) => f.blob !== undefined);
     const related = relatedRecords(domain, context);
     const relatedServices = relatedServiceMembers(domain, related);
     const actions = detailActions(domain);
@@ -132,6 +134,9 @@ export class DetailGenerator implements CodeGenerator {
     }
     lines.push(`import { httpErrorMessage } from '../core/http-error';`);
     lines.push(`import type { ${modelName} } from '../types/${kebab}.types';`);
+    if (blobFields.length > 0) {
+      lines.push(`import type { BlobDescriptor } from '../types';`);
+    }
 
     if (enumTypes.length > 0) {
       lines.push(`import { ${enumTypes.flatMap(e => [e, `${e}DisplayNames`]).join(', ')} } from '../types/enums';`);
@@ -317,7 +322,23 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`            <button (click)="onDelete()" class="exeris-btn exeris-btn-danger">Delete</button>`);
     lines.push(`          </nav>`);
     lines.push(`        </header>`);
-    const renderDlRows = (fieldsVar: string): string[] => {
+    const renderBlobRow = (f: FieldMetadata): string[] => {
+      const label = f.displayName ?? toTitleCase(f.name);
+      const pascal = f.name.charAt(0).toUpperCase() + f.name.slice(1);
+      const rows: string[] = [];
+      rows.push(`            <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">`);
+      rows.push(`              <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">${label}</dt>`);
+      rows.push(`              <dd class="mt-1 text-sm text-gray-900 dark:text-white sm:mt-0 sm:col-span-2 flex items-center justify-between">`);
+      rows.push(`                <span>{{ ${f.name}Descriptor() ? ${f.name}Descriptor()!.contentType + ' (' + formatSize(${f.name}Descriptor()!.sizeBytes) + ')' : '—' }}</span>`);
+      rows.push(`                @if (${f.name}Descriptor()) {`);
+      rows.push(`                  <button type="button" (click)="download${pascal}()" data-testid="download-${f.name}" class="exeris-btn exeris-btn-secondary exeris-btn-sm">Download</button>`);
+      rows.push(`                }`);
+      rows.push(`              </dd>`);
+      rows.push(`            </div>`);
+      return rows;
+    };
+
+    const renderDlRows = (fieldsVar: string, blobList: FieldMetadata[] = []): string[] => {
       const rows: string[] = [];
       rows.push(`            @for (field of ${fieldsVar}; track field.name) {`);
       rows.push(`              <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">`);
@@ -351,6 +372,9 @@ export class DetailGenerator implements CodeGenerator {
       rows.push(`                </dd>`);
       rows.push(`              </div>`);
       rows.push(`            }`);
+      for (const f of blobList) {
+        rows.push(...renderBlobRow(f));
+      }
       return rows;
     };
 
@@ -359,7 +383,7 @@ export class DetailGenerator implements CodeGenerator {
         lines.push(`        <section aria-labelledby="details-title" class="exeris-card overflow-hidden">`);
         lines.push(`          <h2 id="details-title" class="exeris-card-header text-sm font-medium text-gray-500 dark:text-gray-400">Details</h2>`);
         lines.push(`          <dl class="divide-y divide-gray-200 dark:divide-gray-700">`);
-        lines.push(...renderDlRows('displayFields'));
+        lines.push(...renderDlRows('displayFields', blobFields));
         lines.push(`          </dl>`);
         lines.push(`        </section>`);
       } else {
@@ -370,6 +394,7 @@ export class DetailGenerator implements CodeGenerator {
           const isCollapsible = g.collapsible === true;
           const mtClass = isFirst ? '' : ' mt-8';
           isFirst = false;
+          const gBlobFields = blobFields.filter((bf) => g.fields.includes(bf.name));
 
           if (isCollapsible) {
             lines.push(`        <details data-testid="group-${testIdSegment(g.name)}"${g.collapsed ? '' : ' open'} class="exeris-card overflow-hidden${mtClass}">`);
@@ -382,17 +407,18 @@ export class DetailGenerator implements CodeGenerator {
             lines.push(`          <p class="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">${tsTemplateText(g.description)}</p>`);
           }
           lines.push(`          <dl class="divide-y divide-gray-200 dark:divide-gray-700">`);
-          lines.push(...renderDlRows(member));
+          lines.push(...renderDlRows(member, gBlobFields));
           lines.push(`          </dl>`);
           lines.push(isCollapsible ? `        </details>` : `        </section>`);
         }
 
-        if (ungroupedFields.length > 0) {
+        const ungroupedBlobs = blobFields.filter((bf) => !groupedFieldNames.has(bf.name));
+        if (ungroupedFields.length > 0 || ungroupedBlobs.length > 0) {
           const mtClass = isFirst ? '' : ' mt-8';
           lines.push(`        <section aria-labelledby="details-title" class="exeris-card overflow-hidden${mtClass}">`);
           lines.push(`          <h2 id="details-title" class="exeris-card-header text-sm font-medium text-gray-500 dark:text-gray-400">Details</h2>`);
           lines.push(`          <dl class="divide-y divide-gray-200 dark:divide-gray-700">`);
-          lines.push(...renderDlRows('ungroupedFields'));
+          lines.push(...renderDlRows('ungroupedFields', ungroupedBlobs));
           lines.push(`          </dl>`);
           lines.push(`        </section>`);
         }
@@ -410,50 +436,57 @@ export class DetailGenerator implements CodeGenerator {
       const allTabbedNames = new Set(sortedTabs.flatMap((t) => t.fields ?? []));
       for (const t of sortedTabs) {
         const tabName = t.name ?? '';
+        const tabFields = t.fields ?? [];
         lines.push(`        <div role="tabpanel" id="panel-${testIdSegment(tabName)}" aria-labelledby="tab-${testIdSegment(tabName)}" [hidden]="activeTab() !== '${tsSingleQuoted(tabName)}'" data-testid="tabpanel-${testIdSegment(tabName)}">`);
         let isFirstInTab = true;
         if (!hasGroups) {
           const tFields = (t.fields ?? []).map((fn) => displayFields.find((df) => df.name === fn)).filter((f): f is FieldRenderModel => f !== undefined);
-          if (tFields.length > 0) {
+          const tabBlobFields = blobFields.filter((bf) => tabFields.includes(bf.name));
+          if (tFields.length > 0 || tabBlobFields.length > 0) {
             const member = `tab${DslMapper.toTypeName(tabName)}Fields`;
-            lines.push(...renderDetailSection({ isCollapsible: false, heading: 'Details', ariaLabelledBy: 'details-title', fieldsMember: member, mtClass: '', renderDlRows }));
+            lines.push(...renderDetailSection({ isCollapsible: false, heading: 'Details', ariaLabelledBy: 'details-title', fieldsMember: member, mtClass: '', renderDlRows, blobList: tabBlobFields }));
           }
         } else {
           for (const g of sortedGroups) {
             const gFields = (g.fields ?? []).filter((fn) => (t.fields ?? []).includes(fn)).map((fn) => displayFields.find((df) => df.name === fn)).filter((f): f is FieldRenderModel => f !== undefined);
-            if (gFields.length === 0) continue;
+            const gTabBlobFields = blobFields.filter((bf) => tabFields.includes(bf.name) && g.fields.includes(bf.name));
+            if (gFields.length === 0 && gTabBlobFields.length === 0) continue;
             const heading = tsTemplateText(g.label || g.name);
             const member = `tab${DslMapper.toTypeName(tabName)}Group${DslMapper.toTypeName(g.name)}Fields`;
             const mtClass = isFirstInTab ? '' : ' mt-8';
             isFirstInTab = false;
-            lines.push(...renderDetailSection({ isCollapsible: g.collapsible === true, collapsed: g.collapsed, testId: 'group-' + testIdSegment(g.name), heading, description: g.description, fieldsMember: member, mtClass, renderDlRows }));
+            lines.push(...renderDetailSection({ isCollapsible: g.collapsible === true, collapsed: g.collapsed, testId: 'group-' + testIdSegment(g.name), heading, description: g.description, fieldsMember: member, mtClass, renderDlRows, blobList: gTabBlobFields }));
           }
           const tFields = (t.fields ?? []).map((fn) => displayFields.find((df) => df.name === fn)).filter((f): f is FieldRenderModel => f !== undefined);
           const tabUngrouped = tFields.filter((f) => !sortedGroups.some((g) => g.fields.includes(f.name)));
-          if (tabUngrouped.length > 0) {
+          const tabUngroupedBlobs = blobFields.filter((bf) => tabFields.includes(bf.name) && !sortedGroups.some((g) => g.fields.includes(bf.name)));
+          if (tabUngrouped.length > 0 || tabUngroupedBlobs.length > 0) {
             const member = `tab${DslMapper.toTypeName(tabName)}UngroupedFields`;
             const mtClass = isFirstInTab ? '' : ' mt-8';
-            lines.push(...renderDetailSection({ isCollapsible: false, heading: 'Details', ariaLabelledBy: 'details-title', fieldsMember: member, mtClass, renderDlRows }));
+            lines.push(...renderDetailSection({ isCollapsible: false, heading: 'Details', ariaLabelledBy: 'details-title', fieldsMember: member, mtClass, renderDlRows, blobList: tabUngroupedBlobs }));
           }
         }
         lines.push('        </div>');
       }
 
       const untabbedDisplayFields = displayFields.filter((f) => !allTabbedNames.has(f.name));
-      if (untabbedDisplayFields.length > 0) {
+      const untabbedAllBlobs = blobFields.filter((bf) => !allTabbedNames.has(bf.name));
+      if (untabbedDisplayFields.length > 0 || untabbedAllBlobs.length > 0) {
         if (!hasGroups) {
-          lines.push(...renderDetailSection({ isCollapsible: false, heading: 'Details', ariaLabelledBy: 'details-title', fieldsMember: 'untabbedFields', mtClass: ' mt-8', renderDlRows }));
+          lines.push(...renderDetailSection({ isCollapsible: false, heading: 'Details', ariaLabelledBy: 'details-title', fieldsMember: 'untabbedFields', mtClass: ' mt-8', renderDlRows, blobList: untabbedAllBlobs }));
         } else {
           for (const g of sortedGroups) {
             const gUntabbed = (g.fields ?? []).filter((fn) => !allTabbedNames.has(fn)).map((fn) => displayFields.find((df) => df.name === fn)).filter((f): f is FieldRenderModel => f !== undefined);
-            if (gUntabbed.length === 0) continue;
+            const gUntabbedBlobs = blobFields.filter((bf) => !allTabbedNames.has(bf.name) && g.fields.includes(bf.name));
+            if (gUntabbed.length === 0 && gUntabbedBlobs.length === 0) continue;
             const heading = tsTemplateText(g.label || g.name);
             const member = `untabbedGroup${DslMapper.toTypeName(g.name)}Fields`;
-            lines.push(...renderDetailSection({ isCollapsible: g.collapsible === true, collapsed: g.collapsed, testId: 'group-' + testIdSegment(g.name), heading, description: g.description, fieldsMember: member, mtClass: ' mt-8', renderDlRows }));
+            lines.push(...renderDetailSection({ isCollapsible: g.collapsible === true, collapsed: g.collapsed, testId: 'group-' + testIdSegment(g.name), heading, description: g.description, fieldsMember: member, mtClass: ' mt-8', renderDlRows, blobList: gUntabbedBlobs }));
           }
           const untabbedUngrouped = untabbedDisplayFields.filter((f) => !sortedGroups.some((g) => g.fields.includes(f.name)));
-          if (untabbedUngrouped.length > 0) {
-            lines.push(...renderDetailSection({ isCollapsible: false, heading: 'Details', ariaLabelledBy: 'details-title', fieldsMember: 'untabbedFields', mtClass: ' mt-8', renderDlRows }));
+          const untabbedUngroupedBlobs = blobFields.filter((bf) => !allTabbedNames.has(bf.name) && !sortedGroups.some((g) => g.fields.includes(bf.name)));
+          if (untabbedUngrouped.length > 0 || untabbedUngroupedBlobs.length > 0) {
+            lines.push(...renderDetailSection({ isCollapsible: false, heading: 'Details', ariaLabelledBy: 'details-title', fieldsMember: 'untabbedFields', mtClass: ' mt-8', renderDlRows, blobList: untabbedUngroupedBlobs }));
           }
         }
       }
@@ -563,6 +596,15 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`    const err = this.entityResource.error();`);
     lines.push(`    return err ? httpErrorMessage(err, { entity: '${noun}', action: 'load' }) : null;`);
     lines.push(`  });`);
+    for (const f of blobFields) {
+      const pascal = f.name.charAt(0).toUpperCase() + f.name.slice(1);
+      lines.push(``);
+      lines.push(`  private readonly ${f.name}Resource = rxResource({`);
+      lines.push(`    params: () => this.id(),`);
+      lines.push(`    stream: ({ params }) => this.service.stat${pascal}(params),`);
+      lines.push(`  });`);
+      lines.push(`  readonly ${f.name}Descriptor = computed<BlobDescriptor | null>(() => (this.${f.name}Resource.hasValue() ? this.${f.name}Resource.value() : null) ?? null);`);
+    }
     for (const rel of related) {
       if (!rel.fetch) continue;
       const { member, target, param } = rel.fetch;
@@ -697,6 +739,31 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`      });`);
     lines.push(`    }`);
     lines.push(`  }`);
+    for (const f of blobFields) {
+      const pascal = f.name.charAt(0).toUpperCase() + f.name.slice(1);
+      lines.push(``);
+      lines.push(`  download${pascal}(): void {`);
+      lines.push(`    const id = this.id();`);
+      lines.push(`    this.service.download${pascal}(id).subscribe((blob) => {`);
+      lines.push(`      const url = URL.createObjectURL(blob);`);
+      lines.push(`      const a = document.createElement('a');`);
+      lines.push(`      a.href = url;`);
+      lines.push(`      a.download = '${f.name}';`);
+      lines.push(`      a.click();`);
+      lines.push(`      URL.revokeObjectURL(url);`);
+      lines.push(`    });`);
+      lines.push(`  }`);
+    }
+
+    if (blobFields.length > 0) {
+      lines.push(``);
+      lines.push(`  formatSize(bytes: number): string {`);
+      lines.push(`    if (bytes < 1024) return \`\${bytes} B\`;`);
+      lines.push(`    if (bytes < 1024 * 1024) return \`\${(bytes / 1024).toFixed(1)} KB\`;`);
+      lines.push(`    if (bytes < 1024 * 1024 * 1024) return \`\${(bytes / (1024 * 1024)).toFixed(1)} MB\`;`);
+      lines.push(`    return \`\${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB\`;`);
+      lines.push(`  }`);
+    }
     lines.push(`}`);
 
     return lines.join('\n');

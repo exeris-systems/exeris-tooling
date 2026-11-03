@@ -74,15 +74,16 @@ export function notInUpdateBody(metadata: DomainMetadata): string[] {
 }
 
 /**
- * The domain fields a client does not set on update: those marked `readOnly` or `inUpdate = false`
- * that play no system role. The request update does not write them and reads their stored value
- * back (ADR-090 Amendments 2 and 3). A field in a system role keeps that role's rule: a read-only
- * version is still sent, and a read-only shared scope is still written. Sorted.
+ * The domain fields a client does not set on update: those marked `readOnly`, `inUpdate = false`
+ * or carrying a `blob` facet that play no system role. The request update does not write them and
+ * reads their stored value back (ADR-090 Amendments 2 and 3, ADR-108). A field in a system role keeps
+ * that role's rule: a read-only version is still sent, and a read-only shared scope is still written.
+ * Sorted.
  */
 export function fixedOnRequestUpdate(metadata: DomainMetadata): string[] {
   const roles = new Set(systemRoleFieldNames(metadata));
   return metadata.fields
-    .filter((f) => (f.readOnly || !f.inUpdate) && !roles.has(f.name))
+    .filter((f) => (f.readOnly || !f.inUpdate || f.blob !== undefined) && !roles.has(f.name))
     .map((f) => f.name)
     .sort();
 }
@@ -101,14 +102,14 @@ export function omittedFromUpdate(metadata: DomainMetadata): string[] {
 /**
  * The fields the create body does not carry: every field that plays a system role (the key, the
  * owner, a UNIVERSE entity's shared scope, the audit, version and soft-delete fields the entity
- * enables, and every name a `systemFields` block declares), every `readOnly` field and every field
- * marked `inCreate = false` (ADR-090 Amendment 4). The server sets the first kind itself. The TS
- * twin of the Java side's `ServerOwnedFields#notInCreateBody`. Sorted.
+ * enables, and every name a `systemFields` block declares), every `readOnly` field, every field
+ * marked `inCreate = false` (ADR-090 Amendment 4) and every `blob` field (ADR-108). The server sets
+ * the first kind itself. The TS twin of the Java side's `ServerOwnedFields#notInCreateBody`. Sorted.
  */
 export function omittedFromCreate(metadata: DomainMetadata): string[] {
   const names = new Set<string>(systemRoleFieldNames(metadata));
   for (const field of metadata.fields) {
-    if (field.readOnly || !field.inCreate) names.add(field.name);
+    if (field.readOnly || !field.inCreate || field.blob !== undefined) names.add(field.name);
   }
   return [...names].sort();
 }

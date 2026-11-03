@@ -196,6 +196,9 @@ export function listQuerySystemFieldNames(metadata: DomainMetadata): ReadonlySet
       if (name !== undefined && name.trim() !== '') names.add(name);
     }
   }
+  for (const field of metadata.fields ?? []) {
+    if (field.blob !== undefined) names.add(field.name);
+  }
   return names;
 }
 

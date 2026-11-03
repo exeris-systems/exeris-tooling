@@ -23,10 +23,12 @@ export interface RouteRequirementRow {
   readonly entity: string;
   /** The route's method. HEAD is never a row: the policy answers HEAD from the GET rows. */
   readonly method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
-  /** `{base}`, `{base}/{id}`, `{base}/stream`, `{base}/{id}/stream` or `{base}/{id}/actions/{action}`. */
+  /** `{base}`, `{base}/{id}`, `{base}/stream`, `{base}/{id}/stream`, `{base}/{id}/actions/{action}` or `{base}/{id}/blobs/{field}`. */
   readonly path: string;
   /** The action's name, present exactly when `path` ends in `/actions/{action}`. */
   readonly action?: string;
+  /** The blob field's name, present exactly when `path` ends in `/blobs/{field}`. */
+  readonly field?: string;
   readonly requirement: RouteRequirement;
   /** The declaration the requirement came from; the nearest one wins. */
   readonly source: 'entity' | 'action';
@@ -62,8 +64,9 @@ function ownRequirement(element: AccessDeclaring): RouteRequirement | undefined 
  * declares its own: the nearest declaration wins and an action's list replaces the entity's
  * (ADR-105 obligations 10 to 12). A route with no requirement has no row. Rows follow the router's
  * registration order: each entity's respond-once routes (`GET {base}`, `GET {base}/{id}`,
- * `POST {base}`, `PUT {base}/{id}`, `DELETE {base}/{id}`, then each respond-once action), entity
- * by entity, then the stream routes (each streaming action, then the live view and the spectate
+ * `POST {base}`, `PUT {base}/{id}`, `DELETE {base}/{id}`, then `PUT`, `GET`, `DELETE`
+ * `{base}/{id}/blobs/{field}` for each blob field in declaration order, then each respond-once action),
+ * entity by entity, then the stream routes (each streaming action, then the live view and the spectate
  * route of a real-time entity), entity by entity.
  */
 export function deriveRouteRequirements(domains: readonly DomainMetadata[]): RouteRequirementRow[] {
@@ -75,11 +78,16 @@ export function deriveRouteRequirements(domains: readonly DomainMetadata[]): Rou
     requirement: RouteRequirement | undefined,
     source: RouteRequirementRow['source'],
     action?: string,
+    field?: string,
   ): void => {
     if (!requirement) return;
-    rows.push(action === undefined
-      ? { entity, method, path, requirement, source }
-      : { entity, method, path, action, requirement, source });
+    if (action !== undefined) {
+      rows.push({ entity, method, path, action, requirement, source });
+    } else if (field !== undefined) {
+      rows.push({ entity, method, path, field, requirement, source });
+    } else {
+      rows.push({ entity, method, path, requirement, source });
+    }
   };
   const actionRow = (domain: DomainMetadata, action: DomainMetadata['actions'][number]): void => {
     const own = ownRequirement(action);
@@ -89,6 +97,10 @@ export function deriveRouteRequirements(domains: readonly DomainMetadata[]): Rou
   for (const domain of domains) {
     const entity = ownRequirement(domain);
     for (const [method, path] of CRUD_ROUTES) push(domain.entityName, method, path, entity, 'entity');
+    for (const f of domain.fields ?? []) {
+      if (f.blob === undefined) continue;
+      for (const method of BLOB_METHODS) push(domain.entityName, method, BLOB_PATH, entity, 'entity', undefined, f.name);
+    }
     for (const action of domain.actions) if (!action.streaming) actionRow(domain, action);
   }
   for (const domain of domains) {
@@ -103,6 +115,10 @@ export function deriveRouteRequirements(domains: readonly DomainMetadata[]): Rou
 }
 
 const ACTION_PATH = '{base}/{id}/actions/{action}';
+
+const BLOB_PATH = '{base}/{id}/blobs/{field}';
+
+const BLOB_METHODS: readonly RouteRequirementRow['method'][] = ['PUT', 'GET', 'DELETE'];
 
 const CRUD_ROUTES: readonly (readonly [RouteRequirementRow['method'], string])[] = [
   ['GET', '{base}'],

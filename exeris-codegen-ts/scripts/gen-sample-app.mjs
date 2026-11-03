@@ -114,6 +114,8 @@ const domains = [
       // A computed field: the form shows the loaded entity's value in a read-only input, outside
       // the form model.
       { name: 'lineTotal', type: 'java.math.BigDecimal', computed: true, computedFrom: ['quantity', 'total'] },
+      // A blob field: exercises the file input on the form, the stat/upload/download/delete service methods and the detail view.
+      { name: 'receipt', type: 'eu.exeris.kernel.spi.storage.blob.BlobRef', blob: { contentTypes: ['application/pdf'] } },
     ],
     // The foreign key renders as a routerLink to the target's detail page in the list cell and
     // the detail row, and the form picks it from Product's records labelled by their name. The

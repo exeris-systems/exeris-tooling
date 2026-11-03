@@ -300,4 +300,19 @@ describe('the fields a create takes from the server', () => {
   it('follow a renamed key', () => {
     expect(omitted('RenamedKey')).toEqual(['orderNo']);
   });
+
+  it('omits blob fields from create and update', () => {
+    const withBlob = DomainMetadataSchema.parse({
+      packageName: 'com.shop',
+      entityName: 'WithBlob',
+      fields: [
+        { name: 'id', type: 'java.util.UUID', primaryKey: true },
+        { name: 'title', type: 'String', inCreate: true, inUpdate: true },
+        { name: 'receipt', type: 'eu.exeris.kernel.spi.storage.blob.BlobRef', blob: { contentTypes: ['application/pdf'] } },
+      ],
+    });
+    expect(omittedFromCreate(withBlob)).toEqual(['id', 'receipt']);
+    expect(omittedFromUpdate(withBlob)).toEqual(['id', 'receipt']);
+    expect(fixedOnRequestUpdate(withBlob)).toEqual(['receipt']);
+  });
 });

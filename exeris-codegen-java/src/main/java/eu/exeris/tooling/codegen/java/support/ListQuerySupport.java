@@ -98,8 +98,9 @@ public final class ListQuerySupport {
      * field the processor recorded without {@code @Field}, which it marks sortable — of a kind in
      * which a column can be ordered: a type in {@link #sortableScalarTypes()} or an enum (a field
      * {@link DomainTypeKind#of(FieldMetadata)} classifies as {@link DomainTypeKind#ENUM}). Never a
-     * {@code List} field, a field of a type nothing here recognises, or a
-     * {@link #systemFieldNames system field}. Sorted by name.
+     * {@code List} field, a field of a type nothing here recognises, a
+     * {@link #systemFieldNames system field}, or a field that is no column
+     * ({@link BlobFields#isColumn}). Sorted by name.
      *
      * @param metadata the entity
      * @return the sortable properties
@@ -109,7 +110,8 @@ public final class ListQuerySupport {
         Map<String, Property> byName = new TreeMap<>();
         for (FieldMetadata field : metadata.fields()) {
             DomainTypeKind kind = DomainTypeKind.of(field);
-            if (field.sortable() && SORT_KINDS.contains(kind) && !system.contains(field.name())) {
+            if (field.sortable() && SORT_KINDS.contains(kind) && !system.contains(field.name())
+                    && BlobFields.isColumn(field)) {
                 byName.putIfAbsent(field.name(), new Property(field.name(), field.type(), kind,
                         ColumnNaming.snakeCase(field.name())));
             }
@@ -124,7 +126,8 @@ public final class ListQuerySupport {
      * then every {@code MANY_TO_ONE} relationship's foreign key
      * as {@code <base>Id=<uuid>}. A field named after a reserved parameter ({@code page},
      * {@code size}, {@code sort}) is not a filter, because the parameter means the other thing, and
-     * a {@link #systemFieldNames system field} is never one. A foreign key whose parameter name a
+     * a {@link #systemFieldNames system field} or a field that is no column
+     * ({@link BlobFields#isColumn}) is never one. A foreign key whose parameter name a
      * field already took is the same column and is not added twice. Sorted by name.
      *
      * @param metadata the entity
@@ -136,7 +139,7 @@ public final class ListQuerySupport {
         for (FieldMetadata field : metadata.fields()) {
             DomainTypeKind kind = DomainTypeKind.of(field);
             if (field.filterable() && FILTER_KINDS.contains(kind) && !RESERVED.contains(field.name())
-                    && !system.contains(field.name())) {
+                    && !system.contains(field.name()) && BlobFields.isColumn(field)) {
                 byName.putIfAbsent(field.name(), new Property(field.name(), field.type(), kind,
                         ColumnNaming.snakeCase(field.name())));
             }

@@ -20,7 +20,7 @@ class ProcessorReaderParityTckTest extends AbstractMetadataParityTck {
 
     @Override
     protected DomainMetadata read(String entitySource) {
-        return new SourceModelReader().read(entitySource)
+        return new SourceModelReader().read(TckCorpusProducer.asBlobRefs(entitySource))
                 .orElseThrow(() -> new IllegalStateException("the SDK reader read no entity"));
     }
 

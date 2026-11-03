@@ -9,7 +9,8 @@ slug: adr/ADR-108
 
 # ADR-108 — The generated application serves a `@Blob` field on its own routes and requires a blob store at boot
 
-- **Status:** ACCEPTED (2026-11-01) · accepted-on-merge per the per-repo pattern (ADR-047 / ADR-058)
+- **Status:** ACCEPTED (2026-11-01) · accepted-on-merge per the per-repo pattern (ADR-047 / ADR-058) ·
+  amended 2026-11-03 (Amendment 1 — the descriptor is read with `HEAD` on the field's route)
 - **Deciders:** the founder; `exeris-tooling` (processor, kernel handler and application emitters, TS
   emitters)
 - **Repo:** `exeris-tooling`
@@ -132,3 +133,47 @@ application requires at boot.**
 - S2 adds the TS half with specs and an `ng test` run of the generated sample app.
 - Both carry `accepted-api-changes.json` entries and migration fragments: the field leaves the create
   and update bodies, which is breaking (ADR-015, ADR-092).
+
+## Amendment 1 — the descriptor is read with `HEAD` on the field's route (2026-11-03)
+
+**Status:** Accepted *(replaces obligation 5, the descriptor half of obligation 9 and the size
+sentence of obligation 3; the routes, the key, the refusals and the required store are unchanged)*
+
+The generated application emits no response type of its own: every route answers with the
+`@ExerisDomain` class itself, encoded by the kernel's response encoder, and a `@Blob` field is
+declared as a `BlobRef`. A `{ "contentType", "sizeBytes" }` member in the entity's JSON would need a
+response type per entity, its page envelope and its OpenAPI schemas, and would cost one `stat` per
+`@Blob` field on every row of every list, the risk the Decision already names. Obligation 5 is
+replaced by:
+
+5. **The field in the entity.** The generated application never fills a `@Blob` field: it is not a
+   column, it is reset to `null` after a create or update body is decoded, and the entity's JSON
+   carries it as `null`. It is server-owned and left out of the create and update bodies, schemas
+   and TS types (ADR-090); the TS model leaves it out of the entity type. The descriptor is
+   `HEAD {base}/{id}/blobs/{f}`: the kernel router answers `HEAD` with the field's `GET` route
+   (RFC 9110 §9.3.2), and the handler, seeing `HEAD`, answers from `BlobStore.stat` alone, with no
+   body and with `Content-Type` and `Content-Length` set to the stored object's; `404` when the row or
+   the object is absent. Both headers are CORS-safelisted, so a browser client reads them.
+
+In obligation 9 the detail view loads the descriptor with that `HEAD` request, and the service gains
+a stat call beside upload, download and delete. In obligation 8 `HEAD` takes the download
+requirement, as the route policy already answers `HEAD` from the `GET` rows.
+
+In obligation 3 the sentence "A `@Validation` size bound on the field is enforced the same way
+(`413`)" is withdrawn: no `@Validation` attribute in SDK 0.13 bounds a byte count (`maxLength` bounds
+a string's length, `max` a number), and `@Blob` carries no size by design. The kernel's
+`maxRequestBodyBytes` is the one size bound, and the kernel answers `413` for it before the handler
+runs; neither the handler nor the OpenAPI operation declares `413`. A byte bound needs an SDK
+attribute first, and is then added to the upload route.
+
+The trade-off "every get and list response costs one `stat` per `@Blob` field", and the risk of the
+same cost on a store where `stat` is a network round trip, no longer apply: a `stat` is paid only by
+a client that asks for the descriptor. The reversal condition about a measured `stat` cost on list
+responses is moot.
+
+**Assumes:** the kernel's HTTP/1.1 response writer keeps an application `Content-Length` header and
+supplies its own only when none is set (`CommunityHttpResponseHeaders.write`, kernel 0.13).
+
+Verification: an e2e test drives the generated handler with `HEAD` and asserts the two headers and
+an empty body, and with `GET` asserts the bytes; the generated entity's JSON after an upload carries
+the field as `null`.

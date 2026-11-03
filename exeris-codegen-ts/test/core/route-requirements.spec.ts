@@ -91,4 +91,76 @@ describe('deriveRouteRequirements', () => {
     );
     expect(rows.find((r) => r.action === 'export')?.requirement).toEqual({ kind: 'permitAll' });
   });
+
+  it('pushes PUT, GET, DELETE for each blob field in declaration order after CRUD and before actions', () => {
+    const order = DomainMetadataSchema.parse({
+      ...base,
+      entityName: 'Order',
+      routeAccess: 'AUTHENTICATED',
+      fields: [
+        { name: 'id', type: 'java.lang.Long', primaryKey: true },
+        { name: 'receipt', type: 'eu.exeris.kernel.spi.storage.blob.BlobRef', blob: { contentTypes: ['application/pdf'] } },
+        { name: 'scan', type: 'eu.exeris.kernel.spi.storage.blob.BlobRef', blob: { contentTypes: [] } },
+      ],
+      actions: [{ name: 'cancel' }],
+    });
+    const rows = deriveRouteRequirements([order]);
+    // 5 CRUD + 3 for receipt + 3 for scan + 1 action = 12 rows
+    expect(rows).toHaveLength(12);
+
+    // Rows 5..7 are for receipt
+    expect(rows[5]).toEqual({
+      entity: 'Order',
+      method: 'PUT',
+      path: '{base}/{id}/blobs/{field}',
+      field: 'receipt',
+      requirement: { kind: 'authenticated' },
+      source: 'entity',
+    });
+    expect(rows[6]).toEqual({
+      entity: 'Order',
+      method: 'GET',
+      path: '{base}/{id}/blobs/{field}',
+      field: 'receipt',
+      requirement: { kind: 'authenticated' },
+      source: 'entity',
+    });
+    expect(rows[7]).toEqual({
+      entity: 'Order',
+      method: 'DELETE',
+      path: '{base}/{id}/blobs/{field}',
+      field: 'receipt',
+      requirement: { kind: 'authenticated' },
+      source: 'entity',
+    });
+
+    // Rows 8..10 are for scan
+    expect(rows[8]).toEqual({
+      entity: 'Order',
+      method: 'PUT',
+      path: '{base}/{id}/blobs/{field}',
+      field: 'scan',
+      requirement: { kind: 'authenticated' },
+      source: 'entity',
+    });
+    expect(rows[9]).toEqual({
+      entity: 'Order',
+      method: 'GET',
+      path: '{base}/{id}/blobs/{field}',
+      field: 'scan',
+      requirement: { kind: 'authenticated' },
+      source: 'entity',
+    });
+    expect(rows[10]).toEqual({
+      entity: 'Order',
+      method: 'DELETE',
+      path: '{base}/{id}/blobs/{field}',
+      field: 'scan',
+      requirement: { kind: 'authenticated' },
+      source: 'entity',
+    });
+
+    // Row 11 is action
+    expect(rows[11].action).toBe('cancel');
+  });
 });

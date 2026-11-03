@@ -7,9 +7,11 @@ import com.google.testing.compile.Compilation;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.BindSource;
 import eu.exeris.sdk.sourcemodel.ast.BindingMetadata;
+import eu.exeris.sdk.sourcemodel.ast.BlobMetadata;
 import eu.exeris.sdk.sourcemodel.ast.BlockType;
 import eu.exeris.sdk.sourcemodel.ast.ComponentNodeMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.NavMenuMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RegionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RouteAccess;
@@ -4877,34 +4879,25 @@ class ExerisDomainProcessorTest {
 
             assertThat(compilation).succeeded();
             assertThat(hasInertWarningFor(compilation, "@EventSourced")).isTrue();
-            assertThat(hasInertWarningFor(compilation, "@Blob")).isTrue();
+            assertThat(hasInertWarningFor(compilation, "@Blob")).isFalse();
             assertThat(hasInertWarningFor(compilation, "@RowLevelSecurity")).isTrue();
             assertThat(hasInertWarningFor(compilation, "@Encrypted")).isTrue();
             assertThat(hasInertWarningFor(compilation, "@RouteAccess")).isFalse();
             assertThat(inertWarnings(compilation))
                     .as("one warning per registered inert annotation occurrence, no more")
-                    .isEqualTo(4);
+                    .isEqualTo(3);
         }
 
         @Test
-        @DisplayName("-Aexeris.strict warns on @Blob on a field that carries no @Field")
-        void strictWarnsOnBlobWithoutField() {
-            // The sweep must not sit inside extractFieldMetadata, which is reached only
-            // when @Field is present. A @Blob field with no @Field is a real shape — the
-            // annotation describes a byte carrier, not a column — and the field is still
-            // admitted to the AST through FieldMetadata.simple(...).
+        @DisplayName("-Aexeris.strict does not report @Blob as inert or unread")
+        void strictDoesNotReportBlobAsInert() {
             Compilation compilation = javac()
                     .withOptions("-Aexeris.strict=true")
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(blobOnAFieldWithoutFieldAnnotation());
 
             assertThat(compilation).succeeded();
-            assertThat(hasInertWarningFor(compilation, "@Blob")).isTrue();
-            assertThat(inertWarnings(compilation)).isEqualTo(1);
-            assertThat(compilation.warnings()).extracting(d -> d.getMessage(null))
-                    .anyMatch(m -> m.contains("@Blob is set but no code generator consumes it")
-                            && m.contains("frozen SDK surface (SDK ADR-072 amendment 2026-10-29)")
-                            && !m.contains("reserved (ADR-072)"));
+            assertThat(hasInertWarningFor(compilation, "@Blob")).isFalse();
         }
 
         @Test
@@ -5077,10 +5070,8 @@ class ExerisDomainProcessorTest {
                     package com.example;
 
                     import eu.exeris.sdk.annotation.Action;
-                    import eu.exeris.sdk.annotation.Blob;
                     import eu.exeris.sdk.annotation.EventSourced;
                     import eu.exeris.sdk.annotation.ExerisDomain;
-                    import eu.exeris.sdk.annotation.RouteAccess;
                     import eu.exeris.sdk.annotation.security.Encrypted;
                     import eu.exeris.sdk.annotation.security.RowLevelSecurity;
 
@@ -5088,8 +5079,6 @@ class ExerisDomainProcessorTest {
                     @EventSourced
                     @RowLevelSecurity(policy = RowLevelSecurity.Policy.TENANT_ISOLATION)
                     public class Document { private java.util.UUID id;
-                        @Blob
-                        private byte[] content;
 
                         @Encrypted
                         private String secret;
@@ -5112,13 +5101,14 @@ class ExerisDomainProcessorTest {
                     """
                     package com.example;
 
+                    import eu.exeris.kernel.spi.storage.blob.BlobRef;
                     import eu.exeris.sdk.annotation.Blob;
                     import eu.exeris.sdk.annotation.ExerisDomain;
 
-                    @ExerisDomain(module = "core", path = "/documents")
+                    @ExerisDomain(module = "core", path = "/documents", dataScope = ExerisDomain.DataScope.TENANT)
                     public class Document { private java.util.UUID id;
                         @Blob
-                        private byte[] content;
+                        private BlobRef content;
                     }
                     """
             );
@@ -6912,6 +6902,160 @@ class ExerisDomainProcessorTest {
             assertThat(compilation).succeeded();
             assertThat(compilation).hadWarningContaining("@NavMenu.tooltip is set but no code generator consumes it");
             assertThat(compilation).hadWarningContaining("@Tab.badgeField is set but no code generator consumes it");
+        }
+    }
+
+    @Nested
+    @DisplayName("Extraction and validation of @Blob")
+    class BlobTests {
+
+        private DomainMetadata compile(String code) throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString("com.example.Order", code);
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeededWithoutWarnings();
+            JavaFileObject file = compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Order.json").orElseThrow();
+            return new ObjectMapper()
+                    .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                    .readValue(readContent(file), DomainMetadata.class);
+        }
+
+        @Test
+        @DisplayName("@Blob with container and contentTypes is extracted into FieldMetadata")
+        void blobWithContainerAndContentTypesExtracted() throws IOException {
+            DomainMetadata dm = compile("""
+                    package com.example;
+
+                    import eu.exeris.kernel.spi.storage.blob.BlobRef;
+                    import eu.exeris.sdk.annotation.Blob;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+
+                    @ExerisDomain(module = "sales", path = "/orders", dataScope = ExerisDomain.DataScope.TENANT)
+                    public class Order {
+                        private java.util.UUID id;
+
+                        @Field(label = "Statement")
+                        @Blob(container = "statements", contentTypes = {"application/pdf", "image/png"})
+                        private BlobRef statement;
+                    }
+                    """);
+
+            FieldMetadata field = dm.findField("statement").orElseThrow();
+            assertThat(field.blob()).isNotNull();
+            assertThat(field.blob().container()).isEqualTo("statements");
+            assertThat(field.blob().contentTypes()).containsExactly("application/pdf", "image/png");
+        }
+
+        @Test
+        @DisplayName("@Blob with blank container normalises container to null")
+        void blobWithBlankContainerNormalisesToNull() throws IOException {
+            DomainMetadata dm = compile("""
+                    package com.example;
+
+                    import eu.exeris.kernel.spi.storage.blob.BlobRef;
+                    import eu.exeris.sdk.annotation.Blob;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+
+                    @ExerisDomain(module = "sales", path = "/orders", dataScope = ExerisDomain.DataScope.TENANT)
+                    public class Order {
+                        private java.util.UUID id;
+
+                        @Field(label = "Attachment")
+                        @Blob(container = "   ", contentTypes = {"text/plain"})
+                        private BlobRef attachment;
+                    }
+                    """);
+
+            FieldMetadata field = dm.findField("attachment").orElseThrow();
+            assertThat(field.blob()).isNotNull();
+            assertThat(field.blob().container()).isNull();
+            assertThat(field.blob().contentTypes()).containsExactly("text/plain");
+        }
+
+        @Test
+        @DisplayName("@Blob on field without @Field is extracted into FieldMetadata")
+        void blobWithoutFieldAnnotationExtracted() throws IOException {
+            DomainMetadata dm = compile("""
+                    package com.example;
+
+                    import eu.exeris.kernel.spi.storage.blob.BlobRef;
+                    import eu.exeris.sdk.annotation.Blob;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "sales", path = "/orders", dataScope = ExerisDomain.DataScope.TENANT)
+                    public class Order {
+                        private java.util.UUID id;
+
+                        @Blob(container = "contracts")
+                        private BlobRef contract;
+                    }
+                    """);
+
+            FieldMetadata field = dm.findField("contract").orElseThrow();
+            assertThat(field.name()).isEqualTo("contract");
+            assertThat(field.type()).isEqualTo("eu.exeris.kernel.spi.storage.blob.BlobRef");
+            assertThat(field.searchable()).isTrue();
+            assertThat(field.sortable()).isTrue();
+            assertThat(field.filterable()).isTrue();
+            assertThat(field.blob()).isNotNull();
+            assertThat(field.blob().container()).isEqualTo("contracts");
+            assertThat(field.blob().contentTypes()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("@Blob on entity with dataScope = GLOBAL is refused with EXT-PROC-1031")
+        void blobOnGlobalEntityRefused() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.kernel.spi.storage.blob.BlobRef;
+                    import eu.exeris.sdk.annotation.Blob;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "sales", path = "/orders", dataScope = ExerisDomain.DataScope.GLOBAL)
+                    public class Order {
+                        private java.util.UUID id;
+
+                        @Blob(container = "documents")
+                        private BlobRef document;
+                    }
+                    """);
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation).hadErrorContaining("[Exeris] EXT-PROC-1031: @Blob on field 'document' "
+                    + "of @ExerisDomain entity 'Order' whose dataScope is GLOBAL");
+        }
+
+        @Test
+        @DisplayName("@Blob on field with non-BlobRef type is refused with EXT-PROC-1032")
+        void blobOnNonBlobRefFieldRefused() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Blob;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "sales", path = "/orders", dataScope = ExerisDomain.DataScope.TENANT)
+                    public class Order {
+                        private java.util.UUID id;
+
+                        @Blob(container = "documents")
+                        private String document;
+                    }
+                    """);
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation).hadErrorContaining("[Exeris] EXT-PROC-1032: @Blob on field 'document' "
+                    + "of entity 'Order' has type 'java.lang.String'; it must be "
+                    + "eu.exeris.kernel.spi.storage.blob.BlobRef");
         }
     }
 }

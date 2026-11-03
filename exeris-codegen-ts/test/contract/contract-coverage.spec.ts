@@ -164,6 +164,11 @@ const MAXIMAL = {
     { name: 'quantity', type: 'java.lang.Integer', max: 99, readOnly: true, inCreate: false },
     { name: 'grandTotal', type: 'java.math.BigDecimal', computed: true, computedFrom: ['total'] },
     { name: 'internalNote', type: 'String', hidden: true },
+    {
+      name: 'receipt',
+      type: 'eu.exeris.kernel.spi.storage.blob.BlobRef',
+      blob: { container: 'receipts', contentTypes: ['application/pdf'] },
+    },
   ],
   actions: [
     {

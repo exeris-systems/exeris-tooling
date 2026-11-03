@@ -1,6 +1,7 @@
 package eu.exeris.tooling.codegen.core.driver;
 
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.tooling.codegen.core.access.RouteRequirements;
 
 import java.util.ArrayList;
@@ -33,6 +34,11 @@ import java.util.List;
  *       (ADR-105), which only the security subsystem establishes. Without a security provider the
  *       subsystem does not run and such a route answers {@code 401}, which is the correct failure;
  *       a route policy that demands nothing needs no subsystem.</li>
+ *   <li>{@code storage} — {@link #usesStorage}: some entity declares a {@code @Blob} field, which
+ *       is what makes a handler take {@code KernelProviders.BLOB_STORE} and serve the field's
+ *       routes (ADR-108). The kernel's storage subsystem binds that store only when
+ *       {@code storage.blob.provider} names a driver; without one the binding is absent and the
+ *       composition fails inside the boot callback, which is where the cause is named.</li>
  *   <li>{@code crypto} — always. No emitted code reads the crypto provider, but the kernel's HTTP
  *       transport does: a server configured with TLS listener material serves TLS only when a
  *       crypto provider is bound, and serves plaintext otherwise, and an outbound {@code https}
@@ -41,8 +47,12 @@ import java.util.List;
  * </ul>
  *
  * <p>The order is fixed, whatever order the domains arrive in, so the emitted string is stable.
- * {@link RequiredDrivers} reads the graph, flow and events predicates, so the SPIs the build requires and the
- * names the default list boots agree.
+ * It is not a boot order: the kernel orders the subsystems it is handed by their {@code dependsOn}
+ * closure and phase. {@code storage} depends on {@code memory} alone, and no listed name depends on
+ * it, so it sits among the conditional names, after the ones that existed before it, and the
+ * strings of builds without a {@code @Blob} field are unchanged. {@link RequiredDrivers} reads the
+ * graph, flow, events and storage predicates, so the SPIs the build requires and the names the
+ * default list boots agree.
  *
  * @since 0.9
  */
@@ -60,6 +70,8 @@ public final class RequiredSubsystems {
     public static final String EVENTS = "events";
     /** Subsystem name of security; listed when {@link #usesSecurity} holds. */
     public static final String SECURITY = "security";
+    /** Subsystem name of blob storage; listed when {@link #usesStorage} holds. */
+    public static final String STORAGE = "storage";
     /** Subsystem name of crypto; always listed. */
     public static final String CRYPTO = "crypto";
 
@@ -71,11 +83,12 @@ public final class RequiredSubsystems {
      *
      * @param domains every entity this build emits code for
      * @return the subsystem names, in the fixed order {@code http, persistence, graph, flow,
-     *         events, security, crypto} with the conditional ones this build does not use left out
+     *         events, security, storage, crypto} with the conditional ones this build does not use
+     *         left out
      */
     public static List<String> forDomains(List<DomainMetadata> domains) {
         List<DomainMetadata> all = domains == null ? List.of() : domains;
-        List<String> names = new ArrayList<>(7);
+        List<String> names = new ArrayList<>(8);
         names.add(HTTP);
         names.add(PERSISTENCE);
         if (usesGraph(all)) {
@@ -89,6 +102,9 @@ public final class RequiredSubsystems {
         }
         if (usesSecurity(all)) {
             names.add(SECURITY);
+        }
+        if (usesStorage(all)) {
+            names.add(STORAGE);
         }
         names.add(CRYPTO);
         return List.copyOf(names);
@@ -147,5 +163,18 @@ public final class RequiredSubsystems {
      */
     public static boolean usesSecurity(List<DomainMetadata> domains) {
         return RouteRequirements.demandIdentity(domains);
+    }
+
+    /**
+     * Reports whether some entity declares a {@code @Blob} field — the predicate under which a
+     * handler takes a blob store and serves the field's routes.
+     *
+     * @param domains every entity this build emits code for
+     * @return {@code true} when at least one field of some entity carries a blob facet
+     */
+    public static boolean usesStorage(List<DomainMetadata> domains) {
+        return domains.stream()
+                .filter(DomainMetadata::hasFields)
+                .anyMatch(d -> d.fields().stream().anyMatch(FieldMetadata::hasBlob));
     }
 }

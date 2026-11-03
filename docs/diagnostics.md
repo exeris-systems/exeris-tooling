@@ -80,6 +80,8 @@ Printed by `javac` while it compiles your sources. `-Aexeris.strict=true` enable
 | `EXT-PROC-1028` | The sequence of `@SagaStep(order)` values does not start at 1. Orders must be numbered 1..N. | Renumber `@SagaStep(order)` starting at 1. |
 | `EXT-PROC-1029` | `@SagaStep(compensation)` names a saga step: a `@SagaStep` method, or the method the generated flow emits for a step. | Name a method that is not a step. Two steps may share one compensation method. |
 | `EXT-PROC-1030` | `@Schedule` is declared on an element. At 1.0 the kernel issues no service principal, so a declared background job is refused whatever its action requires (kernel ADR-057 Amendment A1). | Remove `@Schedule`; schedule the work outside the generated application until the kernel issues a service principal. |
+| `EXT-PROC-1031` | `@Blob` is on a field of an `@ExerisDomain` entity whose `dataScope` is `GLOBAL`. Global scope leaves `StorageContext.isolationKey` empty, and the kernel blob store terminally denies blob operations without an isolation key ([SDK ADR-072](https://github.com/exeris-systems/exeris-sdk/blob/main/docs/adr/ADR-072-kernel-preview-spi-reserved-surface.md) obligation 30, kernel ADR-056). | Declare `dataScope = TENANT` or `UNIVERSE` on the entity, or remove `@Blob` if the field should not be stored in the blob store. |
+| `EXT-PROC-1032` | `@Blob` is on a field whose type is not `eu.exeris.kernel.spi.storage.blob.BlobRef`. The generated application serves `@Blob` fields on dedicated upload and download routes backed by the kernel blob store ([ADR-108](adr/ADR-108-blob-field-routes.md)). | Declare the field as `BlobRef` (`private BlobRef <name>;`), or remove `@Blob` if the field is an ordinary inline column value. |
 
 ### 11xx — warnings on an ordinary build
 

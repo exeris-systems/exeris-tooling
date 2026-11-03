@@ -14,7 +14,7 @@ import java.util.Set;
  * invited by its own javadoc to override it. Deriving the requirement from that string would
  * therefore check something the running application may not ask for, and would fail builds that
  * are correct. Every entry below is instead justified by an artefact the pipeline <em>emitted into
- * this project</em>. The three conditional entries read the predicates of
+ * this project</em>. The four conditional entries read the predicates of
  * {@link RequiredSubsystems}, which derives the default string, so the default asks for exactly the
  * subsystems whose providers this class requires, plus {@code crypto}:
  *
@@ -32,6 +32,8 @@ import java.util.Set;
  *       what makes an {@code <Entity>EventPublisher} exist.</li>
  *   <li>{@code GraphProvider} — when some entity carries graph metadata.</li>
  *   <li>{@code FlowProvider} — when some entity declares a saga.</li>
+ *   <li>{@code BlobStorageProvider} — when some entity declares a {@code @Blob} field, which is
+ *       what makes a handler take the bound {@code BlobStore}.</li>
  * </ul>
  *
  * <p>Crypto is deliberately absent even though the default {@code subsystems()} names it: no
@@ -62,6 +64,10 @@ public final class RequiredDrivers {
     public static final String FLOW_PROVIDER =
             "eu.exeris.kernel.spi.flow.FlowProvider";
 
+    /** Kernel blob-storage SPI; required when some entity declares a {@code @Blob} field. */
+    public static final String BLOB_STORAGE_PROVIDER =
+            "eu.exeris.kernel.spi.storage.blob.BlobStorageProvider";
+
     private RequiredDrivers() {
     }
 
@@ -90,6 +96,9 @@ public final class RequiredDrivers {
         }
         if (RequiredSubsystems.usesFlow(domains)) {
             required.add(FLOW_PROVIDER);
+        }
+        if (RequiredSubsystems.usesStorage(domains)) {
+            required.add(BLOB_STORAGE_PROVIDER);
         }
         return required;
     }

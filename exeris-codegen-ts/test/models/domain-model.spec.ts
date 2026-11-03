@@ -94,6 +94,24 @@ describe('FieldMetadataSchema', () => {
     // additive + optional — absent dataType is undefined, never forced
     expect(FieldMetadataSchema.parse({ name: 'note', type: 'String' }).dataType).toBeUndefined();
   });
+
+  it('carries the optional blob facet with container and contentTypes (ADR-108)', () => {
+    const withBlob = FieldMetadataSchema.parse({
+      name: 'receipt',
+      type: 'BlobRef',
+      blob: { container: 'receipts', contentTypes: ['application/pdf'] },
+    });
+    expect(withBlob.blob).toEqual({ container: 'receipts', contentTypes: ['application/pdf'] });
+
+    const defaultBlob = FieldMetadataSchema.parse({
+      name: 'receipt',
+      type: 'BlobRef',
+      blob: {},
+    });
+    expect(defaultBlob.blob).toEqual({ contentTypes: [] });
+
+    expect(FieldMetadataSchema.parse({ name: 'receipt', type: 'BlobRef' }).blob).toBeUndefined();
+  });
 });
 
 describe('ActionParamMetadataSchema', () => {

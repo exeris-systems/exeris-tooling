@@ -47,7 +47,8 @@ class RoutePolicyContractE2ETest {
 
     record Requirement(String kind, List<String> scopes) {}
 
-    record Row(String entity, String method, String path, String action, Requirement requirement, String source) {}
+    record Row(String entity, String method, String path, String action, String field, Requirement requirement,
+               String source) {}
 
     record Contract(String description, List<Row> routes) {}
 
@@ -71,7 +72,7 @@ class RoutePolicyContractE2ETest {
 
         Map<String, String> expected = new LinkedHashMap<>();
         for (Row row : contract.routes()) {
-            String template = RoutePolicyFixture.instantiate(row.path(), row.entity(), row.action());
+            String template = RoutePolicyFixture.instantiate(row.path(), row.entity(), row.action(), row.field());
             assertThat(registered)
                     .as("contract row %s is a route RuntimeLifecycle registers", row)
                     .anyMatch(route -> route.method().equals(row.method()) && route.template().equals(template));
@@ -126,6 +127,8 @@ class RoutePolicyContractE2ETest {
             assertThat(KINDS).as("kind of %s", row).contains(row.requirement().kind());
             boolean actionPath = row.path().endsWith("/actions/{action}");
             assertThat(row.action() != null).as("action key iff action path: %s", row).isEqualTo(actionPath);
+            boolean blobPath = row.path().equals("{base}/{id}/blobs/{field}");
+            assertThat(row.field() != null).as("field key iff blob path: %s", row).isEqualTo(blobPath);
             boolean scoped = ANY_SCOPE.equals(row.requirement().kind());
             assertThat(row.requirement().scopes() != null && !row.requirement().scopes().isEmpty())
                     .as("scopes iff anyScope: %s", row).isEqualTo(scoped);

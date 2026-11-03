@@ -1,8 +1,10 @@
 package eu.exeris.tooling.codegen.core.driver;
 
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
+import eu.exeris.sdk.sourcemodel.ast.BlobMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RouteAccess;
 import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
@@ -94,6 +96,24 @@ class RequiredSubsystemsTest {
                 ActionMetadata.builder("approve").permissions(List.of("order:approve")).build())).build())))
                 .isEqualTo("http,persistence,security,crypto");
         assertThat(RequiredSubsystems.selector(List.of(entity("Catalog").routeAccess(RouteAccess.PUBLIC).build())))
+                .isEqualTo("http,persistence,crypto");
+    }
+
+    @Test
+    @DisplayName("a @Blob field adds storage, after security and before crypto")
+    void blobFieldAddsStorage() {
+        DomainMetadata receipts = entity("Order")
+                .fields(List.of(
+                        FieldMetadata.simple("note", "String"),
+                        FieldMetadata.builder("receipt", "eu.exeris.kernel.spi.storage.blob.BlobRef")
+                                .blob(BlobMetadata.unrestricted()).build()))
+                .routeAccess(RouteAccess.AUTHENTICATED)
+                .build();
+
+        assertThat(RequiredSubsystems.selector(List.of(receipts)))
+                .isEqualTo("http,persistence,security,storage,crypto");
+        assertThat(RequiredSubsystems.selector(List.of(entity("Note")
+                .fields(List.of(FieldMetadata.simple("note", "String"))).build())))
                 .isEqualTo("http,persistence,crypto");
     }
 }

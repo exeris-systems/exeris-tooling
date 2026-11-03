@@ -47,12 +47,49 @@ public final class GeneratedTree implements AutoCloseable {
     public static GeneratedTree build(Path workspace, String basePackage,
                                       Map<String, String> domainSources,
                                       Map<String, String> harnessSources) throws IOException {
+        return build(workspace, basePackage, domainSources, harnessSources, metadataDir -> { });
+    }
+
+    /**
+     * Rewrites the processor's metadata before the pipeline reads it, so a test sets a facet
+     * independently of what the annotated source declares.
+     */
+    @FunctionalInterface
+    public interface MetadataEdit {
+
+        /**
+         * Edits the metadata files in place.
+         *
+         * @param metadataDir the processor's {@code exeris-metadata} directory
+         * @throws IOException if a file cannot be read or written
+         */
+        void apply(Path metadataDir) throws IOException;
+    }
+
+    /**
+     * Builds the application under {@code workspace}, with {@code edit} applied to the processor's
+     * metadata before the pipeline reads it.
+     *
+     * @param workspace       a fresh directory; everything is written beneath it
+     * @param basePackage     the pipeline's base package
+     * @param domainSources   annotated entity sources, relative path → text
+     * @param harnessSources  hand-written sources compiled against the emitted tree, relative
+     *                        path → text; may be empty
+     * @param edit            the metadata rewrite
+     * @return the built tree; close it to release its class loader
+     * @throws IOException if any file cannot be written
+     */
+    public static GeneratedTree build(Path workspace, String basePackage,
+                                      Map<String, String> domainSources,
+                                      Map<String, String> harnessSources,
+                                      MetadataEdit edit) throws IOException {
         Path entityClasses = workspace.resolve("target/classes");
         Path generated = workspace.resolve("src/main/generated/java");
         Path harness = workspace.resolve("src/test/java");
         Path appClasses = workspace.resolve("target/app-classes");
 
         ProcessorCompiler.compile(workspace.resolve("src/main/java"), entityClasses, null, domainSources);
+        edit.apply(entityClasses.resolve("exeris-metadata"));
         CodegenPipeline.createDefault().run(entityClasses.resolve("exeris-metadata"), generated, basePackage);
 
         List<String> files = new ArrayList<>(javaSourcesUnder(generated));

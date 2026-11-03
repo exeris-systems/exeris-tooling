@@ -1,5 +1,6 @@
 package eu.exeris.e2e.codegen;
 
+import eu.exeris.e2e.codegen.compile.BlobFacet;
 import eu.exeris.e2e.codegen.compile.EmittedJavac;
 import eu.exeris.e2e.codegen.compile.ProcessorCompiler;
 import eu.exeris.tooling.codegen.java.CodegenPipeline;
@@ -83,6 +84,7 @@ class GeneratedTestsE2ETest {
 
         CodegenPipeline pipeline = CodegenPipeline.createDefault();
         Path metadataDir = classes.resolve("exeris-metadata");
+        BlobFacet.on("Ticket", "scan", List.of("application/pdf")).apply(metadataDir);
         pipeline.run(metadataDir, generatedMain, BASE_PACKAGE);
         pipeline.runTests(metadataDir, generatedTests, BASE_PACKAGE);
 
@@ -180,7 +182,12 @@ class GeneratedTestsE2ETest {
                             DiscoverySelectors.selectClass(
                                     Class.forName("com.shop.service.PaymentServiceTest", true, appLoader)),
                             DiscoverySelectors.selectClass(
-                                    Class.forName("com.shop.repository.PaymentRepositoryTest", true, appLoader)))
+                                    Class.forName("com.shop.repository.PaymentRepositoryTest", true, appLoader)),
+                            // The entity with a @Blob field (ADR-108): the only executed proof that
+                            // its handler, built over the nested empty blob store, keeps every CRUD
+                            // status, the row delete included.
+                            DiscoverySelectors.selectClass(
+                                    Class.forName("com.shop.handler.TicketHandlerTest", true, appLoader)))
                     .build();
 
             Launcher launcher = LauncherFactory.create();
@@ -239,8 +246,10 @@ class GeneratedTestsE2ETest {
             // + 4 OrderHandlerTest action cases (reassign: success, missing row, undecodable body,
             // missing required query parameter) + 6 InvoiceHandlerTest cases (a stale update's 409,
             // a soft-deleted row's 404 on get and its absence from the list, and send: success,
-            // missing row, a stale version's 409).
-            assertThat(summary.getTestsSucceededCount()).isEqualTo(236);
+            // missing row, a stale version's 409) + 21 TicketHandlerTest cases (the CRUD, list,
+            // decode-failure and @Validation cases of a GLOBAL entity with one required field,
+            // its handler built over the empty blob store).
+            assertThat(summary.getTestsSucceededCount()).isEqualTo(257);
         }
     }
 
@@ -751,6 +760,30 @@ class GeneratedTestsE2ETest {
                     public void setNote(String note) { this.note = note; }
                     public UUID getVoucherId() { return voucherId; }
                     public void setVoucherId(UUID voucherId) { this.voucherId = voucherId; }
+                }
+                """);
+        // A @Blob field: the facet is written onto the metadata before the pipeline reads it.
+        sources.put("com/shop/domain/Ticket.java",
+                """
+                package com.shop.domain;
+
+                import eu.exeris.kernel.spi.storage.blob.BlobRef;
+                import eu.exeris.sdk.annotation.ExerisDomain;
+                import eu.exeris.sdk.annotation.Field;
+
+                import java.util.UUID;
+
+                @ExerisDomain(module = "sales", path = "/tickets", dataScope = ExerisDomain.DataScope.GLOBAL)
+                public class Ticket {
+                    private UUID id;
+                    @Field(label = "Code", required = true) private String code;
+                    private BlobRef scan;
+                    public UUID getId() { return id; }
+                    public void setId(UUID id) { this.id = id; }
+                    public String getCode() { return code; }
+                    public void setCode(String code) { this.code = code; }
+                    public BlobRef getScan() { return scan; }
+                    public void setScan(BlobRef scan) { this.scan = scan; }
                 }
                 """);
         return sources;

@@ -732,3 +732,54 @@ describe('ServiceGenerator — action parameters typed by an entity or an undesc
     expect(generateService(order, ctx.config, { domains, enums: [status] })!.content).toBe(gen.generate(order, ctx)!.content);
   });
 });
+
+describe('ServiceGenerator — blob fields', () => {
+  const gen = new ServiceGenerator();
+  const orderWithBlob = domain({
+    entityName: 'Order',
+    fields: [
+      field({ name: 'id', type: 'java.util.UUID' }),
+      field({
+        name: 'receipt',
+        type: 'eu.exeris.kernel.spi.storage.blob.BlobRef',
+        blob: { contentTypes: ['application/pdf'] },
+      }),
+    ],
+  });
+
+  it('emits upload, download, delete and stat methods with BlobDescriptor', () => {
+    const content = gen.generate(orderWithBlob, CTX)!.content;
+
+    expect(content).toContain("import { Observable, of } from 'rxjs';");
+    expect(content).toContain("import { catchError, map } from 'rxjs';");
+    expect(content).toContain("import type { BlobDescriptor } from '../types';");
+    expect(content).toContain("export type { BlobDescriptor } from '../types';");
+
+    // upload
+    expect(content).toContain('uploadReceipt(id: string, file: Blob): Observable<void> {');
+    expect(content).toContain("headers: { 'Content-Type': file.type || 'application/octet-stream' }");
+
+    // download
+    expect(content).toContain('downloadReceipt(id: string): Observable<Blob> {');
+    expect(content).toContain("responseType: 'blob'");
+
+    // delete
+    expect(content).toContain('deleteReceipt(id: string): Observable<void> {');
+
+    // stat
+    expect(content).toContain('statReceipt(id: string): Observable<BlobDescriptor | null> {');
+    expect(content).toContain("observe: 'response'");
+    expect(content).toContain("res.headers.get('Content-Type') ?? 'application/octet-stream'");
+    expect(content).toContain("Number(res.headers.get('Content-Length') ?? 0)");
+    expect(content).toContain("if (err?.status === 404) return of(null);");
+  });
+
+  it('emits clean service with no blob imports or methods when domain has no blob fields', () => {
+    const content = gen.generate(domain({ entityName: 'Tag' }), CTX)!.content;
+    expect(content).not.toContain('upload');
+    expect(content).not.toContain('download');
+    expect(content).not.toContain('stat');
+    expect(content).not.toContain('BlobDescriptor');
+    expect(content).not.toContain("map");
+  });
+});

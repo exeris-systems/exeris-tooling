@@ -649,6 +649,9 @@ function generateBarrelExport(
   }
 
   exports.push("", "// Types (main type definitions)");
+  if (domains.some((d) => (d.fields ?? []).some((f) => f.blob !== undefined))) {
+    exports.push("export type { BlobDescriptor } from './types/index';");
+  }
 
   for (const domain of domains) {
     const kebab = DslMapper.toKebabCase(domain.entityName);

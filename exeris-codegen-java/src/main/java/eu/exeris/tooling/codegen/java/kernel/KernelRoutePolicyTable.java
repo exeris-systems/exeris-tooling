@@ -9,8 +9,10 @@ import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.tooling.codegen.core.access.RouteRequirements;
 import eu.exeris.tooling.codegen.core.access.RouteRequirements.Requirement;
+import eu.exeris.tooling.codegen.java.support.BlobFields;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.tooling.codegen.java.support.NameCasing;
 
@@ -35,7 +37,9 @@ import java.util.Map;
  *
  * <p>The routes and their order are the ones {@code RuntimeLifecycle} registers: per entity in
  * build order, {@code GET {base}}, {@code GET {base}/{id}}, {@code POST {base}},
- * {@code PUT {base}/{id}}, {@code DELETE {base}/{id}} and one {@code POST} per respond-once action;
+ * {@code PUT {base}/{id}}, {@code DELETE {base}/{id}}, then {@code PUT}, {@code GET} and
+ * {@code DELETE {base}/{id}/blobs/<field>} per {@code @Blob} field in declaration order, each under
+ * the entity's requirement, and one {@code POST} per respond-once action;
  * then the stream routes, per entity, each streaming action and, for a real-time entity, the live
  * view and the spectate route.
  */
@@ -50,8 +54,10 @@ final class KernelRoutePolicyTable {
     private static final String ABSTAIN = "ABSTAIN";
     private static final String GET = "GET";
     private static final String POST = "POST";
+    private static final String PUT = "PUT";
+    private static final String DELETE = "DELETE";
     private static final String ID_SEGMENT = "/{id}";
-    private static final List<String> METHODS = List.of(GET, POST, "PUT", "DELETE");
+    private static final List<String> METHODS = List.of(GET, POST, PUT, DELETE);
 
     /**
      * One generated route.
@@ -148,8 +154,14 @@ final class KernelRoutePolicyTable {
             routes.add(new Route(GET, base, false, entity, entityConstant));
             routes.add(new Route(GET, base + ID_SEGMENT, false, entity, entityConstant));
             routes.add(new Route(POST, base, false, entity, entityConstant));
-            routes.add(new Route("PUT", base + ID_SEGMENT, false, entity, entityConstant));
-            routes.add(new Route("DELETE", base + ID_SEGMENT, false, entity, entityConstant));
+            routes.add(new Route(PUT, base + ID_SEGMENT, false, entity, entityConstant));
+            routes.add(new Route(DELETE, base + ID_SEGMENT, false, entity, entityConstant));
+            for (FieldMetadata field : BlobFields.of(domain)) {
+                String path = base + BlobFields.routeSuffix(field);
+                routes.add(new Route(PUT, path, false, entity, entityConstant));
+                routes.add(new Route(GET, path, false, entity, entityConstant));
+                routes.add(new Route(DELETE, path, false, entity, entityConstant));
+            }
             for (ActionMetadata action : domain.actions()) {
                 if (!action.streaming()) {
                     routes.add(actionRoute(domain, action, false, constants));

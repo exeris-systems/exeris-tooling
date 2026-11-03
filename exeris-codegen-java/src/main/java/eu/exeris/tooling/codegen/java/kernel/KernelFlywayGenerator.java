@@ -4,6 +4,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.tooling.codegen.java.support.BlobFields;
 import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
 import eu.exeris.tooling.codegen.java.support.ServerOwnedFields;
 import eu.exeris.tooling.codegen.java.support.SqlColumnTypes;
@@ -218,7 +219,7 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
         }
 
         for (FieldMetadata field : metadata.fields()) {
-            if (isSystemField(metadata, field.name())) {
+            if (isSystemField(metadata, field.name()) || !BlobFields.isColumn(field)) {
                 continue;
             }
             columns.add("    " + toSnakeCase(field.name()) + " " + mapJavaTypeToSql(field.type())
@@ -324,7 +325,7 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
         // still yields a single index). Source order preserved, matching the prior
         // behaviour for searchable/unique fields.
         for (FieldMetadata field : metadata.fields()) {
-            if (isSystemField(metadata, field.name())) {
+            if (isSystemField(metadata, field.name()) || !BlobFields.isColumn(field)) {
                 continue;
             }
             if (field.searchable() || field.unique() || field.filterable()) {
@@ -367,7 +368,7 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
     private List<String> buildCheckConstraints(DomainMetadata metadata, String tableName) {
         List<String> checks = new ArrayList<>();
         for (FieldMetadata field : metadata.fields()) {
-            if (isSystemField(metadata, field.name())) {
+            if (isSystemField(metadata, field.name()) || !BlobFields.isColumn(field)) {
                 continue;
             }
             String col = toSnakeCase(field.name());

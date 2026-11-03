@@ -4,7 +4,9 @@ import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ParamSource;
+import eu.exeris.tooling.codegen.java.support.BlobFields;
 import eu.exeris.tooling.codegen.java.support.ForeignKeys;
 import eu.exeris.tooling.codegen.java.support.KernelStreamScaffold;
 import eu.exeris.tooling.codegen.java.support.ListQuerySupport;
@@ -15,7 +17,9 @@ import io.swagger.v3.oas.models.media.Content;
 import io.swagger.v3.oas.models.media.MediaType;
 import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.Paths;
+import io.swagger.v3.oas.models.headers.Header;
 import io.swagger.v3.oas.models.parameters.Parameter;
+import io.swagger.v3.oas.models.parameters.RequestBody;
 import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.oas.models.responses.ApiResponses;
 
@@ -37,6 +41,10 @@ public final class OpenApiPathsBuilder {
     private static final String STRING_TYPE = "string";
     /** The problem-object member naming the relationship of a missing reference (ADR-076 Amendment 1). */
     private static final String PROBLEM_FIELD = "field";
+    /** The media type of an object stored without a declared one. */
+    private static final String OCTET_STREAM = "application/octet-stream";
+    /** The status of a route that answers no body. */
+    private static final String NO_CONTENT = "204";
 
     private OpenApiPathsBuilder() {}
 
@@ -78,6 +86,10 @@ public final class OpenApiPathsBuilder {
         itemPath.setPut(buildUpdateOperation(entityName, metadata.versioned(), missingReference));
         itemPath.setDelete(buildDeleteOperation(entityName, referencedDelete));
         paths.addPathItem(basePath + "/{id}", itemPath);
+
+        for (FieldMetadata field : BlobFields.of(metadata)) {
+            paths.addPathItem(basePath + BlobFields.routeSuffix(field), buildBlobPath(entityName, field));
+        }
 
         if (metadata.realTimeApi()) {
             PathItem livePath = new PathItem();
@@ -396,6 +408,69 @@ public final class OpenApiPathsBuilder {
         return responses;
     }
 
+    /**
+     * The routes of one {@code @Blob} field (ADR-108): {@code PUT} stores the raw body under its
+     * {@code Content-Type}, {@code GET} answers the stored bytes, {@code HEAD} their content type and
+     * length with no body, and {@code DELETE} removes them. {@code 404} names an absent row, and on
+     * {@code GET} and {@code HEAD} an absent object too; {@code 415} is declared only for a field
+     * that restricts its content types.
+     */
+    private static PathItem buildBlobPath(String entity, FieldMetadata field) {
+        String suffix = entity + NameCasing.pascal(field.name());
+        List<String> mediaTypes = field.blob().hasContentTypes() ? field.blob().contentTypes() : List.of(OCTET_STREAM);
+
+        Content upload = new Content();
+        Content download = new Content();
+        for (String mediaType : mediaTypes) {
+            upload.addMediaType(mediaType, new MediaType().schema(binarySchema()));
+            download.addMediaType(mediaType, new MediaType().schema(binarySchema()));
+        }
+        Operation put = blobOperation(entity, "upload" + suffix, "Store the " + field.name() + " of a " + entity);
+        put.setRequestBody(new RequestBody().required(true).content(upload)
+                .description("The bytes to store; the request's Content-Type is stored with them"));
+        Responses putResponses = Responses.of(NO_CONTENT, "Stored").badRequest().notFound();
+        put.setResponses((field.blob().hasContentTypes() ? putResponses.unsupportedMediaType() : putResponses)
+                .serverError());
+
+        Operation get = blobOperation(entity, "download" + suffix, "Read the " + field.name() + " of a " + entity);
+        get.setResponses(Responses.of(OK, "The stored bytes, with their stored content type")
+                .badRequest().notFound().serverError());
+        get.getResponses().get(OK).setContent(download);
+
+        Operation head = blobOperation(entity, "stat" + suffix,
+                "Read the content type and length of the " + field.name() + " of a " + entity);
+        // OpenAPI ignores a declared Content-Type response header, so the description names it.
+        head.setResponses(Responses.of(OK, "No body; Content-Type is the stored content type")
+                .badRequest().notFound().serverError());
+        head.getResponses().get(OK)
+                .addHeaderObject("Content-Length", new Header().description("The stored length in bytes")
+                        .schema(OpenApiSchemas.typed(new Schema<Long>(), "integer").format("int64")));
+
+        Operation delete = blobOperation(entity, "delete" + suffix, "Delete the " + field.name() + " of a " + entity);
+        delete.setResponses(Responses.of(NO_CONTENT, "Deleted, or nothing was stored")
+                .badRequest().notFound().serverError());
+
+        PathItem item = new PathItem();
+        item.setPut(put);
+        item.setGet(get);
+        item.setHead(head);
+        item.setDelete(delete);
+        return item;
+    }
+
+    private static Operation blobOperation(String entity, String operationId, String summary) {
+        Operation op = new Operation();
+        op.setOperationId(operationId);
+        op.setSummary(summary);
+        op.setTags(List.of(entity));
+        op.addParametersItem(buildIdParam());
+        return op;
+    }
+
+    private static Schema<?> binarySchema() {
+        return OpenApiSchemas.typed(new Schema<String>(), STRING_TYPE).format("binary");
+    }
+
     private static Parameter buildIdParam() {
         Parameter param = new Parameter();
         param.setName("id");
@@ -440,6 +515,10 @@ public final class OpenApiPathsBuilder {
 
         Responses conflict() {
             return add("409", "Version conflict — re-read and retry");
+        }
+
+        Responses unsupportedMediaType() {
+            return add("415", "The Content-Type is not one the field accepts");
         }
 
         Responses stillReferenced() {

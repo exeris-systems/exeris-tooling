@@ -149,6 +149,7 @@ export const FIELD_CONTRACT_COVERAGE = {
   inUpdate: { state: 'READ', written: true },
   computed: { state: 'READ', written: true },
   computedFrom: { state: 'READ', written: true },
+  blob: { state: 'READ', written: true },
 } as const satisfies { readonly [K in keyof FieldMetadata]-?: NestedContractCoverageEntry };
 
 export const UI_CONTRACT_COVERAGE = {

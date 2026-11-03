@@ -104,6 +104,7 @@ export class TypeGenerator implements CodeGenerator {
     // Main interface
     lines.push(`export interface ${interfaceName} {`);
     for (const field of metadata.fields) {
+      if (field.blob !== undefined) continue;
       const mapping = mapScopedType(field.type, scope);
       const optional = !field.required || isUndescribedValue(field.type, scope) ? '?' : '';
       const comment = field.description ? ` // ${field.description}` : '';
@@ -191,6 +192,7 @@ export class TypeGenerator implements CodeGenerator {
     // Main schema
     lines.push(`export const ${interfaceName}Schema = z.object({`);
     for (const field of metadata.fields) {
+      if (field.blob !== undefined) continue;
       const zodType = buildZodType(field, scope);
       lines.push(`  ${field.name}: ${zodType},`);
     }
@@ -227,6 +229,12 @@ export class TypeGenerator implements CodeGenerator {
       const kebab = DslMapper.toKebabCase(domain.entityName);
       lines.push(`export * from './${kebab}.types';`);
     }
+
+    lines.push(``);
+    lines.push(`export interface BlobDescriptor {`);
+    lines.push(`  readonly contentType: string;`);
+    lines.push(`  readonly sizeBytes: number;`);
+    lines.push(`}`);
 
     return lines.join('\n');
   }
@@ -452,7 +460,10 @@ export function undeclaredReadSchemaMembers(metadata: DomainMetadata): string[] 
  * because `z.omit()` rejects a key the object does not declare (TS2322).
  */
 export function updateOmittedFields(metadata: DomainMetadata): string[] {
-  const declared = new Set([...metadata.fields.map((f) => f.name), ...undeclaredReadMembers(metadata).map((m) => m.name)]);
+  const declared = new Set([
+    ...metadata.fields.filter((f) => f.blob === undefined).map((f) => f.name),
+    ...undeclaredReadMembers(metadata).map((m) => m.name),
+  ]);
   const owner = ownerFieldName(metadata);
   const leading = [primaryKeyField(metadata), ...(owner ? [owner] : [])];
   const omitted = new Set(omittedFromUpdate(metadata));
@@ -527,7 +538,10 @@ export function referencedEntities(metadata: DomainMetadata, scope: TypeScope, i
  * `z.omit()` rejects a key the object does not declare (TS2322).
  */
 export function createOmittedFields(metadata: DomainMetadata): string[] {
-  const keys = new Set([...metadata.fields.map((f) => f.name), ...undeclaredReadMembers(metadata).map((m) => m.name)]);
+  const keys = new Set([
+    ...metadata.fields.filter((f) => f.blob === undefined).map((f) => f.name),
+    ...undeclaredReadMembers(metadata).map((m) => m.name),
+  ]);
   return omittedFromCreate(metadata).filter((name) => keys.has(name));
 }
 
@@ -537,7 +551,7 @@ export function createOmittedFields(metadata: DomainMetadata): string[] {
  */
 export function createDtoFields(metadata: DomainMetadata): FieldMetadata[] {
   const omitted = new Set(omittedFromCreate(metadata));
-  return metadata.fields.filter((f) => !omitted.has(f.name));
+  return metadata.fields.filter((f) => f.blob === undefined && !omitted.has(f.name));
 }
 
 /**

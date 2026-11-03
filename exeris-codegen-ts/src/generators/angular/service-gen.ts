@@ -134,6 +134,7 @@ export class ServiceGenerator implements CodeGenerator {
     }));
 
     const systemFields = this.getSystemFields(metadata);
+    const blobFields = (metadata.fields ?? []).filter((f) => f.blob !== undefined);
 
     // Generate service content inline (without template file for reliability)
     return this.renderService({
@@ -148,11 +149,12 @@ export class ServiceGenerator implements CodeGenerator {
       systemFields,
       enumTypes,
       entityImports,
+      blobFields,
     });
   }
 
   private renderService(data: Record<string, unknown>): string {
-    const { entityName, apiBasePath, apiPath, softDelete, filterableFields, sortFields, actions, enumTypes, entityImports } = data as {
+    const { entityName, apiBasePath, apiPath, softDelete, filterableFields, sortFields, actions, enumTypes, entityImports, blobFields } = data as {
       entityName: string;
       apiBasePath: string;
       apiPath: string;
@@ -171,10 +173,12 @@ export class ServiceGenerator implements CodeGenerator {
       systemFields: string[];
       enumTypes: string[];
       entityImports: string[];
+      blobFields: Array<{ name: string }>;
     };
 
     const modelName = modelTypeName(entityName);
     const kebabName = entityName.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
+    const hasBlobs = blobFields && blobFields.length > 0;
     const lines: string[] = [];
 
     // Header
@@ -182,11 +186,19 @@ export class ServiceGenerator implements CodeGenerator {
     lines.push(``);
     lines.push(`import { Injectable, inject } from '@angular/core';`);
     lines.push(`import { HttpClient, HttpParams } from '@angular/common/http';`);
-    lines.push(`import { Observable } from 'rxjs';`);
+    if (hasBlobs) {
+      lines.push(`import { Observable, of } from 'rxjs';`);
+      lines.push(`import { catchError, map } from 'rxjs';`);
+    } else {
+      lines.push(`import { Observable } from 'rxjs';`);
+    }
     lines.push(``);
 
     // Import types from types file
     lines.push(`import type { ${modelName}, ${modelName}Create, ${modelName}Update } from '../types/${kebabName}.types';`);
+    if (hasBlobs) {
+      lines.push(`import type { BlobDescriptor } from '../types';`);
+    }
 
     // Add enum imports if needed
     if (enumTypes && enumTypes.length > 0) {
@@ -198,6 +210,9 @@ export class ServiceGenerator implements CodeGenerator {
     // Re-export types for convenience
     lines.push(`// Re-export types for convenience`);
     lines.push(`export type { ${modelName}, ${modelName}Create, ${modelName}Update } from '../types/${kebabName}.types';`);
+    if (hasBlobs) {
+      lines.push(`export type { BlobDescriptor } from '../types';`);
+    }
     lines.push(``);
 
     // Page and PageRequest interfaces (only define once, not duplicated)
@@ -297,6 +312,37 @@ export class ServiceGenerator implements CodeGenerator {
       lines.push(`  /** Archives the row: on this entity the server's DELETE sets the soft-delete flag. */`);
       lines.push(`  softDelete(id: string): Observable<void> {`);
       lines.push(`    return this.http.delete<void>(\`\${this.baseUrl}/\${id}\`);`);
+      lines.push(`  }`);
+    }
+
+    for (const f of blobFields) {
+      const pascal = f.name.charAt(0).toUpperCase() + f.name.slice(1);
+      lines.push(``);
+      lines.push(`  upload${pascal}(id: string, file: Blob): Observable<void> {`);
+      lines.push(`    return this.http.put<void>(\`\${this.baseUrl}/\${id}/blobs/${f.name}\`, file, {`);
+      lines.push(`      headers: { 'Content-Type': file.type || 'application/octet-stream' },`);
+      lines.push(`    });`);
+      lines.push(`  }`);
+      lines.push(``);
+      lines.push(`  download${pascal}(id: string): Observable<Blob> {`);
+      lines.push(`    return this.http.get(\`\${this.baseUrl}/\${id}/blobs/${f.name}\`, { responseType: 'blob' });`);
+      lines.push(`  }`);
+      lines.push(``);
+      lines.push(`  delete${pascal}(id: string): Observable<void> {`);
+      lines.push(`    return this.http.delete<void>(\`\${this.baseUrl}/\${id}/blobs/${f.name}\`);`);
+      lines.push(`  }`);
+      lines.push(``);
+      lines.push(`  stat${pascal}(id: string): Observable<BlobDescriptor | null> {`);
+      lines.push(`    return this.http.head(\`\${this.baseUrl}/\${id}/blobs/${f.name}\`, { observe: 'response' }).pipe(`);
+      lines.push(`      map((res) => ({`);
+      lines.push(`        contentType: res.headers.get('Content-Type') ?? 'application/octet-stream',`);
+      lines.push(`        sizeBytes: Number(res.headers.get('Content-Length') ?? 0),`);
+      lines.push(`      })),`);
+      lines.push(`      catchError((err: { status?: number }) => {`);
+      lines.push(`        if (err?.status === 404) return of(null);`);
+      lines.push(`        throw err;`);
+      lines.push(`      }),`);
+      lines.push(`    );`);
       lines.push(`  }`);
     }
 

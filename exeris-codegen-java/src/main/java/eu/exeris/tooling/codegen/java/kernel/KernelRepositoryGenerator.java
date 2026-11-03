@@ -11,6 +11,7 @@ import com.palantir.javapoet.TypeVariableName;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.java.support.BlobFields;
 import eu.exeris.tooling.codegen.java.support.ColumnNaming;
 import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
 import eu.exeris.tooling.codegen.java.support.DomainTypeKind;
@@ -219,8 +220,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      * store and read back — a {@link DomainTypeKind#UNSTORABLE} field, or a {@code List} whose
      * element type is not a plain type name (a parameterised type, an array, a wildcard). An enum
      * field is never refused, whatever its type is named, when its {@code enumType} is set.
-     * A field that is not a column — one shadowing the primary key or an active system column — is
-     * not checked, since nothing binds or reads it.
+     * A field that is not a column — a {@code @Blob} field, or one shadowing the primary key or an
+     * active system column — is not checked, since nothing binds or reads it.
      *
      * <p>Called by the pipeline before it writes anything, so a refused build leaves the generated
      * tree as it was; {@link #generate} applies the same check to its one entity.
@@ -585,9 +586,10 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         seen.add(PrimaryKeys.column(metadata));
         for (FieldMetadata field : fields) {
             String sqlName = toSnakeCase(field.name());
-            // skip a duplicate of the PK / an earlier field, or a shadow of a system column
-            // (membership check before mutating `seen`, so the guard has no side effect)
-            if (seen.contains(sqlName) || systemCols.contains(sqlName)) {
+            // skip a field held outside the row, a duplicate of the PK / an earlier field, or a
+            // shadow of a system column (membership check before mutating `seen`, so the guard has
+            // no side effect)
+            if (!BlobFields.isColumn(field) || seen.contains(sqlName) || systemCols.contains(sqlName)) {
                 continue;
             }
             seen.add(sqlName);
@@ -866,7 +868,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      * sorted by name, then MANY_TO_ONE FK finders sorted by relationship name.
      *
      * <p>Every filterable field gets a finder; the WHERE column always exists — either as a domain
-     * column or, in the rare shadow case, as the system column it collides with. Two exclusions: a
+     * column or, in the rare shadow case, as the system column it collides with. A field that is no
+     * column ({@link BlobFields#isColumn}) has nothing to compare, and two more are excluded: a
      * field whose finder would shadow the primary-key lookup (see {@link #shadowsPrimaryKeyLookup}),
      * and a {@code List} field, whose column is JSON text — equality on it compares a rendering, not
      * the list, so such a finder could not find the row it was written from.
@@ -875,6 +878,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         List<FinderSpec> specs = new ArrayList<>();
 
         metadata.fields().stream()
+                .filter(BlobFields::isColumn)
                 .filter(FieldMetadata::filterable)
                 .filter(f -> !shadowsPrimaryKeyLookup(f))
                 .filter(f -> !PrimaryKeys.field(metadata).equals(f.name()))

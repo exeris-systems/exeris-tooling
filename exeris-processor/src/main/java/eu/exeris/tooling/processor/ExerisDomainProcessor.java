@@ -10,6 +10,7 @@ import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
 import eu.exeris.sdk.sourcemodel.ast.BindSource;
 import eu.exeris.sdk.sourcemodel.ast.BindingMetadata;
+import eu.exeris.sdk.sourcemodel.ast.BlobMetadata;
 import eu.exeris.sdk.sourcemodel.ast.BlockType;
 import eu.exeris.sdk.sourcemodel.ast.CapabilityModuleMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ComponentNodeMetadata;
@@ -188,6 +189,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
     /** {@code @Tab}, which organizes entity fields into tabbed sections. */
     private static final String TAB_FQN = "eu.exeris.sdk.annotation.Tab";
+
+    /** {@code @Blob}, which marks a field as an attachment stored in the kernel blob store. */
+    private static final String BLOB_FQN = "eu.exeris.sdk.annotation.Blob";
+
+    /** Fully-qualified name of the kernel blob reference type required on {@code @Blob} fields. */
+    private static final String BLOB_REF_FQN = "eu.exeris.kernel.spi.storage.blob.BlobRef";
 
     /** Package every SDK annotation lives under, including the {@code capability} sub-package. */
     private static final String SDK_ANNOTATION_PACKAGE = "eu.exeris.sdk.annotation.";
@@ -832,18 +839,6 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "KernelProviders.eventStreamReader() returns an Optional because a "
                             + "broker may not support replay, so generated code must handle "
                             + "absence rather than assume a binding"),
-            new InertAnnotation("eu.exeris.sdk.annotation.Blob", "Blob",
-                    "the processor does not extract it and no generator consumes it, so the field "
-                            + "is emitted exactly as if the annotation were absent. It is frozen SDK "
-                            + "surface (SDK ADR-072 amendment 2026-10-29) whose transcription is "
-                            + "pending in tooling. The kernel line this repo pins boots "
-                            + "blob storage as the subsystem named \"storage\" and binds "
-                            + "KernelProviders.BLOB_STORE. "
-                            + "Two things a transcription must carry: the driver is chosen by the "
-                            + "storage.blob.provider id, never by priority (both Community drivers "
-                            + "register at the same one), so the deployment names it; and with that "
-                            + "key unset storage is off and BLOB_STORE is unbound, so generated "
-                            + "code may not assume a store. Tracked in ROADMAP.md (K6)"),
             new InertAnnotation("eu.exeris.sdk.annotation.security.Encrypted", "Encrypted",
                     "the processor does not extract it and no generator consumes it; it is "
                             + "deprecated for removal at 1.0.0. Kernel ADR-012 §4c.1 rules field-level "
@@ -877,13 +872,13 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * and NOT "the audit stays quiet about it". The narrower consumption question stays with the
      * two inert registries: {@code @EventSourced} is in this set and is still reported, by
      * {@link #INERT_ANNOTATIONS}. And an unextracted annotation that already has a registry entry
-     * ({@code @Blob}, {@code @Encrypted}, {@code @RowLevelSecurity}) is deliberately absent here and
+     * ({@code @Encrypted}, {@code @RowLevelSecurity}) is deliberately absent here and
      * silenced by {@link #isAlreadyAudited} instead, so that this set never claims an extraction
      * that does not exist. Every SDK annotation is answered by exactly one of the two passes.
      */
     private static final Set<String> EXTRACTED_ANNOTATIONS = Set.of(
             "Action", "ActionParam", "AuditCreatedAt", "AuditCreatedBy", "AuditUpdatedAt",
-            "AuditUpdatedBy", "Bind", "Block", "CapabilityLifecycle", "CapabilityModule",
+            "AuditUpdatedBy", "Bind", "Blob", "Block", "CapabilityLifecycle", "CapabilityModule",
             DOMAIN_EVENT, "EventSourced", "ExerisDomain", "Field", "Graph", "GraphEdge",
             "GraphProperty", "InternalApi", "NavMenu", "PrimaryKey", "Provides", "QueryParam", "Region",
             "Relationship", "Requires", "RouteAccess", "Saga", "SagaStep", "SharedScope", "SoftDelete",
@@ -2080,6 +2075,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         auditAnnotations(element);
 
         DomainMetadata metadata = builder.build();
+        refuseInvalidBlobDeclarations(element, metadata, scopeContradicted);
         if (domainAnnotation != null) {
             refuseInvalidPrimaryKey(element, domainAnnotation, metadata);
             // Not on a contradicted declaration: its tier is undecided until the author fixes the
@@ -2090,6 +2086,56 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         }
         return metadata;
     }
+
+    /**
+     * Refuses {@code @Blob} placed on a {@code GLOBAL}-scoped entity (EXT-PROC-1031) or on a field
+     * whose type is not {@code BlobRef} (EXT-PROC-1032).
+     */
+    private void refuseInvalidBlobDeclarations(TypeElement element, DomainMetadata metadata,
+                                               boolean scopeContradicted) {
+        boolean isGlobal = !scopeContradicted && metadata.effectiveDataScope() == DataScope.GLOBAL;
+
+        for (Element enclosed : element.getEnclosedElements()) {
+            if (enclosed.getKind() != ElementKind.FIELD) {
+                continue;
+            }
+            VariableElement field = (VariableElement) enclosed;
+            AnnotationMirror blobAnnotation = findAnnotation(field, BLOB_FQN);
+            if (blobAnnotation == null) {
+                continue;
+            }
+
+            String entityName = element.getSimpleName().toString();
+            String fieldName = field.getSimpleName().toString();
+
+            if (isGlobal) {
+                error(DiagnosticId.BLOB_ON_GLOBAL_ENTITY,
+                        "@Blob on field '" + fieldName + "' of @ExerisDomain entity '" + entityName
+                                + "' whose dataScope is GLOBAL. Global scope leaves StorageContext.isolationKey "
+                                + "empty, and the kernel blob store terminally denies blob operations without an "
+                                + "isolation key. Declare dataScope = TENANT or UNIVERSE on '" + entityName
+                                + "', or remove @Blob from '" + fieldName + "'.",
+                        field, blobAnnotation);
+            }
+
+            if (!isBlobRef(field.asType())) {
+                error(DiagnosticId.BLOB_FIELD_NOT_BLOB_REF,
+                        "@Blob on field '" + fieldName + "' of entity '" + entityName
+                                + "' has type '" + field.asType() + "'; it must be " + BLOB_REF_FQN + ". "
+                                + "The generated application serves @Blob fields on dedicated upload and "
+                                + "download routes backed by the kernel blob store. Declare 'private BlobRef "
+                                + fieldName + ";', or remove @Blob from '" + fieldName + "'.",
+                        field, blobAnnotation);
+            }
+        }
+    }
+
+    private static boolean isBlobRef(TypeMirror type) {
+        return type instanceof DeclaredType declared
+                && declared.asElement() instanceof TypeElement typeElement
+                && typeElement.getQualifiedName().contentEquals(BLOB_REF_FQN);
+    }
+
 
     /**
      * Refuses {@code realTimeApi = true} on an entity whose rows have an owning tenant.
@@ -2606,22 +2652,27 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             // The inert-annotation sweep sits in the loop, NOT inside
             // extractFieldMetadata — that extractor is reached only when @Field is
             // present, and a field-level inert annotation on a field without @Field
-            // is a real shape (@Blob describes a byte carrier, not a column). The
-            // else branch below still admits such a field to the AST through
-            // FieldMetadata.simple(...), so gating this call on @Field would suppress
-            // a warning for a field that is nonetheless in the model.
+            // is a real shape. The else branch below still admits such a field to the
+            // AST through FieldMetadata.simple(...) or FieldMetadata.builder(...), so
+            // gating this call on @Field would suppress a warning for a field that
+            // is nonetheless in the model.
             auditAnnotations(field);
 
             AnnotationMirror fieldAnnotation = findAnnotation(field, "eu.exeris.sdk.annotation.Field");
+            AnnotationMirror blobAnnotation = findAnnotation(field, BLOB_FQN);
 
             if (fieldAnnotation != null) {
-                fields.add(extractFieldMetadata(field, fieldAnnotation));
+                fields.add(extractFieldMetadata(field, fieldAnnotation, blobAnnotation));
             } else {
                 // Add basic field metadata even without @Field annotation
-                fields.add(FieldMetadata.simple(
+                FieldMetadata.Builder builder = FieldMetadata.builder(
                         field.getSimpleName().toString(),
                         field.asType().toString()
-                ));
+                ).searchable(true).sortable(true).filterable(true);
+                if (blobAnnotation != null) {
+                    builder.blob(extractBlobMetadata(blobAnnotation));
+                }
+                fields.add(builder.build());
             }
         }
 
@@ -2642,7 +2693,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         }
     }
 
-    private FieldMetadata extractFieldMetadata(VariableElement field, AnnotationMirror annotation) {
+    private FieldMetadata extractFieldMetadata(VariableElement field, AnnotationMirror annotation,
+                                               AnnotationMirror blobAnnotation) {
         String name = field.getSimpleName().toString();
         String type = field.asType().toString();
 
@@ -2746,7 +2798,18 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             applyDeprecatedValidationFallbacks(field, values, validationValues, builder);
         }
 
+        if (blobAnnotation != null) {
+            builder.blob(extractBlobMetadata(blobAnnotation));
+        }
+
         return builder.build();
+    }
+
+    private BlobMetadata extractBlobMetadata(AnnotationMirror blobAnnotation) {
+        Map<String, Object> values = extractAnnotationValues(blobAnnotation);
+        String container = getString(values, "container", null);
+        List<String> contentTypes = getStringArray(values, "contentTypes");
+        return new BlobMetadata(container, contentTypes);
     }
 
     /**
@@ -4612,9 +4675,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * Whether the first pass already covers {@code simpleName} — either the processor extracts it,
      * or {@link #INERT_ANNOTATIONS} carries an entry for it, or it is refused at build time.
      *
-     * <p>The registry half is derived rather than restated. {@code @Blob}, {@code @Encrypted} and
-     * {@code @RowLevelSecurity} are the live case: all three are unextracted, so on name alone this
-     * pass would report them — and all three already have a registry entry whose note is far better
+     * <p>The registry half is derived rather than restated. {@code @Encrypted} and
+     * {@code @RowLevelSecurity} are the live case: both are unextracted, so on name alone this
+     * pass would report them — and both already have a registry entry whose note is far better
      * than the generic sentence. Listing them in {@link #EXTRACTED_ANNOTATIONS} would silence the
      * duplicate but make that set claim something false about them, and the next reader would believe
      * it. {@code @Schedule} is refused at build time (kernel ADR-057 Amendment A1), so it produces a

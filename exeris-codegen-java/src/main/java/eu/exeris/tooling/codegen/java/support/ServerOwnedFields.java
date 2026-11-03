@@ -42,6 +42,11 @@ import java.util.TreeSet;
  *       handler does not validate.</li>
  * </ul>
  *
+ * <p>A {@code @Blob} field is in neither body (ADR-108): its bytes travel on the field's own
+ * routes, it is no column, and the create and update handlers reset it to {@code null} after
+ * decoding ({@link #resetOnCreate}, {@link #resetOnUpdate}). It is in no update set, since no
+ * {@code UPDATE} statement names it.
+ *
  * <p>The version and a UNIVERSE entity's shared scope are in no update set: every update writes
  * both, the version as the value the caller passes plus one. The shared scope is in
  * {@link #notInCreateBody}, since the create stamps it from the bound scope, as the version is,
@@ -68,6 +73,7 @@ public final class ServerOwnedFields {
     public static Set<String> notInUpdateBody(DomainMetadata metadata) {
         Set<String> names = systemFieldsNotWritten(metadata);
         names.addAll(fixedOnRequestUpdate(metadata));
+        BlobFields.of(metadata).forEach(field -> names.add(field.name()));
         return Collections.unmodifiableSet(names);
     }
 
@@ -75,7 +81,8 @@ public final class ServerOwnedFields {
      * The fields the create request body does not carry: every field that plays a system role (the
      * key, the owner, a UNIVERSE entity's shared scope, the audit, version and soft-delete fields
      * the entity enables, and every name a {@code systemFields} block declares), the read-only
-     * fields and the fields marked {@code @Field(inCreate = false)}. The server sets them all: the
+     * fields, the fields marked {@code @Field(inCreate = false)} and the {@code @Blob} fields. The
+     * server sets all but the last: the
      * repository fills the key, the owner and the shared scope, stamps the audit times, starts the
      * version and the soft-delete flag ({@link #resetOnCreate}).
      *
@@ -86,7 +93,7 @@ public final class ServerOwnedFields {
         Set<String> names = new TreeSet<>(ListQuerySupport.systemFieldNames(metadata));
         if (metadata.hasFields()) {
             for (FieldMetadata field : metadata.fields()) {
-                if (field.readOnly() || !field.inCreate()) {
+                if (field.readOnly() || !field.inCreate() || field.hasBlob()) {
                     names.add(field.name());
                 }
             }
@@ -109,7 +116,8 @@ public final class ServerOwnedFields {
      * repository's {@code save} stamps the audit times with the current instant whatever the
      * service sets; a version, a soft-delete flag or an actor the service sets afterwards is kept,
      * and the actors and the deletion time and actor are no column of the insert. The actors and
-     * the deletion time and actor are reset only when the entity declares them as fields.
+     * the deletion time and actor are reset only when the entity declares them as fields. The
+     * {@code @Blob} fields follow, reset to {@code null} ({@link #resetOnUpdate}).
      *
      * @param metadata the entity
      * @return the resets, in a fixed order
@@ -138,7 +146,20 @@ public final class ServerOwnedFields {
         if (metadata.versioned()) {
             resets.add(new Reset(versionField(metadata), versionStart(metadata)));
         }
+        resets.addAll(resetOnUpdate(metadata));
         return List.copyOf(resets);
+    }
+
+    /**
+     * The properties the update handler resets on the decoded entity, before the service sees it:
+     * the {@code @Blob} fields, to {@code null}. The generated application never fills one, so the
+     * entity it answers with carries {@code null} whatever the body named.
+     *
+     * @param metadata the entity
+     * @return the resets, in declaration order
+     */
+    public static List<Reset> resetOnUpdate(DomainMetadata metadata) {
+        return BlobFields.of(metadata).stream().map(field -> new Reset(field.name(), NULL)).toList();
     }
 
     private static void addIfDeclared(List<Reset> resets, DomainMetadata metadata, String name) {
@@ -205,9 +226,9 @@ public final class ServerOwnedFields {
 
     /**
      * The domain fields the server must set before a row is written: those marked
-     * {@code @Field(required = true, readOnly = true)} that play no system role and hold a
-     * reference type. A read-only field is out of the create body, so the code that creates the row
-     * (a service of the consumer's own) sets it; a null one would reach the database as a
+     * {@code @Field(required = true, readOnly = true)} that play no system role, hold a reference
+     * type and are a column. A read-only field is out of the create body, so the code that creates
+     * the row (a service of the consumer's own) sets it; a null one would reach the database as a
      * {@code NOT NULL} violation. A primitive always holds a value and is not listed.
      *
      * @param metadata the entity
@@ -219,7 +240,7 @@ public final class ServerOwnedFields {
         if (metadata.hasFields()) {
             for (FieldMetadata field : metadata.fields()) {
                 if (field.required() && field.readOnly() && !systemRoles.contains(field.name())
-                        && !PRIMITIVE_TYPES.contains(field.type())) {
+                        && !PRIMITIVE_TYPES.contains(field.type()) && BlobFields.isColumn(field)) {
                     fields.add(field);
                 }
             }

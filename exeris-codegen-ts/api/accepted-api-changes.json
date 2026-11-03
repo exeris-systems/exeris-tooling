@@ -322,5 +322,11 @@
     "since": "0.11",
     "adr": "ADR-057",
     "justification": "Kernel ADR-057 Amendment A1: at 1.0 the kernel issues no service principal, so a declared job is refused at build time whatever its action requires. A source with @Schedule compiled and emitted nothing for it, so no generated output changes; the source no longer compiles. docs/migration/0.11.0/java-15-schedule-refused.md carries the step."
+  },
+  {
+    "signature": "<Entity>, <Entity>Create, <Entity>Update: a @Blob field leaves the entity interface, the create/update request types and form models; served on its own PUT/GET/DELETE/HEAD routes",
+    "since": "0.11",
+    "adr": "ADR-108",
+    "justification": "A @Blob field is server-owned and stored on dedicated routes ({base}/{id}/blobs/{field}): the entity's JSON never carries data for it and the server leaves it null. The field is omitted from the emitted entity interface, Create and Update DTOs, Zod schemas, form models, and list queries. The generated service emits upload<Field>, download<Field>, delete<Field> and stat<Field> methods, the form uploads selected files post-save, and the detail view loads descriptors via HEAD stat calls with a download button. Shared type BlobDescriptor is emitted once in types/index.ts. An entity without @Blob fields regenerates byte-identically. docs/migration/0.11.0/ts-12-blob-field-client.md carries the step."
   }
 ]

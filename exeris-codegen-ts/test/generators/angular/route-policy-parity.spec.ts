@@ -31,6 +31,13 @@ const domains = [
     path: '/orders',
     realTimeApi: true,
     permissions: ['order:read', 'order:write'],
+    fields: [
+      {
+        name: 'receipt',
+        type: 'eu.exeris.kernel.spi.storage.blob.BlobRef',
+        blob: { contentTypes: ['application/pdf'] },
+      },
+    ],
     actions: [
       { name: 'cancel', methodName: 'cancel' },
       { name: 'approve', methodName: 'approve', permissions: ['order:approve'] },
@@ -51,6 +58,13 @@ const domains = [
     path: '/orders/catalog',
     realTimeApi: true,
     routeAccess: 'PUBLIC',
+    fields: [
+      {
+        name: 'image',
+        type: 'eu.exeris.kernel.spi.storage.blob.BlobRef',
+        blob: { contentTypes: [] },
+      },
+    ],
   }),
   DomainMetadataSchema.parse({
     packageName: pkg,

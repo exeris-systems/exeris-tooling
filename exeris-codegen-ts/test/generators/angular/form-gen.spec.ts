@@ -1973,4 +1973,109 @@ describe('FormGenerator @Tab tabs layout', () => {
     expect(withoutTabs).not.toContain('activeTab = signal');
   });
 });
+
+describe('FormGenerator — blob fields', () => {
+  const gen = new FormGenerator();
+
+  it('renders file input with accept, file signal, change handler, and post-save upload', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [
+        field({ name: 'id', type: 'java.util.UUID' }),
+        field({ name: 'total', type: 'java.math.BigDecimal' }),
+        field({
+          name: 'receipt',
+          type: 'eu.exeris.kernel.spi.storage.blob.BlobRef',
+          blob: { contentTypes: ['application/pdf'] },
+        }),
+        field({
+          name: 'attachment',
+          type: 'eu.exeris.kernel.spi.storage.blob.BlobRef',
+          blob: { contentTypes: [] },
+        }),
+      ],
+    }), CTX)!.content;
+
+    // RxJS firstValueFrom import
+    expect(content).toContain("import { firstValueFrom } from 'rxjs';");
+
+    // File inputs in template
+    expect(content).toContain('id="receipt" data-testid="field-receipt" type="file" accept="application/pdf" (change)="onReceiptChange($event)"');
+    expect(content).toContain('id="attachment" data-testid="field-attachment" type="file" (change)="onAttachmentChange($event)"');
+
+    // Signals
+    expect(content).toContain('readonly receiptFile = signal<File | null>(null);');
+    expect(content).toContain('readonly attachmentFile = signal<File | null>(null);');
+
+    // Handlers
+    expect(content).toContain('onReceiptChange(event: Event): void {');
+    expect(content).toContain('this.receiptFile.set(input.files?.[0] ?? null);');
+    expect(content).toContain('onAttachmentChange(event: Event): void {');
+    expect(content).toContain('this.attachmentFile.set(input.files?.[0] ?? null);');
+
+    // Post-save upload
+    expect(content).toContain('next: async (result) => {');
+    expect(content).toContain('const receipt = this.receiptFile();');
+    expect(content).toContain('if (receipt) {');
+    expect(content).toContain('await firstValueFrom(this.service.uploadReceipt(id, receipt));');
+    expect(content).toContain('const attachment = this.attachmentFile();');
+    expect(content).toContain('if (attachment) {');
+    expect(content).toContain('await firstValueFrom(this.service.uploadAttachment(id, attachment));');
+
+    // Excluded from formModel
+    expect(content).not.toContain('receipt:');
+    expect(content).not.toContain('attachment:');
+  });
+
+  const blobRef = 'eu.exeris.kernel.spi.storage.blob.BlobRef';
+  const scanForm = (uiMetadata: Record<string, unknown>): string => gen.generate(domain({
+    entityName: 'Claim',
+    fields: [
+      field({ name: 'title', type: 'String' }),
+      field({ name: 'note', type: 'String' }),
+      field({ name: 'scan', type: blobRef, displayName: 'Scanned form', blob: { contentTypes: ['image/png', 'image/jpeg'] } }),
+    ],
+    uiMetadata,
+  }), CTX)!.content;
+  const scanInput = 'id="scan" data-testid="field-scan" type="file" accept="image/png,image/jpeg" (change)="onScanChange($event)"';
+  const occurrences = (content: string, text: string): number => content.split(text).length - 1;
+
+  it.each([
+    ['in a group', { groups: [{ name: 'media', label: 'Media', order: 1, fields: ['scan'] }] }, 'group-media'],
+    ['outside every group', { groups: [{ name: 'basic', label: 'Basic', order: 1, fields: ['title'] }] }, undefined],
+    ['in a tab', { tabs: [{ name: 'files', label: 'Files', order: 1, fields: ['scan'] }] }, 'tabpanel-files'],
+    ['in a group inside a tab', {
+      groups: [{ name: 'media', label: 'Media', order: 1, fields: ['scan', 'note'] }],
+      tabs: [{ name: 'files', label: 'Files', order: 1, fields: ['scan'] }],
+    }, 'tabpanel-files'],
+    ['in an untabbed group beside tabs', {
+      groups: [{ name: 'media', label: 'Media', order: 1, fields: ['scan'] }],
+      tabs: [{ name: 'basic', label: 'Basic', order: 1, fields: ['title'] }],
+    }, 'group-media'],
+    ['outside tabs and groups', {
+      groups: [{ name: 'basic', label: 'Basic', order: 1, fields: ['note'] }],
+      tabs: [{ name: 'main', label: 'Main', order: 1, fields: ['title'] }],
+    }, undefined],
+  ])('renders the file control once, %s, labelled from displayName', (_case, uiMetadata, container) => {
+    const content = scanForm(uiMetadata);
+
+    expect(occurrences(content, scanInput)).toBe(1);
+    expect(content).toContain('<label for="scan" class="exeris-label">Scanned form</label>');
+    if (container) {
+      expect(content.indexOf(scanInput)).toBeGreaterThan(content.indexOf(`data-testid="${container}"`));
+    }
+    expect(content.indexOf(scanInput)).toBeLessThan(content.indexOf('</form>'));
+  });
+
+  it('does not emit blob inputs, signals or firstValueFrom when domain has no blob fields', () => {
+    const content = gen.generate(domain({
+      entityName: 'Tag',
+      fields: [field({ name: 'name', type: 'String' })],
+    }), CTX)!.content;
+
+    expect(content).not.toContain("firstValueFrom");
+    expect(content).not.toContain('type="file"');
+    expect(content).not.toContain('File = signal');
+  });
+});
 });

@@ -10,6 +10,13 @@ import { z } from 'zod';
 // Field Metadata
 // ============================================================================
 
+export const BlobMetadataSchema = z.object({
+  container: z.string().optional(),
+  contentTypes: z.array(z.string()).default([]),
+});
+
+export type BlobMetadata = z.infer<typeof BlobMetadataSchema>;
+
 // Mirrors eu.exeris.sdk.sourcemodel.ast.FieldMetadata: every key here is a component of that
 // record. The record declares more than the processor writes, so several keys never arrive from a
 // real build; `FIELD_CONTRACT_COVERAGE` in contract-coverage.ts records which, per key.
@@ -47,6 +54,7 @@ export const FieldMetadataSchema = z.object({
   computed: z.boolean().default(false),
   // The names of the fields a computed field is derived from.
   computedFrom: z.array(z.string()).optional(),
+  blob: BlobMetadataSchema.optional(),
 });
 
 export type FieldMetadata = z.infer<typeof FieldMetadataSchema>;
