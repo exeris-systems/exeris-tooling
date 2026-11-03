@@ -36,6 +36,26 @@ jobs:
           # new-code period into "everything".
           fetch-depth: 0
 
+      # SdkExamplesE2ETest (exeris-e2e-tests) generates from the SDK's example sources at the tag
+      # of the SDK version the build pins. The examples module is never published, so it is read
+      # from a checkout; under CI=true the test fails rather than skips when the checkout is absent.
+      - name: Read the pinned SDK version
+        id: sdk
+        working-directory: exeris-tooling
+        run: |
+          version=$(sed -n 's:.*<exeris.sdk.version>\(.*\)</exeris.sdk.version>.*:\1:p' exeris-tooling-bom/pom.xml)
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout exeris-sdk examples (v${{ steps.sdk.outputs.version }})
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: exeris-systems/exeris-sdk
+          ref: v${{ steps.sdk.outputs.version }}
+          path: .sdk-examples
+          sparse-checkout: exeris-sdk-examples
+          persist-credentials: false
+
       - name: Set up JDK ${{ matrix.java }}
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
@@ -53,6 +73,8 @@ jobs:
 
       - name: mvn -B verify (exeris-tooling)
         working-directory: exeris-tooling
+        env:
+          EXERIS_SDK_EXAMPLES_DIR: ${{ github.workspace }}/.sdk-examples
         # No -U. The kernel and the SDK resolve from Maven Central, each at its
         # final 0.12.0 release, so there is no remote SNAPSHOT to re-check. -U
         # belongs back only if a SNAPSHOT ever arrives over the wire.
@@ -352,6 +374,83 @@ jobs:
           grep -q 'url=/about-us' "$out/index.html"
           test -f "$out/index.csr.html"
           test ! -e "$out/posts"
+
+  # The SDK's example corpus as an Angular application: SdkExamplesE2ETest writes the processor
+  # metadata of the examples at the pinned SDK tag, the CLI generates the app from it twice (the two
+  # outputs must be identical), and the app is built and its emitted specs run. The Java half of the
+  # same corpus is gated in the `build` job. Not a required check; making it one is a
+  # branch-protection edit.
+  sdk-examples-app:
+    name: ng build (SDK examples app)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exeris-tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Read the pinned SDK version
+        id: sdk
+        run: |
+          version=$(sed -n 's:.*<exeris.sdk.version>\(.*\)</exeris.sdk.version>.*:\1:p' exeris-tooling-bom/pom.xml)
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout exeris-sdk examples (v${{ steps.sdk.outputs.version }})
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: exeris-systems/exeris-sdk
+          ref: v${{ steps.sdk.outputs.version }}
+          path: .sdk-examples
+          sparse-checkout: exeris-sdk-examples
+          persist-credentials: false
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      # Same reason as in the `build` job: a cached pre-release copy of a released coordinate
+      # would otherwise be served under the final version.
+      - name: Purge cached exeris-kernel and exeris-sdk artefacts
+        run: rm -rf ~/.m2/repository/eu/exeris/exeris-kernel* ~/.m2/repository/eu/exeris/exeris-sdk*
+
+      # The test phase only: the metadata is what this job needs, and `verify` with the rest of the
+      # suite already runs in the `build` job.
+      - name: SDK example metadata (SdkExamplesE2ETest)
+        env:
+          EXERIS_SDK_EXAMPLES_DIR: ${{ github.workspace }}/.sdk-examples
+        run: >-
+          mvn -B -ntp -pl exeris-e2e-tests -am test
+          -Dtest=SdkExamplesE2ETest -Dsurefire.failIfNoSpecifiedTests=false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: exeris-codegen-ts/package-lock.json
+
+      - name: npm ci + build (exeris-codegen-ts)
+        working-directory: exeris-codegen-ts
+        run: |
+          npm ci
+          npm run build
+
+      - name: Generate the SDK examples Angular app (twice, compared)
+        working-directory: exeris-codegen-ts
+        run: >-
+          node scripts/gen-sdk-examples-app.mjs
+          ../exeris-e2e-tests/target/sdk-examples/app/target/classes/exeris-metadata
+          "$RUNNER_TEMP/sdk-examples-app"
+
+      - name: npm install + ng build + ng test (SDK examples app)
+        working-directory: ${{ runner.temp }}/sdk-examples-app
+        run: |
+          npm install --no-audit --no-fund
+          npx ng build --configuration development
+          npx ng test --watch=false
 
   # MIGRATION's open release train is written one file per change under docs/migration/<version>/
   # and assembled at the cut (docs/migration/README.md). The check holds every fragment to the
