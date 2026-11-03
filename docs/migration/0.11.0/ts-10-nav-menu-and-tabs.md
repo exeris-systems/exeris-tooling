@@ -24,3 +24,13 @@ Active tab state is held in a component `signal`, with the first tab active by d
 listed in `fields`, with any `@UIGroup` sections restricted to member fields of that tab. Fields not belonging to any
 tab render after the tab strip. Form controls remain within the single `<form>` element, preserving existing validation
 and submission workflows. An entity without declared tabs regenerates byte-identically.
+
+Not covered: nothing switches to the tab that holds an invalid field. While a field on another tab
+is invalid, the submit button stays disabled and the field's error renders inside a hidden panel,
+so the user has to open each tab to find it. The emitter reads only
+`group`, `groupOrder`, `groupIcon`, `label`, `icon`, `order` and `hidden` of `@NavMenu`, and only
+`name`, `label`, `icon`, `order` and the field placement of `@Tab`. The other attributes reach the
+metadata and change nothing in the generated app: `parent`, `roles`, `permissions`, `badge`,
+`badgeColor`, `tooltip`, `openInNewTab`, `routePath`, `queryParams`, `expanded` and `divider` of
+`@NavMenu`, and `lazy`, `badgeField`, `badgeColor`, `disabled`, `disabledWhen`, `visibleWhen` and
+`cssClass` of `@Tab`. `-Aexeris.strict` reports each of them where it is declared.

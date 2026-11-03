@@ -584,8 +584,8 @@ contract-less; the missing half is ours.
 
 The commitment is recorded below as annotation-level: every SDK annotation the kernel makes
 buildable reaches emitted output. **The target is 51 of 51** — `@Blob` was the single exclusion and
-its gate is answered at 0.12. Reachable is not covered: `@Blob` is four unstarted pieces, all in
-this repo. See its entry in the GA section.
+its gate is answered at 0.12. Reachable is not covered: `@Blob` reaches emitted output in 0.11.0,
+in the four pieces its entry in the GA section lists.
 
 That metric and this measurement are not the same thing. Reading one attribute of `@Saga` scores
 `@Saga` as covered while ≥72 of its 81 do nothing; the same surface is at **10%** in the attribute
@@ -785,7 +785,7 @@ each fix.
       processor's strict-mode note now names the kernel as the gate (it used to blame the
       generator), and a standalone `@Saga` class — the annotation's documented home — is audited at
       all. **Kernel ask:** outcome/tag routing for saga transitions. The L6 row of
-      [`docs/generation-expansion-plan.md`](docs/generation-expansion-plan.md), which said the
+      [generation-expansion plan](https://github.com/exeris-systems/exeris-tooling/blob/d85967f5d889277c8a2b5012d35ead7c6cd1a670/docs/generation-expansion-plan.md), which said the
       annotation did not exist, is corrected.
 - [x] **C0 — strict mode audited the wrong half, and that is why the list above exists.** *Shipped
       0.8.0.* `-Aexeris.strict` reported only *extracted-but-unconsumed*, from two hand-maintained
@@ -1010,8 +1010,8 @@ the log and earlier revisions of this file resolve through this table.
 
 **Unchanged:**
 - `S1–S6` wherever this file cites the log: the reconciliation paragraph above, and the Codegen
-  completeness backlog's pairings (T4↔S2, T5↔S1, T3↔S3). The TypeScript waves of
-  [`docs/0.10.0-release-plan.md`](docs/0.10.0-release-plan.md) are a separate series, cited here as
+  completeness backlog's pairings (T4↔S2, T5↔S1, T3↔S3). The TypeScript waves of the
+  [0.10.0 release plan](https://github.com/exeris-systems/exeris-tooling/blob/e0265c0d405b88190c279deb217812d9fda75e71/docs/0.10.0-release-plan.md) are a separate series, cited here as
   "TS wave S1" to "TS wave S6".
 - `G1–G6` in every `@View` context, including the `TODO(@View G1)` markers view-gen emits.
 - `U1–U8`; the `C0`, `C1` and `C2` items; `B0`; `K*`, `V*`, `EV*`, `L*`; and `T20a–d`.
@@ -2368,7 +2368,8 @@ Each now has the status the code settles, and every other mention in this file a
       exactly one — `@EventSourced` — is registered in `INERT_ANNOTATIONS`, i.e. extracted and
       consumed by no generator.
 
-      **One is excluded, because the kernel cannot yet host it**, verified rather than assumed:
+      **One was excluded until kernel 0.12, because the kernel could not host it**, verified rather
+      than assumed:
 
       - `@Blob` — the v0.11 blob SPI shipped with two Community drivers, but there is **no
         `CommunityStorageSubsystem`**: the ten bootable subsystems are crypto, events, flow, graph,
@@ -2471,17 +2472,20 @@ Each now has the status the code settles, and every other mention in this file a
 
       **So the 1.0 target is 51 of 51.** `@Blob` was the single exclusion and its kernel gate is
       answered at 0.12. Reachable is not covered — an annotation counts when it reaches emitted
-      output — and `@Blob` reaches none of it yet. Four pieces, all unstarted, all in this repo:
+      output. `@Blob` reaches it in 0.11.0 (rows J3 + S2 of
+      [`docs/0.11.0-release-plan.md`](docs/0.11.0-release-plan.md), ADR-108), in four pieces:
 
-      1. **Extraction.** `@Blob` is in `INERT_ANNOTATIONS` and the processor reads it nowhere.
-      2. **Population.** `FieldMetadata.blob` exists as a carrier and nothing sets it.
-      3. **Emission.** Zero references to `BlobMetadata` in `exeris-codegen-java` or
-         `exeris-codegen-ts` — no generator would know what to do with it if it were filled.
-      4. **Boot.** `Application.subsystems()` is domain-derived since #261 (`RequiredSubsystems`),
-         and it has no `storage` name. A `@Blob` transcription adds `storage` as a fourth
-         conditional name, decided by the same metadata.
+      1. **Extraction.** The processor reads `@Blob` on an entity field, and it has left
+         `INERT_ANNOTATIONS`. It refuses `@Blob` on a `GLOBAL` entity (`EXT-PROC-1031`) and on a
+         field whose type is not `BlobRef` (`EXT-PROC-1032`).
+      2. **Population.** The processor writes `FieldMetadata.blob`.
+      3. **Emission.** The Java handler serves each `@Blob` field on its own upload, download and
+         delete routes, and OpenAPI declares them; the TS side emits a file control and the
+         service calls for those routes.
+      4. **Boot.** `RequiredSubsystems` adds `storage` when an entity declares a `@Blob` field, and
+         the store binds when `storage.blob.provider` names a driver.
 
-      The ask moved owner — kernel → this repo — and it is a slice rather than a line. Two rules that
+      The ask moved owner — kernel → this repo — and it was a slice rather than a line. Two rules that
       follow from the shape of this list, and matter more than the count: an annotation is "covered"
       when it **reaches emitted output**, not when the processor extracts it — `@EventSourced` is
       still the standing counter-example, now as pure tooling debt. And every one that lands must
@@ -2871,7 +2875,7 @@ Each now has the status the code settles, and every other mention in this file a
 ### codegen-ts track — contract parity with the emitted backend
 
 `@exeris/codegen-ts` is versioned in lockstep with this reactor and released on the same tag, to
-npmjs under `@exeris`. Its plan: [`docs/codegen-ts-track-plan.md`](docs/codegen-ts-track-plan.md).
+npmjs under `@exeris`. Its plan: [codegen-ts track plan](https://github.com/exeris-systems/exeris-tooling/blob/2d33bcac5c6e95b65abb4b1330f91233bc640153/docs/codegen-ts-track-plan.md).
 It measures what the front reads from `DomainMetadata` against what the Java side acts on, and
 lists the TS scope the 0.9.0 cut waits for (P1–P21 there): lockstep version, field-schema and
 strict-audit honesty, backend-less emission, the TS output-stability and Signal Forms ADRs, the
@@ -3039,7 +3043,7 @@ Proposals, highest return-on-effort first:
       forwards every tenant's events; 0.9.0 refuses `realTimeApi` on a tenant-partitioned entity
       (`EXT-PROC-1014`) until the amendment settles the guard and the key.
       **Answered in ADR-044 Amendment 2 (founder, 2026-10-08):** all eight questions of
-      `docs/0.10.0-release-plan.md`, with four items left open for the implementation PRs.
+      the [0.10.0 release plan](https://github.com/exeris-systems/exeris-tooling/blob/e0265c0d405b88190c279deb217812d9fda75e71/docs/0.10.0-release-plan.md), with four items left open for the implementation PRs.
       Implementation order: J4-1 (driver, guard, RLS load, stream-id filter), J4-2 (the
       `GET {base}/{id}/stream` route), S4 (TS clients).
       **J4-1 implemented:** `KernelActionStreamHandlerGenerator` runs the action and streams its
@@ -3699,8 +3703,8 @@ release)*
 (#260), and the `dsl` package is deleted (2026-10-02). The `npm start` proxy prefix
 (`proxy.conf.js` with a `bypass`), codegen-ts lint in CI (`npm run lint` has no `eslint.config.*`
 and is not in `build.yml`) and the delete-or-wire decision for `KernelStrategy.generateClientCode`
-and `getRealTimeConfig` did not ship in 0.9.0 and are placed in 0.10.0 (wave S2 of
-[`docs/0.10.0-release-plan.md`](docs/0.10.0-release-plan.md)).
+and `getRealTimeConfig` did not ship in 0.9.0 and are placed in 0.10.0 (wave S2 of the
+[0.10.0 release plan](https://github.com/exeris-systems/exeris-tooling/blob/e0265c0d405b88190c279deb217812d9fda75e71/docs/0.10.0-release-plan.md)).
 
 **6. The cut:** kernel `0.12.0` and SDK `0.12.0` final on Central → pins move → release PR at
 `0.9.0` → tag → deploy to Central → Publish in the Central Portal → `@exeris/codegen-ts@0.9.0` to
@@ -3966,7 +3970,7 @@ first, a final release for both, is what the 0.9.0 cut waits on. B0 itself is ap
 
 Expected to pair with kernel 0.13, and with SDK 0.13 if one is needed; if neither is final before
 the cut, 0.10.0 cuts on the `0.12.0` pins. Order, gates and the Java/TS pairing of every item below
-are in [`docs/0.10.0-release-plan.md`](docs/0.10.0-release-plan.md). T12 + T17 is the stretch wave
+are in the [0.10.0 release plan](https://github.com/exeris-systems/exeris-tooling/blob/e0265c0d405b88190c279deb217812d9fda75e71/docs/0.10.0-release-plan.md). T12 + T17 is the stretch wave
 there, and does not hold the cut. Track C, `@SagaTransition` and T48 slice C2 are conditional: each
 enters only if its upstream half is final first.
 
@@ -4117,8 +4121,8 @@ enters only if its upstream half is final first.
       scaffold nor the Java output includes a `.gitattributes` or `.editorconfig`, so nothing tells
       git or the editor what the tree's line endings are. The fix is small and local: compare with
       CRLF folded to LF, so an unchanged file stays `unchanged`, and when a differing file on disk
-      is CRLF write the content as CRLF, keeping the consumer's convention. Row "Line endings" in
-      [`docs/0.10.0-release-plan.md`](docs/0.10.0-release-plan.md), wave S2. Landed in #361: a file is
+      is CRLF write the content as CRLF, keeping the consumer's convention. Row "Line endings" in the
+      [0.10.0 release plan](https://github.com/exeris-systems/exeris-tooling/blob/e0265c0d405b88190c279deb217812d9fda75e71/docs/0.10.0-release-plan.md), wave S2. Landed in #361: a file is
       compared with CRLF folded to LF, and a replaced file that is CRLF on disk (a line ending, every LF
       preceded by CR) is written as CRLF; a mixed file is written as LF.
 - [x] The removals below.
@@ -4141,7 +4145,7 @@ enters only if its upstream half is final first.
 upstream half lands). C2 (`@Encrypted` / `@RowLevelSecurity`) is closed as won't-build (row J9, #435).
 
 **`@exeris/codegen-ts` → npmjs** ships in 0.9.0, in lockstep with the reactor; the 0.9.0 cut
-waits for the TS scope in [`docs/codegen-ts-track-plan.md`](docs/codegen-ts-track-plan.md) (P1–P21).
+waits for the TS scope in the [codegen-ts track plan](https://github.com/exeris-systems/exeris-tooling/blob/2d33bcac5c6e95b65abb4b1330f91233bc640153/docs/codegen-ts-track-plan.md) (P1–P21).
 The TS side is further behind than the Java side, and it is what a `@View` front end is generated
 from.
 
