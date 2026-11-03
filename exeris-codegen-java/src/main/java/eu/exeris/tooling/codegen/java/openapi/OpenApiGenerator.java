@@ -108,8 +108,8 @@ public class OpenApiGenerator {
     /**
      * Builds one OpenAPI 3.1 specification covering every given entity and writes it as YAML to
      * {@code <outputDirectory>/<moduleName>-api.yaml}, creating the directory if needed. Tags,
-     * paths and schemas are merged in list order; a later entity's schema replaces an earlier
-     * one of the same name.
+     * paths, schemas and security schemes are merged in list order; a later entity's schema
+     * replaces an earlier one of the same name.
      *
      * @param metadataList the entities to describe; must not be empty
      * @param moduleName   the module name used in the title and the file name
@@ -133,6 +133,7 @@ public class OpenApiGenerator {
         io.swagger.v3.oas.models.Paths allPaths = new io.swagger.v3.oas.models.Paths();
         Components allComponents = new Components();
         Map<String, io.swagger.v3.oas.models.media.Schema> allSchemas = new LinkedHashMap<>();
+        Map<String, io.swagger.v3.oas.models.security.SecurityScheme> allSchemes = new LinkedHashMap<>();
 
         for (DomainMetadata metadata : metadataList) {
             allTags.addAll(OpenApiTagsBuilder.buildTags(metadata));
@@ -142,11 +143,17 @@ public class OpenApiGenerator {
             if (entityComponents.getSchemas() != null) {
                 allSchemas.putAll(entityComponents.getSchemas());
             }
+            if (entityComponents.getSecuritySchemes() != null) {
+                allSchemes.putAll(entityComponents.getSecuritySchemes());
+            }
         }
 
         openAPI.setTags(allTags);
         openAPI.setPaths(allPaths);
         allComponents.setSchemas(allSchemas);
+        if (!allSchemes.isEmpty()) {
+            allComponents.setSecuritySchemes(allSchemes);
+        }
         openAPI.setComponents(allComponents);
 
         Path outputFile = outputDirectory.resolve(moduleName + "-api.yaml");

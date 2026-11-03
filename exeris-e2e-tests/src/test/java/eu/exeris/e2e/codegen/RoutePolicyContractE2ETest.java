@@ -109,7 +109,7 @@ class RoutePolicyContractE2ETest {
         assertThat(example.routes()).extracting(Row::method).doesNotContain("HEAD");
     }
 
-    private static Contract read(String resource) throws IOException {
+    static Contract read(String resource) throws IOException {
         try (InputStream in = RoutePolicyContractE2ETest.class.getResourceAsStream(resource)) {
             assertThat(in).as(resource + " on the test classpath").isNotNull();
             return JsonMapper.builder().build().readValue(in, Contract.class);

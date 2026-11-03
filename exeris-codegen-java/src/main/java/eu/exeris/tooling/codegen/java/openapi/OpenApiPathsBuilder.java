@@ -6,6 +6,8 @@ import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ParamSource;
+import eu.exeris.tooling.codegen.core.access.RouteRequirements;
+import eu.exeris.tooling.codegen.core.access.RouteRequirements.Requirement;
 import eu.exeris.tooling.codegen.java.support.BlobFields;
 import eu.exeris.tooling.codegen.java.support.ForeignKeys;
 import eu.exeris.tooling.codegen.java.support.KernelStreamScaffold;
@@ -63,7 +65,9 @@ public final class OpenApiPathsBuilder {
      * Builds the path items one entity of a build exposes, rooted at its effective REST path. The
      * build decides which foreign keys the entity's writes and delete can violate: a write that
      * references an entity of the build declares {@code 422}, and the delete of an entity another
-     * references declares {@code 409} (ADR-076 Amendment 1).
+     * references declares {@code 409} (ADR-076 Amendment 1). Every operation carries the security its
+     * route demands, as {@link OpenApiSecurity} declares it: an action route its action's
+     * requirement, every other route the entity's.
      *
      * @param metadata the entity to describe
      * @param build    every entity of the build, {@code metadata} included
@@ -101,13 +105,19 @@ public final class OpenApiPathsBuilder {
             paths.addPathItem(basePath + "/{id}/stream", spectatePath);
         }
 
+        Requirement entityRequirement = RouteRequirements.forEntity(metadata);
+        paths.values().forEach(item -> item.readOperations()
+                .forEach(operation -> OpenApiSecurity.apply(operation, entityRequirement)));
+
         if (metadata.hasActions()) {
             for (ActionMetadata action : metadata.actions()) {
                 String actionPath = basePath + "/{id}/actions/" + NameCasing.kebab(action.name());
-                PathItem actionPathItem = new PathItem();
-                actionPathItem.setPost(action.streaming()
+                Operation operation = action.streaming()
                         ? buildActionStreamOperation(metadata, action, missingReference)
-                        : buildActionOperation(entityName, action, metadata.versioned(), missingReference));
+                        : buildActionOperation(entityName, action, metadata.versioned(), missingReference);
+                OpenApiSecurity.apply(operation, RouteRequirements.forAction(metadata, action));
+                PathItem actionPathItem = new PathItem();
+                actionPathItem.setPost(operation);
                 paths.addPathItem(actionPath, actionPathItem);
             }
         }
@@ -396,8 +406,9 @@ public final class OpenApiPathsBuilder {
     }
 
     /**
-     * The only response of a stream route: {@code 200} with a {@code text/event-stream} body. The
-     * engine writes that head before the handler runs, so the route can answer nothing else.
+     * The only response of a stream route's handler: {@code 200} with a {@code text/event-stream}
+     * body. The engine writes that head before the handler runs, so the handler can answer nothing
+     * else; what the edge answers before the stream opens is {@link OpenApiSecurity}'s to declare.
      */
     private static ApiResponses eventStream(String description) {
         ApiResponses responses = new ApiResponses();

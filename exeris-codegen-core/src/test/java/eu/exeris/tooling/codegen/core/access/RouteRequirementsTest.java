@@ -59,4 +59,13 @@ class RouteRequirementsTest {
                 .build();
         assertThat(RouteRequirements.demandIdentity(List.of(publicWithScopedAction))).isTrue();
     }
+
+    @Test
+    @DisplayName("an entity whose metadata carries no action list resolves on the entity alone")
+    void absentActionListResolvesOnTheEntity() {
+        assertThat(RouteRequirements.demandIdentity(List.of(order().actions(null).build()))).isFalse();
+        assertThat(RouteRequirements.anyDeclared(List.of(order().actions(null).build()))).isFalse();
+        assertThat(RouteRequirements.demandIdentity(
+                List.of(order().routeAccess(RouteAccess.AUTHENTICATED).actions(null).build()))).isTrue();
+    }
 }

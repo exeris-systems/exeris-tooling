@@ -123,7 +123,7 @@ public final class RouteRequirements {
             if (demands(forEntity(domain))) {
                 return true;
             }
-            for (ActionMetadata action : domain.actions()) {
+            for (ActionMetadata action : actions(domain)) {
                 if (demands(forAction(domain, action))) {
                     return true;
                 }
@@ -143,13 +143,18 @@ public final class RouteRequirements {
             if (forEntity(domain) != null) {
                 return true;
             }
-            for (ActionMetadata action : domain.actions()) {
+            for (ActionMetadata action : actions(domain)) {
                 if (forAction(domain, action) != null) {
                     return true;
                 }
             }
         }
         return false;
+    }
+
+    /** The entity's actions; metadata read from JSON that omits them carries none. */
+    private static List<ActionMetadata> actions(DomainMetadata domain) {
+        return domain.hasActions() ? domain.actions() : List.of();
     }
 
     private static boolean demands(Requirement requirement) {
