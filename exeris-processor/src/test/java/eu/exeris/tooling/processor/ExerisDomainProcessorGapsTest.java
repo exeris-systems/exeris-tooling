@@ -47,6 +47,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("ExerisDomainProcessor — remaining coverage gaps")
 class ExerisDomainProcessorGapsTest {
 
+    /**
+     * These cases read what the processor extracts; the refusals that only the generated kernel
+     * application needs are covered by {@code KernelApplicationLayoutTest}.
+     */
+    private static final String METADATA_ONLY = "-Aexeris.metadataOnly=true";
+
     // ---------- extractEventsMetadata: single-@DomainEvent direct branch ----------
 
     @Nested
@@ -497,7 +503,7 @@ class ExerisDomainProcessorGapsTest {
     // ---------- helpers (mirrors the existing test classes' pattern) ----------
 
     private static Compilation compileWithProcessor(JavaFileObject... sources) {
-        return javac().withProcessors(new ExerisDomainProcessor()).compile(sources);
+        return javac().withOptions(METADATA_ONLY).withProcessors(new ExerisDomainProcessor()).compile(sources);
     }
 
     private static String metadataFor(Compilation compilation, String entity) throws IOException {

@@ -104,7 +104,8 @@ import java.util.stream.Collectors;
         "eu.exeris.sdk.annotation.View",
         "eu.exeris.sdk.annotation.Schedule"
 })
-@SupportedOptions({ExerisDomainProcessor.OPTION_VERBOSE, ExerisDomainProcessor.OPTION_STRICT})
+@SupportedOptions({ExerisDomainProcessor.OPTION_VERBOSE, ExerisDomainProcessor.OPTION_STRICT,
+        ExerisDomainProcessor.OPTION_METADATA_ONLY})
 @SuppressWarnings({
         "PMD.TooManyMethods",
         "PMD.CouplingBetweenObjects"
@@ -135,6 +136,17 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * compiler plugin) to enable it.
      */
     public static final String OPTION_STRICT = "exeris.strict";
+
+    /**
+     * Annotation processor option that declares the compilation's metadata is read by a consumer
+     * that generates no kernel application, such as a conformance kit or an editor. It skips the
+     * two refusals that only the generated application needs: an entity package that does not end
+     * in {@code .domain} ({@code EXT-PROC-1033}) and an accessor the generated code calls but the
+     * entity lacks ({@code EXT-PROC-1034}). The metadata written is the same either way. Off by
+     * default: the processor's metadata feeds the kernel-target generators. Pass
+     * {@code -Aexeris.metadataOnly=true} to {@code javac} to enable it.
+     */
+    public static final String OPTION_METADATA_ONLY = "exeris.metadataOnly";
 
     /** Attribute name shared by {@code @Saga} and the capability {@code @Provides}/{@code @Requires}. */
     private static final String VERSION_ATTRIBUTE = "version";
@@ -971,6 +983,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     /** The one type a primary key may have (ADR-104), and one of the two a shared-scope key may. */
     private static final String UUID_FQN = "java.util.UUID";
 
+    /** The suffix the generated application strips from an entity's package to place its other types. */
+    private static final String DOMAIN_PACKAGE_SUFFIX = ".domain";
+
+    /** A package qualifier inside a rendered type, such as {@code java.util.} in {@code java.util.List}. */
+    private static final Pattern PACKAGE_QUALIFIER = Pattern.compile("\\b(?:[a-z_$][\\w$]*\\.)+");
+
     /** A type-use annotation as {@code TypeMirror.toString()} renders it, with its arguments. */
     private static final Pattern TYPE_USE_ANNOTATION = Pattern.compile("@(?:[\\w.]+\\.)?\\w+(?:\\([^()]*\\))?\\s*");
 
@@ -1015,6 +1033,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     private Trees trees;
     private boolean verbose;
     private boolean strict;
+    private boolean metadataOnly;
 
     /** Enum types referenced by the fields of processed entities, including as type arguments. */
     private final Set<TypeElement> discoveredEnums = new HashSet<>();
@@ -1055,6 +1074,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 processingEnv.getOptions().getOrDefault(OPTION_VERBOSE, "false"));
         this.strict = Boolean.parseBoolean(
                 processingEnv.getOptions().getOrDefault(OPTION_STRICT, "false"));
+        this.metadataOnly = Boolean.parseBoolean(
+                processingEnv.getOptions().getOrDefault(OPTION_METADATA_ONLY, "false"));
     }
 
     @Override
@@ -2083,6 +2104,13 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             if (!scopeContradicted) {
                 refuseRealTimeApiOnTenantPartitioned(element, domainAnnotation, metadata);
             }
+            if (!metadataOnly) {
+                refuseOutsideDomainPackage(element, domainAnnotation, metadata);
+                // The owner column, and so its accessors, follows the tier.
+                if (!scopeContradicted) {
+                    refuseMissingAccessors(element, domainAnnotation, metadata);
+                }
+            }
         }
         return metadata;
     }
@@ -2218,6 +2246,110 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "the migration, rename or remove the field 'id' instead.",
                     element, domainAnnotation);
         }
+    }
+
+    /**
+     * Refuses an {@code @ExerisDomain} type whose package does not end in {@code .domain}
+     * ({@code EXT-PROC-1033}). The generated application puts the entity's repository, service,
+     * handler, event and graph types in sibling packages it derives by replacing that suffix, and
+     * its bootstrap imports them from there.
+     */
+    private void refuseOutsideDomainPackage(TypeElement element, AnnotationMirror domainAnnotation,
+                                            DomainMetadata metadata) {
+        String packageName = metadata.packageName();
+        if (packageName.endsWith(DOMAIN_PACKAGE_SUFFIX)) {
+            return;
+        }
+        String entity = element.getSimpleName().toString();
+        String base = packageName.isEmpty() ? "com.example" : packageName;
+        error(DiagnosticId.ENTITY_PACKAGE_NOT_DOMAIN,
+                "@ExerisDomain entity '" + entity + "' is in "
+                        + (packageName.isEmpty() ? "the unnamed package" : "package '" + packageName + "'")
+                        + ", which does not end in '.domain'. The generated application puts the entity's "
+                        + "repository, service, handler and event types in sibling packages it derives by "
+                        + "replacing that suffix. Move '" + entity + "' into a package ending in '.domain', "
+                        + "such as '" + base + DOMAIN_PACKAGE_SUFFIX + "', whose repository is then generated in '"
+                        + base + ".repository'.",
+                element, domainAnnotation);
+    }
+
+    /**
+     * Refuses an {@code @ExerisDomain} type that lacks a public accessor the generated application
+     * calls on it ({@code EXT-PROC-1034}); {@link KernelAccessors} names them. One error per
+     * property, on the field when the entity declares it and on the type otherwise. A missing key
+     * field is left to {@code EXT-PROC-1015}, which already asks for it with its accessors.
+     */
+    private void refuseMissingAccessors(TypeElement element, AnnotationMirror domainAnnotation,
+                                        DomainMetadata metadata) {
+        String key = primaryKeyField(metadata);
+        boolean keyDeclared = inheritedInstanceField(element, key) != null;
+        List<ExecutableElement> methods = ElementFilter.methodsIn(
+                processingEnv.getElementUtils().getAllMembers(element));
+        Map<String, List<KernelAccessors.Accessor>> missing = new LinkedHashMap<>();
+        for (KernelAccessors.Accessor accessor : KernelAccessors.required(metadata)) {
+            if (accessor.field().equals(key) && !keyDeclared) {
+                continue;
+            }
+            if (!declaresAccessor(methods, accessor)) {
+                missing.computeIfAbsent(accessor.field(), name -> new ArrayList<>()).add(accessor);
+            }
+        }
+        String entity = element.getSimpleName().toString();
+        for (Map.Entry<String, List<KernelAccessors.Accessor>> entry : missing.entrySet()) {
+            String property = entry.getKey();
+            VariableElement field = inheritedInstanceField(element, property);
+            List<String> calls = new ArrayList<>();
+            List<String> declarations = new ArrayList<>();
+            for (KernelAccessors.Accessor accessor : entry.getValue()) {
+                calls.add(accessor.method() + (accessor.setter() ? "(…)" : "()"));
+                if (field != null) {
+                    declarations.add(accessorDeclaration(accessor, property, simpleTypeText(field.asType())));
+                }
+            }
+            String message = "The generated application calls " + String.join(" and ", calls)
+                    + " on @ExerisDomain entity '" + entity + "' for "
+                    + (field == null ? "the property '" + property + "', which '" + entity
+                            + "' declares no field for" : "its field '" + property + "'")
+                    + ", and '" + entity + "' has no such public instance method. "
+                    + (field == null
+                            ? "Add them as public instance methods, usually by declaring the field '" + property
+                                    + "' with its getter and setter."
+                            : "Add " + String.join(" and ", declarations) + ".");
+            if (field != null && field.getEnclosingElement().equals(element)) {
+                error(DiagnosticId.ENTITY_ACCESSOR_MISSING, message, field);
+            } else {
+                error(DiagnosticId.ENTITY_ACCESSOR_MISSING, message, element, domainAnnotation);
+            }
+        }
+    }
+
+    /**
+     * Whether {@code methods} hold a public instance method of the accessor's name and arity: no
+     * parameter and a value for a getter, one parameter for a setter.
+     */
+    private static boolean declaresAccessor(List<ExecutableElement> methods, KernelAccessors.Accessor accessor) {
+        for (ExecutableElement method : methods) {
+            if (method.getSimpleName().contentEquals(accessor.method())
+                    && method.getModifiers().contains(Modifier.PUBLIC)
+                    && !method.getModifiers().contains(Modifier.STATIC)
+                    && method.getParameters().size() == (accessor.setter() ? 1 : 0)
+                    && (accessor.setter() || method.getReturnType().getKind() != TypeKind.VOID)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** The declaration the fix names, typed by the declared field. */
+    private static String accessorDeclaration(KernelAccessors.Accessor accessor, String property, String type) {
+        return accessor.setter()
+                ? "'public void " + accessor.method() + "(" + type + " " + property + ")'"
+                : "'public " + type + " " + accessor.method() + "()'";
+    }
+
+    /** A type as source writes it with imports: every package qualifier dropped. */
+    private static String simpleTypeText(TypeMirror type) {
+        return PACKAGE_QUALIFIER.matcher(type.toString()).replaceAll("");
     }
 
     /** The EXT-PROC-1015 text, naming the key the entity lacks and where its name came from. */

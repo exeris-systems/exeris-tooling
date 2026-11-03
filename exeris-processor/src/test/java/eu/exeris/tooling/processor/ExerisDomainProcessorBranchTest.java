@@ -43,6 +43,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("ExerisDomainProcessor — branch coverage")
 class ExerisDomainProcessorBranchTest {
 
+    /**
+     * These cases read what the processor extracts; the refusals that only the generated kernel
+     * application needs are covered by {@code KernelApplicationLayoutTest}.
+     */
+    private static final String METADATA_ONLY = "-Aexeris.metadataOnly=true";
+
     @Nested
     @DisplayName("@ExerisDomain attribute matrix")
     class DomainAttributeMatrixTests {
@@ -681,7 +687,7 @@ class ExerisDomainProcessorBranchTest {
     // ---------- helpers ----------
 
     private static Compilation compileWithProcessor(JavaFileObject... sources) {
-        return javac().withProcessors(new ExerisDomainProcessor()).compile(sources);
+        return javac().withOptions(METADATA_ONLY).withProcessors(new ExerisDomainProcessor()).compile(sources);
     }
 
     private static String metadataFor(Compilation compilation, String entity) throws IOException {

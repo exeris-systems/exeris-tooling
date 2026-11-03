@@ -23,6 +23,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("Processor parity with SDK 0.13: @GraphProperty and @UIGroup")
 class ProcessorParityTest {
 
+    /**
+     * These cases read what the processor extracts; the refusals that only the generated kernel
+     * application needs are covered by {@code KernelApplicationLayoutTest}.
+     */
+    private static final String METADATA_ONLY = "-Aexeris.metadataOnly=true";
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static String fixtureResource(String name) {
@@ -41,6 +47,7 @@ class ProcessorParityTest {
         // Inject primary key required by processor build-time validation:
         String compilableSource = source.replace("{", "{\n    private java.util.UUID id;\n");
         Compilation compilation = javac()
+                .withOptions(METADATA_ONLY)
                 .withProcessors(new ExerisDomainProcessor())
                 .compile(JavaFileObjects.forSourceString("parity." + name, compilableSource));
 
@@ -79,6 +86,7 @@ class ProcessorParityTest {
     @DisplayName("@GraphProperty without @Graph is not extracted and graphMetadata is null")
     void graphPropertyWithoutGraphIsNotExtracted() throws IOException {
         Compilation compilation = javac()
+                .withOptions(METADATA_ONLY)
                 .withProcessors(new ExerisDomainProcessor())
                 .compile(JavaFileObjects.forSourceString("com.example.Item", """
                         package com.example;
@@ -108,6 +116,7 @@ class ProcessorParityTest {
     @DisplayName("@UIGroup folding rules: first-declaration wins per attribute, first-declaration group order, defaults applied")
     void uiGroupFoldingRules() throws IOException {
         Compilation compilation = javac()
+                .withOptions(METADATA_ONLY)
                 .withProcessors(new ExerisDomainProcessor())
                 .compile(JavaFileObjects.forSourceString("com.example.Customer", """
                         package com.example;

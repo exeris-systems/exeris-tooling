@@ -108,9 +108,13 @@ class RelationshipSqlE2ETest {
                 public class Customer {
 
                     private java.util.UUID id;
+                    public java.util.UUID getId() { return id; }
+                    public void setId(java.util.UUID id) { this.id = id; }
 
                     @Field(label = "Name")
                     private String name;
+                    public String getName() { return name; }
+                    public void setName(String name) { this.name = name; }
                 }
                 """);
         sources.put("com/shop/domain/Carrier.java",
@@ -124,9 +128,13 @@ class RelationshipSqlE2ETest {
                 public class Carrier {
 
                     private java.util.UUID id;
+                    public java.util.UUID getId() { return id; }
+                    public void setId(java.util.UUID id) { this.id = id; }
 
                     @Field(label = "Name")
                     private String name;
+                    public String getName() { return name; }
+                    public void setName(String name) { this.name = name; }
                 }
                 """);
         sources.put("com/shop/domain/OrderItem.java",
@@ -140,9 +148,13 @@ class RelationshipSqlE2ETest {
                 public class OrderItem {
 
                     private java.util.UUID id;
+                    public java.util.UUID getId() { return id; }
+                    public void setId(java.util.UUID id) { this.id = id; }
 
                     @Field(label = "Description")
                     private String description;
+                    public String getDescription() { return description; }
+                    public void setDescription(String description) { this.description = description; }
                 }
                 """);
         sources.put("com/shop/domain/Order.java",
@@ -161,23 +173,33 @@ class RelationshipSqlE2ETest {
                 public class Order {
 
                     private java.util.UUID id;
+                    public java.util.UUID getId() { return id; }
+                    public void setId(java.util.UUID id) { this.id = id; }
 
                     @Field(label = "Order Number")
                     private String orderNumber;
+                    public String getOrderNumber() { return orderNumber; }
+                    public void setOrderNumber(String orderNumber) { this.orderNumber = orderNumber; }
 
                     // Owning side, deleting the customer takes its orders with it.
                     @Relationship(targetEntity = Customer.class, displayField = "name",
                             cascadeDelete = true)
                     private UUID customerId;
+                    public UUID getCustomerId() { return customerId; }
+                    public void setCustomerId(UUID customerId) { this.customerId = customerId; }
 
                     // Owning side without a cascade — the constraint must stay RESTRICT.
                     @Relationship(targetEntity = Carrier.class, displayField = "name")
                     private UUID carrierId;
+                    public UUID getCarrierId() { return carrierId; }
+                    public void setCarrierId(UUID carrierId) { this.carrierId = carrierId; }
 
                     // Collection side: OrderItem holds the order_id, never the other way round.
                     @Relationship(targetEntity = OrderItem.class, displayField = "description",
                             relationshipType = RelationshipType.ONE_TO_MANY, mappedBy = "order")
                     private List<OrderItem> items;
+                    public List<OrderItem> getItems() { return items; }
+                    public void setItems(List<OrderItem> items) { this.items = items; }
                 }
                 """);
         return sources;

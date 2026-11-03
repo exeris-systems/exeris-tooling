@@ -92,19 +92,13 @@ public final class KernelServiceTestGenerator {
      *
      * @param metadata the entity whose service is under test
      * @return the emitted test; never {@code null}
-     * @throws IllegalArgumentException if the entity's package does not end in {@code .domain}
+     * @throws EntityPackageLayoutException ({@code EXT-PROC-1033}) if the entity's package does not
+     *         end in {@code .domain}
      */
     public GeneratedFile generate(DomainMetadata metadata) {
         String entity = metadata.entityName();
         String domainPackage = metadata.packageName();
-        if (!domainPackage.endsWith(".domain")) {
-            // Same contract (and same reason) as the handler-test generator: the service and
-            // repository package paths are derived by replacing the '.domain' suffix.
-            throw new IllegalArgumentException(
-                    "Domain package '" + domainPackage + "' for entity '" + entity
-                            + "' does not end with '.domain' — the service-test generator derives"
-                            + " the .service/.repository package paths from that suffix");
-        }
+        KernelApplicationGenerator.requireDomainPackages(List.of(metadata));
         String infrastructureBase = domainPackage.substring(0, domainPackage.lastIndexOf(".domain"));
         String packageName = infrastructureBase + ".service";
         String className = entity + "ServiceTest";

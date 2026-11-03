@@ -60,18 +60,28 @@ class LifecycleFlagsContractE2ETest {
                         public class Ticket {
 
                             private UUID id;
+                            public UUID getId() { return id; }
+                            public void setId(UUID id) { this.id = id; }
 
                             @Field(label = "Title")
                             private String title;
+                            public String getTitle() { return title; }
+                            public void setTitle(String title) { this.title = title; }
 
                             @Field(label = "Code", inUpdate = false)
                             private String code;
+                            public String getCode() { return code; }
+                            public void setCode(String code) { this.code = code; }
 
                             @Field(label = "Slug", inCreate = false)
                             private String slug;
+                            public String getSlug() { return slug; }
+                            public void setSlug(String slug) { this.slug = slug; }
 
                             @Field(label = "Fixed", inCreate = false, inUpdate = false)
                             private String fixed;
+                            public String getFixed() { return fixed; }
+                            public void setFixed(String fixed) { this.fixed = fixed; }
                         }
                         """));
         Path metadata = classes.resolve("exeris-metadata");

@@ -1,6 +1,7 @@
 package eu.exeris.tooling.codegen.java;
 
 import eu.exeris.tooling.codegen.core.capability.CapabilityGraphException;
+import eu.exeris.tooling.codegen.java.kernel.EntityPackageLayoutException;
 import eu.exeris.tooling.codegen.java.kernel.UnpersistableFieldTypeException;
 import eu.exeris.tooling.diagnostics.DiagnosticId;
 
@@ -146,6 +147,9 @@ public final class CodegenMain {
         switch (e) {
             case UnpersistableFieldTypeException refused ->
                     // The message carries its own identifier (EXT-GEN-3003).
+                    err.println(refused.getMessage());
+            case EntityPackageLayoutException refused ->
+                    // The message carries its own identifier (EXT-PROC-1033).
                     err.println(refused.getMessage());
             case EmptyMetadataException refused -> {
                 err.println(DiagnosticId.EMPTY_METADATA_REFUSED.format(refused.getMessage()));

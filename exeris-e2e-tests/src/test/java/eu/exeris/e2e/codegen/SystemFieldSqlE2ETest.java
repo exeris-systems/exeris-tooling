@@ -139,19 +139,41 @@ class SystemFieldSqlE2ETest {
                 public class Invoice {
 
                     private java.util.UUID id;
+                    public java.util.UUID getId() { return id; }
+                    public void setId(java.util.UUID id) { this.id = id; }
 
                     @Field(label = "Number")
                     private String number;
+                    public String getNumber() { return number; }
+                    public void setNumber(String number) { this.number = number; }
 
                     @TenantId private String orgId;
+                    public String getOrgId() { return orgId; }
+                    public void setOrgId(String orgId) { this.orgId = orgId; }
                     @Version private long rev;
+                    public long getRev() { return rev; }
+                    public void setRev(long rev) { this.rev = rev; }
                     @SoftDelete private boolean archived;
+                    public boolean isArchived() { return archived; }
+                    public void setArchived(boolean archived) { this.archived = archived; }
                     @SoftDeleteTimestamp private String archivedAt;
+                    public String getArchivedAt() { return archivedAt; }
+                    public void setArchivedAt(String archivedAt) { this.archivedAt = archivedAt; }
                     @SoftDeletedBy private String archivedBy;
+                    public String getArchivedBy() { return archivedBy; }
+                    public void setArchivedBy(String archivedBy) { this.archivedBy = archivedBy; }
                     @AuditCreatedAt private String bornAt;
+                    public String getBornAt() { return bornAt; }
+                    public void setBornAt(String bornAt) { this.bornAt = bornAt; }
                     @AuditCreatedBy private String bornBy;
+                    public String getBornBy() { return bornBy; }
+                    public void setBornBy(String bornBy) { this.bornBy = bornBy; }
                     @AuditUpdatedAt private String touchedAt;
+                    public String getTouchedAt() { return touchedAt; }
+                    public void setTouchedAt(String touchedAt) { this.touchedAt = touchedAt; }
                     @AuditUpdatedBy private String touchedBy;
+                    public String getTouchedBy() { return touchedBy; }
+                    public void setTouchedBy(String touchedBy) { this.touchedBy = touchedBy; }
                 }
                 """);
         return sources;

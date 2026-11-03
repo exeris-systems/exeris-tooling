@@ -6,6 +6,7 @@ import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
+import eu.exeris.tooling.diagnostics.DiagnosticId;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -74,15 +75,19 @@ class KernelApplicationGeneratorTest {
     }
 
     @Test
-    @DisplayName("generateAll rejects domain packages that do not end with '.domain'")
+    @DisplayName("generateAll refuses domain packages that do not end with '.domain' with EXT-PROC-1033, "
+            + "naming every refused entity in order")
     void shouldRejectNonDomainPackageSuffix() {
         KernelApplicationGenerator gen = new KernelApplicationGenerator();
-        DomainMetadata bad = DomainMetadata.builder("Order", "com.example.order").build();
-        List<DomainMetadata> domains = List.of(bad);
+        List<DomainMetadata> domains = List.of(
+                DomainMetadata.builder("Order", "com.example.order").build(),
+                DomainMetadata.builder("Product", "com.example.domain").build(),
+                DomainMetadata.builder("Invoice", "com.example.billing").build());
 
         assertThatThrownBy(() -> gen.generateAll(domains, "com.example.foundation"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("com.example.order")
+                .isInstanceOfSatisfying(EntityPackageLayoutException.class, e -> assertThat(e.entities())
+                        .containsExactly("com.example.billing.Invoice", "com.example.order.Order"))
+                .hasMessageStartingWith(DiagnosticId.ENTITY_PACKAGE_NOT_DOMAIN.format(""))
                 .hasMessageContaining(".domain");
     }
 

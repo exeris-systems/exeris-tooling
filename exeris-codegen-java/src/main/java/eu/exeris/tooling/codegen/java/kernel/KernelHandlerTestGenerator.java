@@ -158,15 +158,7 @@ public final class KernelHandlerTestGenerator {
     public GeneratedFile generate(DomainMetadata metadata, String basePackage, List<DomainMetadata> build) {
         String entity = metadata.entityName();
         String domainPackage = metadata.packageName();
-        if (!domainPackage.endsWith(".domain")) {
-            // Same contract (and same reason) as KernelApplicationGenerator: the handler/service/
-            // repository package paths are derived by replacing the '.domain' suffix, so without it
-            // the emitted test would import types from the wrong packages.
-            throw new IllegalArgumentException(
-                    "Domain package '" + domainPackage + "' for entity '" + entity
-                            + "' does not end with '.domain' — the handler-test generator derives the"
-                            + " .handler/.service/.repository package paths from that suffix");
-        }
+        KernelApplicationGenerator.requireDomainPackages(List.of(metadata));
         String infrastructureBase = domainPackage.substring(0, domainPackage.lastIndexOf(".domain"));
         String packageName = infrastructureBase + ".handler";
         String className = entity + "HandlerTest";

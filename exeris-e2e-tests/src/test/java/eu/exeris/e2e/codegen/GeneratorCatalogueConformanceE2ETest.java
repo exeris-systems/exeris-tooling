@@ -309,7 +309,11 @@ class GeneratorCatalogueConformanceE2ETest {
                 @Saga(name = "BeaconSaga", timeout = "PT5M", maxRetries = 2)
                 public class Beacon {
                     private UUID id;
+                    public UUID getId() { return id; }
+                    public void setId(UUID id) { this.id = id; }
                     @Field(label = "Label", required = true) private String label;
+                    public String getLabel() { return label; }
+                    public void setLabel(String label) { this.label = label; }
                     @Action(name = "track", label = "Track", streaming = true)
                     public void track() { }
                     @SagaStep(order = 1, name = "relay", service = "relay", command = "Relay")
@@ -328,9 +332,17 @@ class GeneratorCatalogueConformanceE2ETest {
                         versioned = true)
                 public class Ledger {
                     private UUID id;
+                    public UUID getId() { return id; }
+                    public void setId(UUID id) { this.id = id; }
                     @Field(label = "Name", required = true) private String name;
+                    public String getName() { return name; }
+                    public void setName(String name) { this.name = name; }
                     @Field(label = "Tenant") private UUID tenantId;
+                    public UUID getTenantId() { return tenantId; }
+                    public void setTenantId(UUID tenantId) { this.tenantId = tenantId; }
                     @Field(label = "Version") private long version;
+                    public long getVersion() { return version; }
+                    public void setVersion(long version) { this.version = version; }
                 }
                 """);
         sources.put(DOMAIN + "Presence.java", """
@@ -346,9 +358,17 @@ class GeneratorCatalogueConformanceE2ETest {
                 @ExerisDomain(module = "universe", path = "/presences", dataScope = ExerisDomain.DataScope.UNIVERSE)
                 public class Presence {
                     private UUID id;
+                    public UUID getId() { return id; }
+                    public void setId(UUID id) { this.id = id; }
                     @Field(label = "X") private int x;
+                    public int getX() { return x; }
+                    public void setX(int x) { this.x = x; }
                     @Field(label = "Owner") @TenantId private UUID ownerTenantId;
+                    public UUID getOwnerTenantId() { return ownerTenantId; }
+                    public void setOwnerTenantId(UUID ownerTenantId) { this.ownerTenantId = ownerTenantId; }
                     @Field(label = "Universe") @SharedScope private UUID universeId;
+                    public UUID getUniverseId() { return universeId; }
+                    public void setUniverseId(UUID universeId) { this.universeId = universeId; }
                 }
                 """);
         sources.put(DOMAIN + "Customer.java", """
@@ -362,7 +382,11 @@ class GeneratorCatalogueConformanceE2ETest {
                 @ExerisDomain(module = "sales", path = "/customers")
                 public class Customer {
                     private UUID id;
+                    public UUID getId() { return id; }
+                    public void setId(UUID id) { this.id = id; }
                     @Field(label = "Name") private String name;
+                    public String getName() { return name; }
+                    public void setName(String name) { this.name = name; }
                 }
                 """);
         sources.put(DOMAIN + "Shipment.java", """
@@ -379,9 +403,15 @@ class GeneratorCatalogueConformanceE2ETest {
                 @Graph(nodeClass = "Shipment")
                 public class Shipment {
                     private UUID id;
+                    public UUID getId() { return id; }
+                    public void setId(UUID id) { this.id = id; }
                     @Field(label = "Reference") private String reference;
+                    public String getReference() { return reference; }
+                    public void setReference(String reference) { this.reference = reference; }
                     @Relationship(targetEntity = Customer.class, displayField = "name")
                     private UUID customerId;
+                    public UUID getCustomerId() { return customerId; }
+                    public void setCustomerId(UUID customerId) { this.customerId = customerId; }
                 }
                 """);
         sources.put("eu/exeris/e2e/catalogue/caps/AuditModule.java", """

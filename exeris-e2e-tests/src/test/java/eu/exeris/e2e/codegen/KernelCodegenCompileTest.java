@@ -738,6 +738,135 @@ class KernelCodegenCompileTest {
                         annotation.startsWith("@GraphEdge") ? "\n@Graph(nodeClass = \"" + entity + "\")" : "");
     }
 
+    /**
+     * EXT-PROC-1034 from the other side: an entity declaring exactly the accessors the processor
+     * requires, and no other, passes the processor, and the main and test trees generated from it
+     * compile. A system column, an event payload, a graph edge with its weight, a graph property,
+     * a validated field, a server-set field and a primitive boolean each reach the code that calls
+     * their accessors; the {@code @Blob} field has its setter and no getter, and the constant and
+     * the transient field have neither. An emitter that calls an accessor the processor does not
+     * require fails here.
+     */
+    @Test
+    @DisplayName("EXT-PROC-1034: an entity with only the accessors the processor requires compiles, "
+            + "main and test trees")
+    void requiredAccessorsAreEnough(@TempDir Path workspace) throws IOException {
+        Path entityClasses = workspace.resolve("target/classes");
+        Path generatedMain = workspace.resolve("src/main/generated/java");
+        Path generatedTests = workspace.resolve("src/test/generated/java");
+        ProcessorCompiler.compile(workspace.resolve("src/main/java"), entityClasses, null, minimalAccessorCorpus());
+
+        CodegenPipeline pipeline = CodegenPipeline.createDefault();
+        Path metadataDir = entityClasses.resolve("exeris-metadata");
+        pipeline.run(metadataDir, generatedMain, "com.minimal");
+        pipeline.runTests(metadataDir, generatedTests, "com.minimal");
+
+        assertThat(Files.readString(generatedMain.resolve("com/minimal/handler/LedgerHandler.java")))
+                .as("non-vacuous: the handler resets the blob field and validates the title")
+                .contains("entity.setScan(null)")
+                .contains("entity.getTitle()");
+        assertThat(Files.readString(generatedMain.resolve("com/minimal/event/LedgerEventPublisher.java")))
+                .contains("entity.isActive()");
+        assertThat(Files.readString(generatedMain.resolve("com/minimal/graph/LedgerGraphSync.java")))
+                .contains("entity.getOwnerId()")
+                .contains("entity.getWeight()");
+
+        List<String> files = new ArrayList<>();
+        for (Path root : List.of(generatedMain, generatedTests)) {
+            try (Stream<Path> tree = Files.walk(root)) {
+                tree.filter(p -> p.toString().endsWith(".java")).map(Path::toString).sorted().forEach(files::add);
+            }
+        }
+        EmittedJavac.Result result = EmittedJavac.compile(files, workspace.resolve("target/app-classes"),
+                System.getProperty("java.class.path") + File.pathSeparator + entityClasses);
+        assertThat(result.clean())
+                .as("javac output:%n%s", result.render())
+                .isTrue();
+    }
+
+    private static Map<String, String> minimalAccessorCorpus() {
+        return Map.of("com/minimal/domain/Ledger.java", """
+                package com.minimal.domain;
+
+                import eu.exeris.kernel.spi.storage.blob.BlobRef;
+                import eu.exeris.sdk.annotation.Blob;
+                import eu.exeris.sdk.annotation.DomainEvent;
+                import eu.exeris.sdk.annotation.ExerisDomain;
+                import eu.exeris.sdk.annotation.Field;
+                import eu.exeris.sdk.annotation.Graph;
+                import eu.exeris.sdk.annotation.GraphEdge;
+                import eu.exeris.sdk.annotation.GraphProperty;
+                import eu.exeris.sdk.annotation.Validation;
+
+                import java.time.Instant;
+                import java.util.UUID;
+
+                @ExerisDomain(module = "minimal", path = "/ledgers", dataScope = ExerisDomain.DataScope.TENANT,
+                        audited = true, softDelete = true, versioned = true)
+                @DomainEvent(name = "LedgerOpened", trigger = DomainEvent.Trigger.CREATE, topic = "ledgers.opened",
+                        includeFields = {"title", "active"})
+                @Graph(nodeClass = "Ledger")
+                public class Ledger {
+
+                    public static final String KIND = "ledger";
+                    private transient String rendered;
+
+                    private UUID id;
+
+                    @Field(label = "Title", required = true)
+                    @Validation(maxLength = 64)
+                    @GraphProperty(indexed = true)
+                    private String title;
+
+                    @Field(label = "Reference", required = true, readOnly = true)
+                    private String reference;
+
+                    @Field(label = "Active")
+                    private boolean active;
+
+                    @Field(label = "Owner ID")
+                    @GraphEdge(type = "OWNED_BY", targetLabel = "Owner", weighted = true, weightField = "weight")
+                    private UUID ownerId;
+
+                    @Field(label = "Weight")
+                    private double weight;
+
+                    @Blob
+                    private BlobRef scan;
+
+                    private UUID tenantId;
+                    private Instant createdAt;
+                    private Instant updatedAt;
+                    private boolean deleted;
+                    private Long version;
+
+                    public UUID getId() { return id; }
+                    public void setId(UUID id) { this.id = id; }
+                    public String getTitle() { return title; }
+                    public void setTitle(String title) { this.title = title; }
+                    public String getReference() { return reference; }
+                    public void setReference(String reference) { this.reference = reference; }
+                    public boolean isActive() { return active; }
+                    public void setActive(boolean active) { this.active = active; }
+                    public UUID getOwnerId() { return ownerId; }
+                    public void setOwnerId(UUID ownerId) { this.ownerId = ownerId; }
+                    public double getWeight() { return weight; }
+                    public void setWeight(double weight) { this.weight = weight; }
+                    public void setScan(BlobRef scan) { this.scan = scan; }
+                    public UUID getTenantId() { return tenantId; }
+                    public void setTenantId(UUID tenantId) { this.tenantId = tenantId; }
+                    public Instant getCreatedAt() { return createdAt; }
+                    public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
+                    public Instant getUpdatedAt() { return updatedAt; }
+                    public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
+                    public boolean isDeleted() { return deleted; }
+                    public void setDeleted(boolean deleted) { this.deleted = deleted; }
+                    public Long getVersion() { return version; }
+                    public void setVersion(Long version) { this.version = version; }
+                }
+                """);
+    }
+
     @Test
     @DisplayName("J2a: an entity carrying @Graph, @GraphProperty and @UIGroup compiles end to end")
     void entityWithGraphPropertiesAndUiGroupsCompilesEndToEnd(@TempDir Path workspace) throws IOException {

@@ -247,6 +247,23 @@ public enum DiagnosticId {
     BLOB_FIELD_NOT_BLOB_REF("EXT-PROC-1032",
             "@Blob is declared on a field whose type is not eu.exeris.kernel.spi.storage.blob.BlobRef."),
 
+    /**
+     * An entity's package does not end in {@code .domain}. The generated application derives the
+     * packages of the entity's repository, service, handler and event types by replacing that
+     * suffix. Printed by the processor on the entity, and by the code-generation pipeline for
+     * metadata it is handed directly, before anything is written.
+     */
+    ENTITY_PACKAGE_NOT_DOMAIN("EXT-PROC-1033",
+            "An entity's package does not end in .domain."),
+
+    /**
+     * An {@code @ExerisDomain} entity lacks a public getter or setter that the generated
+     * application calls on it, such as the repository binding and reading a column or a handler
+     * resetting a server-owned property.
+     */
+    ENTITY_ACCESSOR_MISSING("EXT-PROC-1034",
+            "An @ExerisDomain entity lacks a public accessor the generated application calls."),
+
     // -----------------------------------------------------------------------
     // EXT-PROC-11xx — warnings on an ordinary build (javac WARNING)
     // -----------------------------------------------------------------------
