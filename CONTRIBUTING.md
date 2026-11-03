@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-14
+last-verified: 2026-11-03
 ---
 
 # Contributing to Exeris Tooling
@@ -38,9 +38,11 @@ Maven 3.9+ for Java modules; Node 18+ for `exeris-codegen-ts`.
 
 ### PostgreSQL suite
 
-The `@Tag("postgres")` classes in `exeris-e2e-tests` need a real PostgreSQL, because H2 implements no
-row-level security: the shared-scope access matrix, the field-type matrix, and the booted tenant-isolation
-test. The default build excludes the tag. The `e2e-postgres` profile selects it and nothing else, and
+The `@Tag("postgres")` classes in `exeris-e2e-tests` need a real PostgreSQL: H2 implements no
+row-level security, and reports a foreign-key violation with another SQL state and constraint-name case.
+They are the shared-scope access matrix, the field-type matrix, the booted tenant-isolation test and the
+booted foreign-key refusal test (422 for a missing referenced row, 409 for a delete of a referenced
+one). The default build excludes the tag. The `e2e-postgres` profile selects it and nothing else, and
 the `e2e-postgres` CI job runs it on JDK 25. Without `-Dexeris.e2e.postgres.url` the profile fails at
 `validate`, and a `postgres` class selected some other way fails rather than skipping.
 
@@ -55,9 +57,9 @@ docker stop exeris-e2e-pg
 ```
 
 The login must be allowed to create schemas and roles. Each class creates its own schema and drops
-it afterwards. `SharedScopePostgresE2ETest` and `TenantIsolationPostgresBootE2ETest` also create a
-`NOSUPERUSER NOBYPASSRLS` role to act as and drop it afterwards; `PostgresTypeMatrixE2ETest`
-creates no role.
+it afterwards. `SharedScopePostgresE2ETest`, `TenantIsolationPostgresBootE2ETest` and
+`ForeignKeyRefusalPostgresBootE2ETest` also create a `NOSUPERUSER NOBYPASSRLS` role to act as and drop
+it afterwards; `PostgresTypeMatrixE2ETest` creates no role.
 
 ### SDK examples gate
 
@@ -68,6 +70,8 @@ the build pins. It covers:
 - every scenario package at the tag is classified, so a new scenario fails the gate until it is added;
 - the domain scenarios (`graph`, `invoicing`, `ordering`, `presentation`) produce one metadata file per
   entity and per view;
+- every entity of the scenarios the Java application is generated from is served by an emitted
+  handler, service and repository;
 - the corpus as written is refused by the processor with exactly one `EXT-PROC-1033` per entity (no
   package ends in `.domain`) and `EXT-PROC-1034` naming each accessor the generated application calls
   (the entities declare none), and its metadata by the pipeline with `EXT-PROC-1033`, before anything
@@ -87,8 +91,11 @@ the build pins. It covers:
 
 The examples module is not published, so the test reads it from an `exeris-sdk` checkout:
 `-Dexeris.sdk.examples.dir` (or `EXERIS_SDK_EXAMPLES_DIR`) naming a checkout at the tag, else an
-`exeris-sdk` clone beside this repository that has the tag, exported with `git archive` whatever branch
-its working tree is on. With neither the class is skipped, except under `CI=true`, where it fails.
+`exeris-sdk` clone that has the tag, beside this repository or, from a checkout added with
+`git worktree`, beside the main checkout, exported with `git archive` whatever branch its working tree
+is on. A named directory that is not a checkout at the tag fails the class. With neither source the
+class is skipped, except under `CI=true`, where it fails. The tag is `v` followed by the version of
+the `exeris-sdk-annotations` jar on the test classpath.
 
 ```bash
 mvn -pl exeris-e2e-tests -am verify -Dexeris.sdk.examples.dir=/path/to/exeris-sdk
@@ -156,7 +163,8 @@ npm run check:version      # package.json and package-lock.json versions equal t
 ```
 
 `node scripts/gen-sample-app.mjs <dir>` writes the complete sample app that CI installs and builds
-with `ng build`; `--view-only` writes the backend-less variant. `EXERIS_UI_KIT_PATH` points the sample
+with `ng build`; `--view-only` writes the backend-less variant, and `--ssg` the backend-less variant
+under `render: 'ssg'` with a parameterised page. `EXERIS_UI_KIT_PATH` points the sample
 at a local `exeris-sdk-ui-kit` checkout instead of the published UI kit.
 
 The package version is the Maven reactor's version: one `vX.Y.Z` tag releases both, and
@@ -169,10 +177,14 @@ the pipeline's integrity:
 
 1. **Single target: Exeris kernel:** Spring, Quarkus, Micronaut, and Vanilla generators were removed
    in 0.1.0. Spring hosting belongs downstream in `exeris-spring-runtime`.
-2. **Build-time only processor:** `exeris-processor` depends strictly on `javax.lang.model`,
-   `exeris-sdk-source-model`, and standard JDK. Zero runtime dependencies.
-3. **DomainMetadata is the sole contract:** Generators consume JSON via `MetadataLoader`; they never
-   inspect compiler AST elements directly.
+2. **Build-time only processor:** `exeris-processor` runs inside `javac` and depends only on
+   `javax.lang.model`, the `com.sun.source` tree API (for the source digest), the SDK annotations and
+   source model, `exeris-diagnostics` and the JDK, with Jackson to write the metadata and
+   `@AutoService` to register itself. No runtime framework and no kernel runtime
+   ([policy](.agents/policies/processor-build-time-only.md)).
+3. **DomainMetadata is the sole contract:** Generators read the processor's JSON metadata into the SDK
+   `DomainMetadata` records (`CodegenPipeline.loadMetadata`, `MetadataLoader`); they never inspect
+   compiler AST elements directly.
 4. **Codegen determinism:** Identical input produces byte-identical output across runs and locales.
    No timestamps, random UUIDs, or uncontrolled iteration orders in emitted text.
 5. **Committed generated code:** Emitted code lands in `src/main/generated/` and supports the detachment
