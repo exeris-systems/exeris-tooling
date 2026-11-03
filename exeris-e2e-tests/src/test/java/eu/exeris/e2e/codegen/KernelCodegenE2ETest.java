@@ -157,7 +157,12 @@ class KernelCodegenE2ETest {
                     .contains("GraphNodeDescriptor.create(\"Order\", \"orders\")")
                     .contains("GraphEdgeDescriptor.create(\"Order\", \"OWNED_BY\", \"User\")")
                     .contains("session.upsertNode(NODE_LABEL, entity.getId(), null)")
-                    .contains("session.upsertEdge(OWNER_ID_EDGE, entity.getId(), entity.getOwnerId(), 1.0, null)");
+                    .contains("eu.exeris.kernel.spi.graph.model.GraphTraversal")
+                    .contains("removeStaleEdges(session, entity.getId(), ownerIdTargets, OWNER_ID_EDGE)")
+                    .contains("upsertEdges(session, OWNER_ID_EDGE, entity.getId(), ownerIdTargets, 1.0)")
+                    .contains("session.traverseBreadthFirst(GraphTraversal.create(sourceId, outgoing, 1))")
+                    .contains("session.deleteEdge(descriptor, sourceId, stored)")
+                    .contains("session.upsertEdge(edge, sourceId, target, weight, null)");
         }
 
         @Test

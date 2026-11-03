@@ -3,6 +3,7 @@ package eu.exeris.tooling.codegen.java.kernel;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphEdgeMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphPropertyMetadata;
@@ -68,8 +69,9 @@ class KernelGraphSyncGeneratorTest {
                 .contains("public void syncToGraph(Order entity)")
                 .contains("try (GraphSession session = graphEngine.openSession())")
                 .contains("session.upsertNode(NODE_LABEL, entity.getId(), null)")
-                .contains("if (entity.getOwnerId() != null)")
-                .contains("session.upsertEdge(OWNER_ID_EDGE, entity.getId(), entity.getOwnerId(), 1.0, null)")
+                .contains("Set<UUID> ownerIdTargets = targets(entity.getOwnerId());")
+                .contains("removeStaleEdges(session, entity.getId(), ownerIdTargets, OWNER_ID_EDGE);")
+                .contains("upsertEdges(session, OWNER_ID_EDGE, entity.getId(), ownerIdTargets, 1.0);")
                 .contains("public void deleteFromGraph(UUID entityId)")
                 .contains("session.deleteNode(NODE_LABEL, entityId)");
     }
@@ -138,12 +140,14 @@ class KernelGraphSyncGeneratorTest {
                         + "3.5, false, GraphEdgeDescriptor.Direction.OUTGOING, null)")
                 .contains("new GraphEdgeDescriptor(\"Article\", \"SIMILAR_TO\", \"Article\", "
                         + "1.0, true, GraphEdgeDescriptor.Direction.BOTH, null)")
-                .contains("session.upsertEdge(TOPIC_ID_EDGE, entity.getId(), entity.getTopicId(), "
-                        + "(entity.getScore() != null ? entity.getScore().doubleValue() : 1.0), null)")
-                .contains("session.upsertEdge(RELATED_REFERENCES_EDGE, entity.getId(), "
-                        + "entity.getRelatedId(), 3.5, null)")
-                .contains("session.upsertEdge(RELATED_SIMILAR_TO_EDGE, entity.getId(), "
-                        + "entity.getRelatedId(), 1.0, null)");
+                .contains("upsertEdges(session, TOPIC_ID_EDGE, entity.getId(), topicIdTargets, "
+                        + "(entity.getScore() != null ? entity.getScore().doubleValue() : 1.0));")
+                .contains("Set<UUID> relatedReferencesTargets = targets(entity.getRelatedId());")
+                .contains("upsertEdges(session, RELATED_REFERENCES_EDGE, entity.getId(), "
+                        + "relatedReferencesTargets, 3.5);")
+                .contains("Set<UUID> relatedSimilarToTargets = targets(entity.getRelatedId());")
+                .contains("upsertEdges(session, RELATED_SIMILAR_TO_EDGE, entity.getId(), "
+                        + "relatedSimilarToTargets, 1.0);");
     }
 
     @Test
@@ -178,5 +182,161 @@ class KernelGraphSyncGeneratorTest {
                 .contains("LoanedBuffer buffer = allocator.allocateNetwork(bytes.length)")
                 .contains("buffer.setSize(bytes.length)")
                 .doesNotContain("implements LoanedBuffer");
+    }
+
+    @Test
+    @DisplayName("a single edge is synchronised: stored targets read in one outgoing hop, stale ones deleted, "
+            + "the held one upserted")
+    void scalarEdgeIsSynchronised() {
+        String content = graphSync(entityWithEdges(
+                List.of(field("ownerId", "java.util.UUID")),
+                new GraphEdgeMetadata("ownerId", "User", "OWNED_BY", null,
+                        GraphEdgeMetadata.Direction.INCOMING, true, null, null, null, null, null)));
+
+        assertThat(content)
+                .contains("Set<UUID> ownerIdTargets = targets(entity.getOwnerId());")
+                .contains("removeStaleEdges(session, entity.getId(), ownerIdTargets, OWNER_ID_EDGE);")
+                .contains("upsertEdges(session, OWNER_ID_EDGE, entity.getId(), ownerIdTargets, 1.0);")
+                .contains("private static Set<UUID> targets(UUID target) {")
+                .contains("GraphEdgeDescriptor outgoing = new GraphEdgeDescriptor(edge.sourceNode(), "
+                        + "edge.edgeType(), edge.targetNode(),\n"
+                        + "                edge.weight(), false, GraphEdgeDescriptor.Direction.OUTGOING, "
+                        + "edge.tableName());")
+                .contains("session.traverseBreadthFirst(GraphTraversal.create(sourceId, outgoing, 1))")
+                .contains("if (!kept.contains(stored)) {")
+                .contains("session.deleteEdge(descriptor, sourceId, stored);")
+                .contains("session.upsertEdge(edge, sourceId, target, weight, null);")
+                .doesNotContain("targets(List<UUID> keys)")
+                .doesNotContain("union(")
+                .doesNotContain("if (entity.getOwnerId() != null)");
+        assertThat(content.indexOf("removeStaleEdges(session, entity.getId()"))
+                .as("stale edges are deleted before the held ones are upserted")
+                .isLessThan(content.indexOf("upsertEdges(session, OWNER_ID_EDGE"));
+    }
+
+    @Test
+    @DisplayName("a List<UUID> edge upserts one edge per distinct non-null key, all with the edge's one weight")
+    void collectionEdgeIsSynchronised() {
+        String content = graphSync(entityWithEdges(
+                List.of(field("relatedIds", "java.util.List<java.util.UUID>"), field("score", "double")),
+                new GraphEdgeMetadata("relatedIds", "Product", "RELATED_TO", null,
+                        null, null, null, null, true, "score", null)));
+
+        assertThat(content)
+                .contains("Set<UUID> relatedIdsTargets = targets(entity.getRelatedIds());")
+                .contains("removeStaleEdges(session, entity.getId(), relatedIdsTargets, RELATED_IDS_EDGE);")
+                .contains("upsertEdges(session, RELATED_IDS_EDGE, entity.getId(), relatedIdsTargets, "
+                        + "entity.getScore());")
+                .contains("private static Set<UUID> targets(List<UUID> keys) {")
+                .contains("Set<UUID> targets = new LinkedHashSet<>();")
+                .contains("if (key != null) {")
+                .doesNotContain("targets(UUID target)")
+                .doesNotContain("session.upsertEdge(RELATED_IDS_EDGE");
+    }
+
+    @Test
+    @DisplayName("edges sharing a relation type are synchronised together, so one's target is not stale for another")
+    void edgesSharingARelationTypeAreSynchronisedTogether() {
+        String content = graphSync(entityWithEdges(
+                List.of(field("primaryTagId", "UUID"), field("tagIds", "List<UUID>"), field("ownerId", "UUID")),
+                new GraphEdgeMetadata("primaryTagId", "Tag", "TAGGED"),
+                new GraphEdgeMetadata("ownerId", "User", "OWNED_BY"),
+                new GraphEdgeMetadata("tagIds", "Tag", "TAGGED")));
+
+        assertThat(content)
+                .contains("Set<UUID> primaryTagIdTargets = targets(entity.getPrimaryTagId());\n"
+                        + "            Set<UUID> tagIdsTargets = targets(entity.getTagIds());\n"
+                        + "            removeStaleEdges(session, entity.getId(), union(primaryTagIdTargets, "
+                        + "tagIdsTargets), PRIMARY_TAG_ID_EDGE, TAG_IDS_EDGE);\n"
+                        + "            upsertEdges(session, PRIMARY_TAG_ID_EDGE, entity.getId(), "
+                        + "primaryTagIdTargets, 1.0);\n"
+                        + "            upsertEdges(session, TAG_IDS_EDGE, entity.getId(), tagIdsTargets, 1.0);\n"
+                        + "            Set<UUID> ownerIdTargets = targets(entity.getOwnerId());")
+                .contains("@SafeVarargs")
+                .contains("private static Set<UUID> union(Set<UUID>... targetSets) {")
+                .contains("private static Set<UUID> targets(UUID target) {")
+                .contains("private static Set<UUID> targets(List<UUID> keys) {");
+    }
+
+    @Test
+    @DisplayName("deleteFromGraph deletes the node, whose edges the SPI deletes with it")
+    void deleteRemovesTheNodeOnly() {
+        String content = graphSync(entityWithEdges(
+                List.of(field("relatedIds", "List<UUID>")),
+                new GraphEdgeMetadata("relatedIds", "Product", "RELATED_TO")));
+
+        String delete = content.substring(content.indexOf("public void deleteFromGraph(UUID entityId)"));
+        delete = delete.substring(0, delete.indexOf("\n    }\n"));
+        assertThat(delete)
+                .contains("session.deleteNode(NODE_LABEL, entityId);")
+                .doesNotContain("deleteEdge")
+                .doesNotContain("traverseBreadthFirst");
+    }
+
+    @Test
+    @DisplayName("EXT-GEN-3003: a List of entities on a @GraphEdge is refused, naming List<UUID> <field>Ids")
+    void collectionOfEntitiesIsRefused() {
+        DomainMetadata product = entityWithEdges(
+                List.of(field("related", "java.util.List<com.example.domain.Product>")),
+                new GraphEdgeMetadata("related", "Product", "RELATED_TO"));
+
+        assertThatThrownBy(() -> strategy.generate(product))
+                .isInstanceOfSatisfying(UnpersistableFieldTypeException.class, e -> assertThat(e.fields())
+                        .containsExactly("com.example.domain.Product.related : java.util.List<com.example.domain"
+                                + ".Product> (a collection graph edge to the entity Product, which no edge stores;"
+                                + " hold the targets' keys instead: List<UUID> relatedIds)"))
+                .hasMessageStartingWith("[Exeris] EXT-GEN-3003: ")
+                .hasMessageContaining("A @GraphEdge field holds its target's UUID key, or a List<UUID> of keys");
+    }
+
+    @Test
+    @DisplayName("EXT-GEN-3003: a @GraphEdge on a List of non-keys or on a non-UUID scalar is refused")
+    void nonKeyEdgeFieldsAreRefused() {
+        DomainMetadata product = entityWithEdges(
+                List.of(field("labels", "List<String>"), field("code", "String")),
+                new GraphEdgeMetadata("labels", "Label", "LABELLED"),
+                new GraphEdgeMetadata("codeLinked", "Code", "LINKED", "code",
+                        null, null, null, null, null, null, null),
+                new GraphEdgeMetadata("codeMirrored", "Code", "MIRRORED", "code",
+                        null, null, null, null, null, null, null));
+
+        assertThatThrownBy(() -> strategy.generate(product))
+                .isInstanceOfSatisfying(UnpersistableFieldTypeException.class, e -> assertThat(e.fields())
+                        .containsExactlyInAnyOrder(
+                                "com.example.domain.Product.labels : List<String> (a collection graph edge holds"
+                                        + " its targets' keys: List<UUID> labels)",
+                                "com.example.domain.Product.code : String (a graph edge holds its target's key:"
+                                        + " UUID code)"));
+    }
+
+    @Test
+    @DisplayName("an entity without edges emits no edge-sync helper")
+    void noEdgesNoHelpers() {
+        String content = graphSync(entityWithEdges(List.of(field("title", "String"))));
+
+        assertThat(content)
+                .doesNotContain("removeStaleEdges")
+                .doesNotContain("upsertEdges")
+                .doesNotContain("targets(")
+                .doesNotContain("GraphTraversal");
+    }
+
+    private String graphSync(DomainMetadata metadata) {
+        return strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.GRAPH_SYNC)
+                .findFirst()
+                .orElseThrow()
+                .content();
+    }
+
+    private static DomainMetadata entityWithEdges(List<FieldMetadata> fields, GraphEdgeMetadata... edges) {
+        return DomainMetadata.builder("Product", "com.example.domain")
+                .fields(fields)
+                .graphMetadata(new GraphMetadata("Product", List.of(), List.of(edges), List.of()))
+                .build();
+    }
+
+    private static FieldMetadata field(String name, String type) {
+        return FieldMetadata.builder(name, type).build();
     }
 }

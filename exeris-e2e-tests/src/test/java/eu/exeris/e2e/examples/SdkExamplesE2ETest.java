@@ -68,9 +68,10 @@ import static org.assertj.core.api.Assertions.fail;
  * two refusals and writes the metadata the refused run writes.
  *
  * <p>The processor reads every domain scenario, and the frontend half generates from all of that
- * metadata. The Java pipeline refuses a field typed as another entity (EXT-GEN-3003), which the
- * {@code graph} and {@code invoicing} scenarios declare, so that refusal is asserted on the whole
- * corpus and the Java application is generated from the remaining scenarios.
+ * metadata. The Java pipeline refuses a field typed as another entity, or a {@code @GraphEdge} on a
+ * {@code List} of entities (EXT-GEN-3003), which the {@code graph} and {@code invoicing} scenarios
+ * declare, so that refusal is asserted on the whole corpus and the Java application is generated
+ * from the remaining scenarios.
  *
  * <p>The metadata of the generated application stays at
  * {@code target/sdk-examples/app/target/classes/exeris-metadata} for the frontend half,
@@ -297,7 +298,8 @@ class SdkExamplesE2ETest {
     }
 
     @Test
-    @DisplayName("the Java pipeline refuses the corpus's fields typed as another entity (EXT-GEN-3003)")
+    @DisplayName("the Java pipeline refuses the corpus's fields typed as another entity or a List of entities "
+            + "on a @GraphEdge (EXT-GEN-3003)")
     void entityTypedReferencesAreRefused() {
         Path generatedMain = scratch.resolve("references/src/main/generated/java");
         assertThatThrownBy(() -> CodegenPipeline.createDefault().run(metadata, generatedMain, BASE_PACKAGE))
@@ -306,7 +308,8 @@ class SdkExamplesE2ETest {
                         .containsExactlyInAnyOrder(
                                 "eu.exeris.sdk.examples.invoicing.domain.Invoice.customer",
                                 "eu.exeris.sdk.examples.invoicing.domain.InvoiceLine.invoice",
-                                "eu.exeris.sdk.examples.graph.domain.Product.category"))
+                                "eu.exeris.sdk.examples.graph.domain.Product.category",
+                                "eu.exeris.sdk.examples.graph.domain.Product.related"))
                 .hasMessageStartingWith("[Exeris] EXT-GEN-3003: ");
         assertThat(generatedMain).doesNotExist();
     }

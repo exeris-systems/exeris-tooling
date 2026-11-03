@@ -12,7 +12,9 @@ import java.util.List;
  * {@code PersistenceStatement} bind and read through a {@code RowCursor} accessor. A type with
  * neither a typed SPI accessor nor a string round-trip the repository can emit has no column
  * encoding, and emitting one anyway produces a repository that does not compile, or a generator
- * that fails without naming the field. The message is already formatted with the identifier, so a
+ * that fails without naming the field. A {@code @GraphEdge} field is refused the same way when the
+ * graph sync cannot write it: an edge targets a node by its {@code UUID} key, so the field is a
+ * {@code UUID} or a {@code List<UUID>}. The message is already formatted with the identifier, so a
  * caller prints it unchanged.
  *
  * @since 0.9
@@ -55,6 +57,7 @@ public final class UnpersistableFieldTypeException extends RuntimeException {
                 + "Double, BigDecimal, Instant, LocalDateTime, OffsetDateTime, ZonedDateTime, LocalDate, "
                 + "or an enum); use BigDecimal in place of BigInteger, a String or one of these for a "
                 + "time of day, a duration or any other value type, and the referenced entity's UUID key "
-                + "in place of a reference to another entity.";
+                + "in place of a reference to another entity. A @GraphEdge field holds its target's UUID "
+                + "key, or a List<UUID> of keys for a collection edge.";
     }
 }

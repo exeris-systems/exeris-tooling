@@ -4,6 +4,8 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.Artifact
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.GraphEdgeMetadata;
+import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
 import org.junit.jupiter.api.BeforeEach;
@@ -833,6 +835,35 @@ class KernelRepositoryGeneratorTest {
                 .contains("public class CustomerRepository");
         assertThat(generator.generateMultiple(category, build).get(0).content())
                 .isEqualTo(generator.generate(category).content());
+    }
+
+    @Test
+    @DisplayName("EXT-GEN-3003: a @GraphEdge on a List of another entity of the build is refused before any "
+            + "write; a List<UUID> edge is not, and an entity-typed edge field is reported once")
+    void graphEdgeOnEntityListIsRefused() {
+        DomainMetadata category = DomainMetadata.builder("Category", "com.example.domain")
+                .fields(List.of(FieldMetadata.builder("name", "java.lang.String").build())).build();
+        DomainMetadata product = DomainMetadata.builder("Product", "com.example.domain")
+                .fields(List.of(
+                        FieldMetadata.builder("category", "com.example.domain.Category").build(),
+                        FieldMetadata.builder("related", "java.util.List<com.example.domain.Category>").build(),
+                        FieldMetadata.builder("relatedIds", "java.util.List<java.util.UUID>").build()))
+                .graphMetadata(new GraphMetadata("Product", List.of(), List.of(
+                        new GraphEdgeMetadata("category", "Category", "BELONGS_TO"),
+                        new GraphEdgeMetadata("related", "Category", "RELATED_TO"),
+                        new GraphEdgeMetadata("relatedIds", "Category", "RELATED_TO")), List.of()))
+                .build();
+
+        assertThatThrownBy(() -> KernelRepositoryGenerator.requirePersistableFields(List.of(category, product)))
+                .isInstanceOfSatisfying(UnpersistableFieldTypeException.class, e -> assertThat(e.fields())
+                        .containsExactly(
+                                "com.example.domain.Product.category : com.example.domain.Category (a reference"
+                                        + " to the entity Category, which no column stores; hold its key instead:"
+                                        + " UUID categoryId, with @Relationship(targetEntity = Category.class)"
+                                        + " for a foreign key)",
+                                "com.example.domain.Product.related : java.util.List<com.example.domain.Category>"
+                                        + " (a collection graph edge to the entity Category, which no edge stores;"
+                                        + " hold the targets' keys instead: List<UUID> relatedIds)"));
     }
 
     @Test

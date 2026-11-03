@@ -10,5 +10,11 @@
     "since": "0.11",
     "adr": "ADR-095",
     "justification": "The generated kernel application places its infrastructure beside a .domain package and binds entity state through accessors. Without either, generation threw an exception after a partial write or the generated code failed in javac. Both are now stable build-time refusals on the source element. A build that only produces metadata for something other than kernel generation sets -Aexeris.metadataOnly=true; docs/migration/0.11.0/java-21-entity-layout-and-accessors-refused.md carries the steps."
+  },
+  {
+    "signature": "<Entity>GraphSync (exeris-codegen-java): syncToGraph reads the stored targets of each relation type in one outgoing traverseBreadthFirst hop, deletes those the entity no longer holds and upserts the held ones; + List<UUID> @GraphEdge, one edge per distinct key; EXT-GEN-3003 on a @GraphEdge field that is neither UUID nor List<UUID>",
+    "since": "0.11",
+    "adr": "ADR-015",
+    "justification": "The graph sync only upserted, so an updated or cleared edge field left the edge to the old target in place, and a collection edge emitted a single upsert that did not compile. Each edge is now synchronised against what the graph stores, a collection edge holds its targets' UUID keys as a scalar edge does, and a List of entities on a @GraphEdge is refused before any write with the List<UUID> to hold instead. docs/migration/0.11.0/java-24-graph-collection-edges.md carries the steps."
   }
 ]
