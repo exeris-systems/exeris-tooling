@@ -23,6 +23,7 @@
  */
 
 import type { DomainMetadata } from '../models/domain-model.js';
+import type { RouteRequirementRow } from './route-requirements.js';
 
 /** The HTTP client entry point. Every emitter that reaches the kernel application imports it. */
 const HTTP_CLIENT_MODULE = '@angular/common/http';
@@ -52,6 +53,11 @@ export interface ScaffoldNeeds {
    * `provideHttpClient(withInterceptors([authInterceptor]))`; absent or false, it registers none.
    */
   readonly authInterceptor?: boolean;
+  /**
+   * The access each generated route demands (ADR-105). `app.routes.ts` guards an entity page by the
+   * row of the backend route the page calls first; absent or empty, no page has a guard.
+   */
+  readonly routeRequirements?: readonly RouteRequirementRow[];
 }
 
 /**

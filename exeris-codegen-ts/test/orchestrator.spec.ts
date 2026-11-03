@@ -730,3 +730,61 @@ describe('buildGeneratedFiles — types resolved against the app\'s entities and
     expect(at(files, 'src/app/components/order-form.component.ts')).not.toContain('form.customer');
   });
 });
+
+describe('buildGeneratedFiles — declared route access guards pages and live views (ADR-105)', () => {
+  const GUARDS = 'src/app/core/route-guards.ts';
+  const ROUTES = 'src/app/app.routes.ts';
+  const contentAt = (files: { path: string; content: string }[], path: string): string => {
+    const file = files.find((f) => f.path === path);
+    expect(file, path).toBeDefined();
+    return file!.content;
+  };
+  const shop = (access: { order?: Partial<DomainMetadata>; invoice?: Partial<DomainMetadata> } = {}): DomainMetadata[] => [
+    domain({
+      entityName: 'Order',
+      realTimeApi: true,
+      fields: [{ name: 'id', type: 'java.util.UUID' }],
+      actions: [{ name: 'track', methodName: 'track', streaming: true }],
+      ...access.order,
+    }),
+    domain({ entityName: 'Invoice', realTimeApi: true, fields: [{ name: 'id', type: 'java.util.UUID' }], ...access.invoice }),
+  ];
+  const undeclared = buildGeneratedFiles(shop(), [], { ...DEFAULT_CONFIG, generateTests: true });
+
+  it('emits the route guards beside the interceptor, guards the pages and streams the live view with the token', () => {
+    const files = buildGeneratedFiles(shop({ order: { permissions: ['order:read'] }, invoice: { routeAccess: 'AUTHENTICATED' } }), [], DEFAULT_CONFIG);
+    const guards = files.find((f) => f.path === GUARDS);
+    expect(guards?.overwritable).toBe(true);
+    expect(contentAt(files, ROUTES)).toContain("canActivate: [requireAnyPermission('order:read')]");
+    expect(contentAt(files, ROUTES)).toContain('canActivate: [requireAuthenticated]');
+    expect(contentAt(files, 'src/app/services/order.stream.ts')).toContain('private readonly auth = inject(AuthService);');
+    expect(contentAt(files, 'src/app/services/invoice.stream.ts')).toContain('private readonly auth = inject(AuthService);');
+    expect(contentAt(files, 'src/app/services/order.action-streams.ts')).toContain('private readonly auth = inject(AuthService);');
+    expect(files.map((f) => f.path)).toEqual(expect.arrayContaining(['src/app/core/auth.service.ts', 'src/app/core/auth.interceptor.ts']));
+  });
+
+  it('streams only the live view whose entity demands identity with fetch', () => {
+    const files = buildGeneratedFiles(shop({ invoice: { routeAccess: 'AUTHENTICATED' } }), [], DEFAULT_CONFIG);
+    expect(contentAt(files, 'src/app/services/invoice.stream.ts')).not.toContain('EventSource(');
+    expect(contentAt(files, 'src/app/services/order.stream.ts')).toBe(contentAt(undeclared, 'src/app/services/order.stream.ts'));
+  });
+
+  it('emits every file byte-identically when no access is declared, or only PUBLIC access', () => {
+    expect(undeclared.map((f) => f.path)).not.toContain(GUARDS);
+    for (const file of undeclared) {
+      expect(file.content, file.path).not.toContain('canActivate');
+      expect(file.content, file.path).not.toContain('route-guards');
+      expect(file.content, file.path).not.toContain('inject(AuthService)');
+    }
+    const config = { ...DEFAULT_CONFIG, generateTests: true };
+    expect(buildGeneratedFiles(shop(), [], config, [], [], [])).toEqual(undeclared);
+    const open = shop({ order: { routeAccess: 'PUBLIC' }, invoice: { routeAccess: 'PUBLIC' } });
+    expect(buildGeneratedFiles(open, [], config)).toEqual(undeclared);
+  });
+
+  it('with the scaffold off, writes the guards at the tree root and no app.routes.ts', () => {
+    const files = buildGeneratedFiles(shop({ invoice: { routeAccess: 'AUTHENTICATED' } }), [], { ...DEFAULT_CONFIG, scaffold: false });
+    expect(files.map((f) => f.path)).toContain('core/route-guards.ts');
+    expect(files.map((f) => f.path)).not.toContain(ROUTES);
+  });
+});

@@ -35,6 +35,13 @@
  * a source the browser has given up on (`readyState === CLOSED`) errors the
  * Observable.
  *
+ * Transport (ADR-105): the kernel reads identity from an `Authorization: Bearer` header only, and a
+ * native `EventSource` cannot send one. A stream route whose requirement row demands identity is
+ * therefore opened with `fetch` instead, carrying `AuthService.token()`, and parsed by the reader
+ * the per-action stream clients share (`sse-fetch-lines.ts`). The class, its members and their
+ * types are the same either way, and so are the named-event, `stream-error`, reconnect and
+ * teardown rules above. A public or undeclared stream route keeps `EventSource`.
+ *
  * Deterministic: no timestamps / UUIDs / random — same `DomainMetadata`
  * yields byte-identical output; event names keep declaration order.
  */
@@ -49,6 +56,8 @@ import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/
 import type { BackendType } from '../../core/backend-strategy.js';
 import { fileHeaderLines } from '../file-header.js';
 import { mapScopedType, typeOnlyImports, typeScopeOf, type TypeScope } from '../../core/type-references.js';
+import { deriveRouteRequirements, requirementFor, requiresIdentity } from '../../core/route-requirements.js';
+import { bearerHeaderLines, ssePumpLines } from './sse-fetch-lines.js';
 
 export { GeneratedFile };
 
@@ -239,6 +248,9 @@ export class StreamClientGenerator implements CodeGenerator {
     const streamUrl = this.streamUrl(domain, context);
     const spectateTemplate = streamUrl.replace(/\/stream$/, '/${encodeURIComponent(id)}/stream');
     const eventNames = this.streamEventNames(domain);
+    const rows = context.routeRequirements ?? deriveRouteRequirements(context.allDomains);
+    const fetchLive = requiresIdentity(requirementFor(rows, entityName, 'GET', '{base}/stream'));
+    const fetchSpectate = requiresIdentity(requirementFor(rows, entityName, 'GET', '{base}/{id}/stream'));
     const lines: string[] = [];
 
     lines.push(
@@ -248,8 +260,7 @@ export class StreamClientGenerator implements CodeGenerator {
         notes: [
           '',
           `Parity twin of the kernel ${entityName}StreamHandler, registered at`,
-          `GET ${streamUrl} via the router's streamRoute(...). Uses the native`,
-          'EventSource (GET-only, no custom headers — auth via cookie/session).',
+          ...this.transportNotes(streamUrl, fetchLive, fetchSpectate),
         ],
       }),
     );
@@ -257,8 +268,14 @@ export class StreamClientGenerator implements CodeGenerator {
     const scope = typeScopeOf(context);
     const payloadTypes: string[] = [];
     const spectateTypes = this.renderSpectateTypes(domain, scope, payloadTypes);
-    lines.push(`import { Injectable } from '@angular/core';`);
-    lines.push(`import { Observable } from 'rxjs';`);
+    if (fetchLive || fetchSpectate) {
+      lines.push(`import { Injectable, inject } from '@angular/core';`);
+      lines.push(`import { Observable } from 'rxjs';`);
+      lines.push(`import { AuthService } from '../core/auth.service';`);
+    } else {
+      lines.push(`import { Injectable } from '@angular/core';`);
+      lines.push(`import { Observable } from 'rxjs';`);
+    }
     // The enums and entities the spectate payloads name.
     lines.push(...typeOnlyImports(payloadTypes, scope, '../types'));
     lines.push(``);
@@ -281,6 +298,39 @@ export class StreamClientGenerator implements CodeGenerator {
     lines.push(`    return \`${spectateTemplate}\`;`);
     lines.push(`  }`);
     lines.push(``);
+    if (fetchLive || fetchSpectate) lines.push(...this.renderConnect(entityName));
+    lines.push(...(fetchLive ? this.renderFetchLiveView(entityName) : this.renderEventSourceLiveView(entityName)));
+    lines.push(...(fetchSpectate
+      ? this.renderFetchSpectate(entityName, spectateTemplate)
+      : this.renderEventSourceSpectate(entityName, spectateTemplate)));
+    lines.push(`}`);
+    lines.push(``);
+
+    return lines.join('\n');
+  }
+
+  /**
+   * The header lines naming the transport. A native `EventSource` cannot send the bearer header,
+   * so a stream route that demands an identity is opened with fetch.
+   */
+  private transportNotes(streamUrl: string, fetchLive: boolean, fetchSpectate: boolean): string[] {
+    const registered = `GET ${streamUrl} via the router's streamRoute(...).`;
+    if (fetchLive && fetchSpectate) {
+      return [`${registered} Both stream routes`, 'demand an identity, so both are opened with fetch and the bearer token.'];
+    }
+    if (fetchLive || fetchSpectate) {
+      return [
+        `${registered} Uses the native`,
+        'EventSource where a stream route needs no identity, and fetch with the',
+        'bearer token where it does.',
+      ];
+    }
+    return [`${registered} Uses the native`, 'EventSource (GET-only, no custom headers — auth via cookie/session).'];
+  }
+
+  /** `stream()` over a native `EventSource`, for a live view that needs no identity. */
+  private renderEventSourceLiveView(entityName: string): string[] {
+    const lines: string[] = [];
     lines.push(`  /**`);
     lines.push(`   * Opens the ${entityName} live-view SSE stream and surfaces each domain event`);
     lines.push(`   * as a MessageEvent: \`type\` is the event name (one of STREAM_EVENT_TYPES),`);
@@ -307,6 +357,12 @@ export class StreamClientGenerator implements CodeGenerator {
     lines.push(`    });`);
     lines.push(`  }`);
     lines.push(``);
+    return lines;
+  }
+
+  /** `spectate(id)` over a native `EventSource`, for a spectate route that needs no identity. */
+  private renderEventSourceSpectate(entityName: string, spectateTemplate: string): string[] {
+    const lines: string[] = [];
     lines.push(`  /**`);
     lines.push(`   * Opens the SSE stream of one ${entityName} row, \`GET ${spectateTemplate.replace('${encodeURIComponent(id)}', '{id}')}\`,`);
     lines.push(`   * and surfaces each of its domain events as a frame: \`event\` is the @DomainEvent name`);
@@ -345,10 +401,145 @@ export class StreamClientGenerator implements CodeGenerator {
     lines.push(`      return () => source.close();`);
     lines.push(`    });`);
     lines.push(`  }`);
-    lines.push(`}`);
-    lines.push(``);
+    return lines;
+  }
 
-    return lines.join('\n');
+  /**
+   * The private `connect` both fetch-based methods open their route with, and the reconnect delay
+   * it waits. It reconnects where an `EventSource` would and gives up where one would.
+   */
+  private renderConnect(entityName: string): string[] {
+    return [
+      `  /** The wait before a stream the server ended, or whose connection failed, is opened again. */`,
+      `  static readonly RECONNECT_DELAY_MS = 3000;`,
+      ``,
+      `  private readonly auth = inject(AuthService);`,
+      ``,
+      `  /**`,
+      `   * Opens \`url\` with fetch, sending the signed-in user's token as \`Authorization: Bearer\`,`,
+      `   * which an EventSource cannot send, and hands each frame to \`onFrame\`. A stream the server`,
+      `   * ends, or a connection that fails, is opened again after RECONNECT_DELAY_MS with the token`,
+      `   * held then, as an EventSource reconnects. A response that is not a 2xx stream calls \`fail\``,
+      `   * and is not retried, as an EventSource gives up on it. \`onFrame\` returns false to close`,
+      `   * the stream for good. The teardown returned aborts the fetch and cancels a pending`,
+      `   * reconnect.`,
+      `   */`,
+      `  private connect(`,
+      `    url: string,`,
+      `    onFrame: (frame: { event: string; data: string }) => boolean,`,
+      `    fail: () => void,`,
+      `  ): () => void {`,
+      `    let closed = false;`,
+      `    let controller = new AbortController();`,
+      `    let retry: ReturnType<typeof setTimeout> | undefined;`,
+      `    const reopen = (): void => {`,
+      `      if (!closed) {`,
+      `        retry = setTimeout(open, ${entityName}StreamClient.RECONNECT_DELAY_MS);`,
+      `      }`,
+      `    };`,
+      `    const open = (): void => {`,
+      `      controller = new AbortController();`,
+      ...bearerHeaderLines('      '),
+      `      fetch(url, { credentials: 'include', headers, signal: controller.signal })`,
+      `        .then((response) => {`,
+      `          if (!response.ok || !response.body) {`,
+      `            closed = true;`,
+      `            fail();`,
+      `            return;`,
+      `          }`,
+      ...ssePumpLines('          ', {
+        onDone: ['reopen();'],
+        onFrame: [
+          `if (!onFrame({ event, data: dataLines.join('\\n') })) {`,
+          `  closed = true;`,
+          `  controller.abort();`,
+          `  return;`,
+          `}`,
+        ],
+      }),
+      `          pump().catch(reopen);`,
+      `        })`,
+      `        .catch(reopen);`,
+      `    };`,
+      `    open();`,
+      `    return () => {`,
+      `      closed = true;`,
+      `      clearTimeout(retry);`,
+      `      controller.abort();`,
+      `    };`,
+      `  }`,
+      ``,
+    ];
+  }
+
+  /** `stream()` over `connect`, for a live view whose route demands identity. */
+  private renderFetchLiveView(entityName: string): string[] {
+    return [
+      `  /**`,
+      `   * Opens the ${entityName} live-view SSE stream with the bearer token and surfaces each`,
+      `   * domain event as a MessageEvent: \`type\` is the event name (one of STREAM_EVENT_TYPES),`,
+      `   * \`data\` the payload JSON. A frame of any other name, the 'keep-alive' heartbeat`,
+      `   * included, is not delivered. The stream is opened again when the server closes it; the`,
+      `   * Observable errors only when a response is refused. The fetch is aborted when the`,
+      `   * subscription is torn down.`,
+      `   */`,
+      `  stream(): Observable<MessageEvent<string>> {`,
+      `    return new Observable<MessageEvent<string>>((subscriber) =>`,
+      `      this.connect(`,
+      `        this.streamUrl,`,
+      `        (frame) => {`,
+      `          if (${entityName}StreamClient.STREAM_EVENT_TYPES.includes(frame.event)) {`,
+      `            subscriber.next(new MessageEvent<string>(frame.event, { data: frame.data }));`,
+      `          }`,
+      `          return true;`,
+      `        },`,
+      `        () => subscriber.error(new Error(\`${entityName} stream closed: \${this.streamUrl}\`)),`,
+      `      ),`,
+      `    );`,
+      `  }`,
+      ``,
+    ];
+  }
+
+  /** `spectate(id)` over `connect`, for a spectate route that demands identity. */
+  private renderFetchSpectate(entityName: string, spectateTemplate: string): string[] {
+    return [
+      `  /**`,
+      `   * Opens the SSE stream of one ${entityName} row, \`GET ${spectateTemplate.replace('${encodeURIComponent(id)}', '{id}')}\`,`,
+      `   * with the bearer token, and surfaces each of its domain events as a frame: \`event\` is the`,
+      `   * @DomainEvent name and \`data\` the payload parsed from the frame's JSON. The 'keep-alive'`,
+      `   * heartbeat is dropped. A 'stream-error' frame closes the stream and errors the Observable`,
+      `   * with a ${entityName}SpectateError, so it is not reopened into the same refusal; so does a`,
+      `   * refused response. The stream has no end of its own: it is opened again when the server`,
+      `   * closes it, and runs until the subscription is torn down, which aborts the fetch.`,
+      `   */`,
+      `  spectate(id: string): Observable<${entityName}SpectateFrame> {`,
+      `    return new Observable<${entityName}SpectateFrame>((subscriber) =>`,
+      `      this.connect(`,
+      `        this.spectateUrl(id),`,
+      `        (frame) => {`,
+      `          if (frame.event === 'stream-error') {`,
+      `            subscriber.error(${entityName}SpectateError.fromFrame(frame.data));`,
+      `            return false;`,
+      `          }`,
+      `          if (!${entityName}StreamClient.STREAM_EVENT_TYPES.includes(frame.event)) {`,
+      `            return true;`,
+      `          }`,
+      `          let data: unknown;`,
+      `          try {`,
+      `            data = JSON.parse(frame.data);`,
+      `          } catch (err) {`,
+      `            subscriber.error(err);`,
+      `            return false;`,
+      `          }`,
+      `          subscriber.next({ event: frame.event, data } as ${entityName}SpectateFrame);`,
+      `          return true;`,
+      `        },`,
+      `        () => subscriber.error(new Error(\`${entityName} spectate stream closed: \${this.spectateUrl(id)}\`)),`,
+      `      ),`,
+      `    );`,
+      `  }`,
+    ];
   }
 }
 

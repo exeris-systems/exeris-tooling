@@ -27,7 +27,7 @@ import { generateSchemaSpec, generateServiceSpec, generateStoreSpec, generateFor
 import { generateSaga } from './generators/angular/saga-gen.js';
 import { generateStore } from './generators/angular/store-gen.js';
 import { generateAppBarrel, generateAppStructure, RETIRED_SCAFFOLD_SEED_PATHS, SCAFFOLD_SEED_PATHS } from './generators/angular/app-structure-gen.js';
-import { AUTH_SERVICE_PATH, GuardGenerator } from './generators/angular/guard-gen.js';
+import { AUTH_SERVICE_PATH, GuardGenerator, generateRouteGuards } from './generators/angular/guard-gen.js';
 import { generateAuthInterceptor } from './generators/angular/auth-interceptor-gen.js';
 import { generateViewRoutesAggregate, generateViewServerRoutesAggregate } from './generators/angular/view-routes-gen.js';
 import { generateView, generateViewRoute } from './generators/angular/view-gen.js';
@@ -89,8 +89,10 @@ export { generateEnumTypes, type EnumMetadataForGen } from './generators/api/enu
  *
  * `routeRequirements` is the access each generated route demands (ADR-105), in the row shape of
  * `contract/route-policy.json`; it defaults to the rows the metadata declares. When some row
- * demands identity the tree carries the bearer interceptor and the auth service it reads the token
- * from, and `app.config.ts` registers the interceptor; otherwise none of the three is emitted.
+ * demands identity the tree carries the bearer interceptor, the route guards and the auth service
+ * both read, `app.config.ts` registers the interceptor and `app.routes.ts` guards each page by the
+ * row of the route it calls first; otherwise none of the three files is emitted. The same rows pick
+ * the transport of each live-view stream client.
  */
 export function buildGeneratedFiles(
   declaredDomains: DomainMetadata[],
@@ -112,7 +114,8 @@ export function buildGeneratedFiles(
   // and would give the two halves different views of the domain set.
   // `enums` is every enum the emitted enum module declares, so a field type none of them names is
   // not resolved to an enum (`TypeScope`).
-  const ctx = { ...createGeneratorContext(config, domains, enums), enumsComplete: true };
+  const rows = routeRequirements ?? deriveRouteRequirements(domains);
+  const ctx = { ...createGeneratorContext(config, domains, enums), enumsComplete: true, routeRequirements: rows };
   const typeScope = { domains, enums };
   const eventGenerator = new EventHandlerGenerator();
   const streamClientGenerator = new StreamClientGenerator();
@@ -202,14 +205,14 @@ export function buildGeneratedFiles(
     appTree.push(generateHttpErrorHelper());
   }
 
-  // The bearer interceptor is the one emitted code that sends a token, so it exists exactly when
-  // the kernel application refuses some route to a caller without one. Its token source is the
-  // auth service seed, emitted with it.
-  const authInterceptor = demandsIdentity(routeRequirements ?? deriveRouteRequirements(domains));
+  // The bearer interceptor and the route guards exist exactly when the kernel application refuses
+  // some route to a caller without a credential. Both read the auth service seed, emitted with them.
+  const authInterceptor = demandsIdentity(rows);
   if (authInterceptor) {
     appTree.push(generateAuthInterceptor(config));
     const authService = new GuardGenerator().generateAggregate(domains, ctx).find((f) => f.path === AUTH_SERVICE_PATH);
     if (authService) appTree.push(authService);
+    appTree.push(generateRouteGuards());
   }
 
   // The stream-client barrels, and the StreamFrame module the action stream clients share.
@@ -273,7 +276,7 @@ export function buildGeneratedFiles(
   // (HTTP client, dev proxy, API environment, optional dependencies) is read off the composed
   // tree, so it never carries a backend piece no emitted file uses.
   if (!contractsOnly && config.scaffold) {
-    const needs = { ...deriveScaffoldNeeds(domains, appTree), authInterceptor };
+    const needs = { ...deriveScaffoldNeeds(domains, appTree), authInterceptor, routeRequirements: rows };
     generatedFiles.push(...generateAppStructure(domains, enums, config, views, needs));
   }
 
