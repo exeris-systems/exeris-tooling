@@ -8,6 +8,9 @@ Entity-First Java sources (`@ExerisDomain`, `@Action`, `@Field`, …) into clean
 kernel-target code: handlers, services, repositories, OpenAPI specs, Flyway
 migrations, sagas, and corresponding Angular/TypeScript frontend artifacts.
 
+The documentation starts at [`docs/README.md`](docs/README.md): architecture, one page per
+module, glossary and stability matrix.
+
 ## Requirements
 
 - **Maven on JDK 25 LTS or newer (a GA release).** The reactor compiles at `--release 25` and builds
