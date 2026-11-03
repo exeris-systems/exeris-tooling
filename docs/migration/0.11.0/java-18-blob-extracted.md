@@ -26,3 +26,10 @@ Two invalid declarations are now refused at build time:
   store. To fix, declare `private BlobRef <fieldName>;` on the field, or remove `@Blob`.
 
 Under `-Aexeris.strict`, `@Blob` no longer reports as an inert or unread annotation.
+
+**Where it applies.** Only to sources that declare `@Blob`; every other entity extracts exactly as
+before. **What breaks.** A build whose `@Blob` sits on a `GLOBAL` entity or on a field of another
+type, which compiled before because the annotation was inert, now fails with one of the two errors
+above. Fix the declaration as each error says. The bytes of a field that was a column before are
+not migrated: the generated application no longer stores them in the row (see
+`java-19-blob-field-routes.md`).
