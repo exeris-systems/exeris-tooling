@@ -503,7 +503,10 @@ machine, and the `SagaStatusSnapshot` shape it folds, are exported from the app 
 
 An entity with `@ExerisDomain(realTimeApi = true)` and the `GLOBAL` data scope gets
 `services/<entity>.stream.ts`, an `<Entity>StreamClient` over a native `EventSource` (cookie
-credentials, no custom headers) with two streams:
+credentials, no custom headers) with two streams. A stream route that demands identity (see
+[Bearer token](#bearer-token)) is opened with `fetch` instead, sending
+`Authorization: Bearer <AuthService.token()>`, which an `EventSource` cannot send; the members, the
+frames they emit and the reconnect below are the same.
 
 - `stream()` opens `GET {base}/stream`, the live view of the collection, and emits each domain-event
   frame as a `MessageEvent<string>`.
@@ -554,9 +557,23 @@ token is whatever your sign-in passes to `AuthService.setUser`; the interceptor 
 its own. With `scaffold: false`, add `withInterceptors([authInterceptor])` to your own
 `provideHttpClient(...)`.
 
-Route requirements come from declared route access (`@RouteAccess`, `permissions`), which this
-version does not read: every route is public, so neither file is emitted and `app.config.ts`
-registers no interceptor. The stream clients do not go through `HttpClient` and send no token.
+Route requirements come from declared route access (`@RouteAccess`, `permissions`). With none
+declared, or only `PUBLIC`, every route is public, neither file is emitted and `app.config.ts`
+registers no interceptor.
+
+The same condition emits `core/route-guards.ts`, two functional `CanActivateFn` guards over
+`AuthService`: `requireAuthenticated` and `requireAnyPermission(...permissions)`, any-of. In
+`app.routes.ts` each entity page is guarded by the requirement of the backend route it calls first
+(list `GET {base}`, detail `GET {base}/{id}`, create `POST {base}`, edit `PUT {base}/{id}`); a
+public or undeclared route's page has no guard. A refused navigation returns `false`; no sign-in
+route is generated. `app.routes.ts` is a seed, so an existing app adds the `canActivate` entries
+itself.
+
+The stream clients use `fetch` or `EventSource`, not `HttpClient`, so the interceptor does not reach
+them. A live-view client whose stream routes demand identity sends the token itself (see
+[Stream clients](#stream-clients)), and so does a per-action stream client whose action route
+demands it: its `POST` carries `Authorization: Bearer <AuthService.token()>` while a token is held.
+A stream client on a public or undeclared route sends no token.
 
 ## Grouped forms and detail views (@UIGroup)
 

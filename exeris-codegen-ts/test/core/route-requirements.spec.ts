@@ -10,8 +10,11 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  actionRequirementFor,
   demandsIdentity,
   deriveRouteRequirements,
+  requirementFor,
+  requiresIdentity,
   type RouteRequirementRow,
 } from '../../src/core/route-requirements.js';
 import { DomainMetadataSchema } from '../../src/models/domain-model.js';
@@ -162,5 +165,66 @@ describe('deriveRouteRequirements', () => {
 
     // Row 11 is action
     expect(rows[11].action).toBe('cancel');
+  });
+});
+
+describe('requiresIdentity', () => {
+  it('holds for authenticated and anyScope, and not for permitAll or an abstention', () => {
+    expect(requiresIdentity({ kind: 'authenticated' })).toBe(true);
+    expect(requiresIdentity({ kind: 'anyScope', scopes: ['a'] })).toBe(true);
+    expect(requiresIdentity({ kind: 'permitAll' })).toBe(false);
+    expect(requiresIdentity(undefined)).toBe(false);
+  });
+});
+
+describe('requirementFor', () => {
+  const rows = deriveRouteRequirements([
+    DomainMetadataSchema.parse({
+      packageName: 'com.shop',
+      entityName: 'Order',
+      realTimeApi: true,
+      permissions: ['order:read'],
+      fields: [{ name: 'scan', type: 'eu.exeris.kernel.spi.storage.blob.BlobRef', blob: { contentTypes: [] } }],
+      actions: [{ name: 'approve', methodName: 'approve', routeAccess: 'PUBLIC' }],
+    }),
+    DomainMetadataSchema.parse({ packageName: 'com.shop', entityName: 'Tag' }),
+  ]);
+
+  it("reads an entity route's row by entity, method and path", () => {
+    expect(requirementFor(rows, 'Order', 'GET', '{base}')).toEqual({ kind: 'anyScope', scopes: ['order:read'] });
+    expect(requirementFor(rows, 'Order', 'PUT', '{base}/{id}')).toEqual({ kind: 'anyScope', scopes: ['order:read'] });
+    expect(requirementFor(rows, 'Order', 'GET', '{base}/{id}/stream')).toEqual({ kind: 'anyScope', scopes: ['order:read'] });
+  });
+
+  it('never answers with an action or blob row, and abstains where no row names the route', () => {
+    expect(requirementFor(rows, 'Order', 'POST', '{base}/{id}/actions/{action}')).toBeUndefined();
+    expect(requirementFor(rows, 'Order', 'GET', '{base}/{id}/blobs/{field}')).toBeUndefined();
+    expect(requirementFor(rows, 'Tag', 'GET', '{base}')).toBeUndefined();
+    expect(requirementFor([], 'Order', 'GET', '{base}')).toBeUndefined();
+  });
+});
+
+describe('actionRequirementFor', () => {
+  const rows = deriveRouteRequirements([
+    DomainMetadataSchema.parse({
+      packageName: 'com.shop',
+      entityName: 'Order',
+      routeAccess: 'AUTHENTICATED',
+      actions: [
+        { name: 'track', methodName: 'track', streaming: true },
+        { name: 'peek', methodName: 'peek', streaming: true, routeAccess: 'PUBLIC' },
+      ],
+    }),
+    DomainMetadataSchema.parse({ packageName: 'com.shop', entityName: 'Tag', actions: [{ name: 'merge', methodName: 'merge' }] }),
+  ]);
+
+  it("reads the action route's row, the nearest declaration winning", () => {
+    expect(actionRequirementFor(rows, 'Order', 'track')).toEqual({ kind: 'authenticated' });
+    expect(actionRequirementFor(rows, 'Order', 'peek')).toEqual({ kind: 'permitAll' });
+  });
+
+  it('abstains on an action no row names', () => {
+    expect(actionRequirementFor(rows, 'Tag', 'merge')).toBeUndefined();
+    expect(actionRequirementFor(rows, 'Order', 'missing')).toBeUndefined();
   });
 });

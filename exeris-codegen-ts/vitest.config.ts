@@ -244,6 +244,13 @@ export default defineConfig({
           branches: 85,
           statements: 85,
         },
+        // The SSE frame reader the fetch-based stream clients share.
+        'src/generators/angular/sse-fetch-lines.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
         // SSE live-view and spectate client generator for real-time API entities.
         'src/generators/angular/stream-client-gen.ts': {
           lines: 85,

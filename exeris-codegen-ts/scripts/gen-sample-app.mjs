@@ -177,6 +177,9 @@ const domains = [
     // beside the link to the whole order list.
     relationships: [{ name: 'orders', targetEntity: 'com.shop.Order', type: 'ONE_TO_MANY', mappedBy: 'productId', displayField: 'orderNumber' }],
     realTimeApi: true,
+    // Demands an identity: its pages take requireAuthenticated, and its live view and its action
+    // stream send the bearer token, while Order's, undeclared, send none.
+    routeAccess: 'AUTHENTICATED',
     actions: [{ name: 'watchStock', methodName: 'watchStock', streaming: true }],
     sagaMetadata: {
       name: 'ProductRestock',
@@ -228,6 +231,8 @@ const domains = [
   d({
     entityName: 'Invoice',
     softDelete: true,
+    // Any of these admits a caller: its pages take requireAnyPermission over both names.
+    permissions: ['invoice:read', 'invoice:write'],
     fields: [
       { name: 'invoiceNo', type: 'java.util.UUID' },
       { name: 'amount', type: 'java.math.BigDecimal', dataType: 'currency' },

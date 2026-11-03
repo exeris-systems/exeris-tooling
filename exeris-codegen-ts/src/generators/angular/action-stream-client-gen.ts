@@ -18,6 +18,10 @@
  * justified by the transport limits and bounded by the shared route/producer
  * rules (ADR-044 §Trade-offs).
  *
+ * Identity (ADR-105): fetch does not pass through the HttpClient interceptor, so a client whose
+ * action route's requirement row demands identity injects `AuthService` and sends
+ * `Authorization: Bearer <AuthService.token()>` itself. Any other client sends no header.
+ *
  * Named-event honesty (ADR-044 obligation 2): unlike native EventSource's
  * `onmessage` (which drops named frames), this hand-rolled SSE parser reads
  * the `event:` line, so it dispatches the action's NAMED event
@@ -40,6 +44,8 @@ import type { GeneratorConfig } from '../../config.js';
 import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
 import { fileHeaderLines } from '../file-header.js';
+import { bearerHeaderLines, ssePumpLines } from './sse-fetch-lines.js';
+import { actionRequirementFor, deriveRouteRequirements, requiresIdentity } from '../../core/route-requirements.js';
 
 export { GeneratedFile };
 
@@ -180,6 +186,12 @@ export class ActionStreamClientGenerator implements CodeGenerator {
     context: GeneratorContext,
   ): string {
     const entityName = domain.entityName;
+    const rows = context.routeRequirements ?? deriveRouteRequirements(context.allDomains);
+    const bearer = new Set(
+      actions
+        .filter((a) => requiresIdentity(actionRequirementFor(rows, entityName, a.name)))
+        .map((a) => a.name),
+    );
     const lines: string[] = [];
 
     lines.push(
@@ -195,15 +207,18 @@ export class ActionStreamClientGenerator implements CodeGenerator {
       }),
     );
     lines.push(``);
-    lines.push(`import { Injectable } from '@angular/core';`);
+    // A client whose action route demands identity sends the bearer token, read from the auth
+    // service, because fetch does not pass through the HttpClient interceptor.
+    lines.push(bearer.size > 0 ? `import { Injectable, inject } from '@angular/core';` : `import { Injectable } from '@angular/core';`);
     lines.push(`import { Observable } from 'rxjs';`);
+    if (bearer.size > 0) lines.push(`import { AuthService } from '../core/auth.service';`);
     // StreamFrame is shared (single source), not re-declared per entity, so the
     // barrel's `export *` cannot collide across N streaming entities (TS2308).
     lines.push(`import type { StreamFrame } from './stream-types';`);
     lines.push(``);
 
     for (const action of actions) {
-      this.renderOneActionClient(domain, action, context, lines);
+      this.renderOneActionClient(domain, action, context, lines, bearer.has(action.name));
     }
 
     return lines.join('\n');
@@ -214,6 +229,7 @@ export class ActionStreamClientGenerator implements CodeGenerator {
     action: ActionMetadata,
     context: GeneratorContext,
     lines: string[],
+    bearer: boolean,
   ): void {
     const entityName = domain.entityName;
     const actionPascal = this.pascal(action.name);
@@ -230,6 +246,10 @@ export class ActionStreamClientGenerator implements CodeGenerator {
     lines.push(`  /** Named SSE event: emitted by the kernel ${entityName}${actionPascal}StreamHandler. */`);
     lines.push(`  static readonly STREAM_EVENT_TYPE = '${tsSingleQuoted(eventName)}';`);
     lines.push(``);
+    if (bearer) {
+      lines.push(`  private readonly auth = inject(AuthService);`);
+      lines.push(``);
+    }
     lines.push(`  /**`);
     lines.push(`   * Opens the ${entityName}.${action.name}(...) per-action SSE stream and surfaces`);
     lines.push(`   * each parsed frame as a StreamFrame. The stream is opened over POST to`);
@@ -239,6 +259,10 @@ export class ActionStreamClientGenerator implements CodeGenerator {
     lines.push(`   * '${eventName}' for domain events; 'keep-alive' for the heartbeat) — this`);
     lines.push(`   * hand-rolled parser reads the event: line, so nothing is silently dropped.`);
     lines.push(`   * The fetch is aborted when the subscription is torn down.`);
+    if (bearer) {
+      lines.push(`   * The route demands an identity, so the request carries`);
+      lines.push(`   * Authorization: Bearer with AuthService.token() while a token is held.`);
+    }
     if (isTenantPartitioned(domain)) {
       lines.push(`   * A tenant-partitioned entity's stream answers stream-error until the route policy`);
       lines.push(`   * binds the storage context.`);
@@ -248,9 +272,11 @@ export class ActionStreamClientGenerator implements CodeGenerator {
     lines.push(`    const url = \`${pathTemplate}\`;`);
     lines.push(`    return new Observable<StreamFrame>((subscriber) => {`);
     lines.push(`      const controller = new AbortController();`);
+    if (bearer) lines.push(...bearerHeaderLines('      '));
     lines.push(`      fetch(url, {`);
     lines.push(`        method: 'POST',`);
     lines.push(`        credentials: 'include',`);
+    if (bearer) lines.push(`        headers,`);
     lines.push(`        signal: controller.signal,`);
     lines.push(`      })`);
     lines.push(`        .then((response) => {`);
@@ -258,46 +284,12 @@ export class ActionStreamClientGenerator implements CodeGenerator {
     lines.push(`            subscriber.error(new Error(\`Stream open failed: \${response.status}\`));`);
     lines.push(`            return;`);
     lines.push(`          }`);
-    lines.push(`          const reader = response.body.getReader();`);
-    lines.push(`          const decoder = new TextDecoder();`);
-    lines.push(`          let buffer = '';`);
-    lines.push(`          const pump = (): Promise<void> =>`);
-    lines.push(`            reader.read().then(({ done, value }) => {`);
-    lines.push(`              if (done) {`);
-    lines.push(`                subscriber.complete();`);
-    lines.push(`                return;`);
-    lines.push(`              }`);
-    lines.push(`              buffer += decoder.decode(value, { stream: true });`);
-    lines.push(`              // SSE frames are separated by a blank line.`);
-    lines.push(`              const chunks = buffer.split('\\n\\n');`);
-    lines.push(`              buffer = chunks.pop() ?? '';`);
-    lines.push(`              for (const chunk of chunks) {`);
-    lines.push(`                let event = 'message';`);
-    lines.push(`                const dataLines: string[] = [];`);
-    lines.push(`                for (const line of chunk.split('\\n')) {`);
-    lines.push(`                  // A field value drops exactly one leading space (the SSE`);
-    lines.push(`                  // field rule); the rest of the value, trailing whitespace`);
-    lines.push(`                  // included, is payload.`);
-    lines.push(`                  const colon = line.indexOf(':');`);
-    lines.push(`                  if (colon <= 0) {`);
-    lines.push(`                    continue;`);
-    lines.push(`                  }`);
-    lines.push(`                  const field = line.slice(0, colon);`);
-    lines.push(`                  const raw = line.slice(colon + 1);`);
-    lines.push(`                  const value = raw.startsWith(' ') ? raw.slice(1) : raw;`);
-    lines.push(`                  if (field === 'event') {`);
-    lines.push(`                    event = value;`);
-    lines.push(`                  } else if (field === 'data') {`);
-    lines.push(`                    dataLines.push(value);`);
-    lines.push(`                  }`);
-    lines.push(`                }`);
-    lines.push(`                if (dataLines.length === 0) {`);
-    lines.push(`                  continue;`);
-    lines.push(`                }`);
-    lines.push(`                subscriber.next({ event, data: dataLines.join('\\n') });`);
-    lines.push(`              }`);
-    lines.push(`              return pump();`);
-    lines.push(`            });`);
+    lines.push(
+      ...ssePumpLines('          ', {
+        onDone: ['subscriber.complete();'],
+        onFrame: ["subscriber.next({ event, data: dataLines.join('\\n') });"],
+      }),
+    );
     lines.push(`          pump().catch((err) => {`);
     lines.push(`            // On unsubscribe the fetch aborts (AbortError); that is a clean`);
     lines.push(`            // teardown, so complete() — never error() — to honour the`);

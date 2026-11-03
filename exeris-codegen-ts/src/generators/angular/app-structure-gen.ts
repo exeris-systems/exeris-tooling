@@ -31,6 +31,8 @@ import { BACKEND_SCAFFOLD_NEEDS, type ScaffoldNeeds } from '../../core/scaffold-
 import { entityViews, hasFormPage } from './entity-views.js';
 import { serviceApiPath } from './service-gen.js';
 import { AUTH_INTERCEPTOR_NAME, AUTH_INTERCEPTOR_PATH } from './auth-interceptor-gen.js';
+import { REQUIRE_ANY_PERMISSION, REQUIRE_AUTHENTICATED, ROUTE_GUARDS_PATH } from './guard-gen.js';
+import { requirementFor, type RouteRequirementRow } from '../../core/route-requirements.js';
 import { fileHeader, lineHeaderLines } from '../file-header.js';
 
 export interface GeneratedFile {
@@ -178,7 +180,11 @@ export function generateAppStructure(
     files.push({ path: `${appRoot}/app.routes.server.ts`, content: generateServerRoutes(domains, sortedViews), overwritable: false });
   }
   files.push({ path: `${appRoot}/app.component.ts`, content: generateAppComponent(domains, appName, sortedViews), overwritable: false });
-  files.push({ path: `${appRoot}/app.routes.ts`, content: generateAppRoutes(domains, appName, sortedViews), overwritable: false });
+  files.push({
+    path: `${appRoot}/app.routes.ts`,
+    content: generateAppRoutes(domains, appName, sortedViews, needs.routeRequirements ?? []),
+    overwritable: false,
+  });
   const barrel = generateAppBarrel(domains, enums, config);
   if (barrel) {
     files.push({ ...barrel, path: `${appRoot}/${barrel.path}` });
@@ -549,9 +555,52 @@ function defaultRedirectPath(domains: DomainMetadata[], views: ViewMetadata[]): 
   return firstListed ? routePlural(firstListed.entityName) : '';
 }
 
-function generateAppRoutes(domains: DomainMetadata[], appName: string, views: ViewMetadata[] = []): string {
+/**
+ * The backend route each entity page calls first, which decides the page's guard: the list loads
+ * `GET {base}`, the detail `GET {base}/{id}`, the create form submits `POST {base}` and the edit
+ * form saves `PUT {base}/{id}`.
+ */
+const PAGE_ROUTES = {
+  list: ['GET', '{base}'],
+  detail: ['GET', '{base}/{id}'],
+  create: ['POST', '{base}'],
+  edit: ['PUT', '{base}/{id}'],
+} as const satisfies Record<string, readonly [RouteRequirementRow['method'], string]>;
+
+/**
+ * The `canActivate` property of a page, with its leading newline, or `''` for a page whose route
+ * is public or undeclared. The guard names it uses are added to `used`.
+ */
+function canActivate(
+  rows: readonly RouteRequirementRow[],
+  entity: string,
+  page: keyof typeof PAGE_ROUTES,
+  used: Set<string>,
+): string {
+  const [method, path] = PAGE_ROUTES[page];
+  const requirement = requirementFor(rows, entity, method, path);
+  if (requirement?.kind === 'authenticated') {
+    used.add(REQUIRE_AUTHENTICATED);
+    return `,\n    canActivate: [${REQUIRE_AUTHENTICATED}]`;
+  }
+  if (requirement?.kind === 'anyScope') {
+    used.add(REQUIRE_ANY_PERMISSION);
+    const names = (requirement.scopes ?? []).map((scope) => `'${tsSingleQuoted(scope)}'`).join(', ');
+    return `,\n    canActivate: [${REQUIRE_ANY_PERMISSION}(${names})]`;
+  }
+  return '';
+}
+
+function generateAppRoutes(
+  domains: DomainMetadata[],
+  appName: string,
+  views: ViewMetadata[] = [],
+  rows: readonly RouteRequirementRow[] = [],
+): string {
   const routes: string[] = [];
+  const guards = new Set<string>();
   for (const domain of domains) {
+    const guard = (page: keyof typeof PAGE_ROUTES): string => canActivate(rows, domain.entityName, page, guards);
     const kebab = DslMapper.toKebabCase(domain.entityName);
     const plural = routePlural(domain.entityName);
     // List-page browser-tab title also needs the labelPlural guard
@@ -565,16 +614,16 @@ function generateAppRoutes(domains: DomainMetadata[], appName: string, views: Vi
     // Each route exists only when the entity's @UI keeps the page it loads.
     const pages = entityViews(domain);
     if (pages.list) {
-      routes.push(`\n  {\n    path: '${plural}',\n    loadComponent: () => import('./components/${kebab}-list.component')\n      .then(m => m.${domain.entityName}ListComponent),\n    title: '${titlePlural} - ${tsSingleQuoted(appName)}'\n  },`);
+      routes.push(`\n  {\n    path: '${plural}',\n    loadComponent: () => import('./components/${kebab}-list.component')\n      .then(m => m.${domain.entityName}ListComponent),\n    title: '${titlePlural} - ${tsSingleQuoted(appName)}'${guard('list')}\n  },`);
     }
     if (pages.create) {
-      routes.push(`\n  {\n    path: '${plural}/new',\n    loadComponent: () => import('./components/${kebab}-form.component')\n      .then(m => m.${domain.entityName}FormComponent),\n    title: 'New ${domain.entityName} - ${tsSingleQuoted(appName)}'\n  },`);
+      routes.push(`\n  {\n    path: '${plural}/new',\n    loadComponent: () => import('./components/${kebab}-form.component')\n      .then(m => m.${domain.entityName}FormComponent),\n    title: 'New ${domain.entityName} - ${tsSingleQuoted(appName)}'${guard('create')}\n  },`);
     }
     if (pages.detail) {
-      routes.push(`\n  {\n    path: '${plural}/:id',\n    loadComponent: () => import('./components/${kebab}-detail.component')\n      .then(m => m.${domain.entityName}DetailComponent),\n    title: '${domain.entityName} - ${tsSingleQuoted(appName)}'\n  },`);
+      routes.push(`\n  {\n    path: '${plural}/:id',\n    loadComponent: () => import('./components/${kebab}-detail.component')\n      .then(m => m.${domain.entityName}DetailComponent),\n    title: '${domain.entityName} - ${tsSingleQuoted(appName)}'${guard('detail')}\n  },`);
     }
     if (pages.edit) {
-      routes.push(`\n  {\n    path: '${plural}/:id/edit',\n    loadComponent: () => import('./components/${kebab}-form.component')\n      .then(m => m.${domain.entityName}FormComponent),\n    title: 'Edit ${domain.entityName} - ${tsSingleQuoted(appName)}'\n  },`);
+      routes.push(`\n  {\n    path: '${plural}/:id/edit',\n    loadComponent: () => import('./components/${kebab}-form.component')\n      .then(m => m.${domain.entityName}FormComponent),\n    title: 'Edit ${domain.entityName} - ${tsSingleQuoted(appName)}'${guard('edit')}\n  },`);
     }
   }
 
@@ -592,7 +641,13 @@ function generateAppRoutes(domains: DomainMetadata[], appName: string, views: Vi
 
   // Additive guard (determinism #3): with zero views, NO import line and NO spread
   // are emitted, so app.routes.ts is byte-identical to the pre-route-assembly output.
-  const importBlock = viewImports ? `\n${viewImports}` : '';
+  // A guard import exists only beside a guarded page, so an app with no guarded page keeps the same
+  // import block. Names sort by code unit, so the line does not follow page order.
+  const guardNames = [...guards].sort();
+  const guardImport = guardNames.length > 0
+    ? `\nimport { ${guardNames.join(', ')} } from './${ROUTE_GUARDS_PATH.replace(/\.ts$/, '')}';`
+    : '';
+  const importBlock = `${guardImport}${viewImports ? `\n${viewImports}` : ''}`;
 
   // With no destination at all, a redirect from '' to '' would only point the router at itself.
   const redirect = defaultRedirect

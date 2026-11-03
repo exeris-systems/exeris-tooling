@@ -390,3 +390,105 @@ describe('ActionStreamClientGenerator — emitted client against the kernel wire
     }
   });
 });
+
+// ---------- identity-requiring action routes (ADR-105) ----------
+
+describe('ActionStreamClientGenerator — bearer token on an action route that demands identity', () => {
+  const gen = new ActionStreamClientGenerator();
+  const generateFor = (overrides: Partial<DomainMetadata>, actions: unknown[] = [streamingAction]): string => {
+    const d = domain({ entityName: 'Order', path: '/orders', actions: actions as DomainMetadata['actions'], ...overrides });
+    return gen.generate(d, createGeneratorContext({}, [d]))!.content;
+  };
+  const undeclared = generateFor({});
+
+  it('keeps the client byte-identical for a public or undeclared action route', () => {
+    expect(undeclared).not.toContain('AuthService');
+    expect(undeclared).not.toContain('headers,');
+    expect(generateFor({ routeAccess: 'PUBLIC' })).toBe(undeclared);
+    // The action's own PUBLIC wins over the entity's requirement.
+    expect(generateFor({ routeAccess: 'AUTHENTICATED' }, [{ ...streamingAction, routeAccess: 'PUBLIC' }])).toBe(undeclared);
+  });
+
+  it.each([
+    ['an AUTHENTICATED entity', { routeAccess: 'AUTHENTICATED' as const }, [streamingAction]],
+    ['an entity with permissions', { permissions: ['order:track'] }, [streamingAction]],
+    ['an action with its own permissions', {}, [{ ...streamingAction, permissions: ['order:track'] }]],
+  ])('sends the token for %s', (_label, overrides, actions) => {
+    const out = generateFor(overrides, actions);
+    expect(out).toContain("import { Injectable, inject } from '@angular/core';");
+    expect(out).toContain("import { AuthService } from '../core/auth.service';");
+    expect(out).toContain('private readonly auth = inject(AuthService);');
+    expect(out).toContain('        headers,');
+    // The rest of the client is the undeclared one.
+    const added = [
+      "import { AuthService } from '../core/auth.service';\n",
+      '  private readonly auth = inject(AuthService);\n\n',
+      '   * The route demands an identity, so the request carries\n',
+      '   * Authorization: Bearer with AuthService.token() while a token is held.\n',
+      '      const token = this.auth.token();\n',
+      '      const headers: Record<string, string> = token === null ? {} : { Authorization: `Bearer ${token}` };\n',
+      '        headers,\n',
+    ];
+    let stripped = out.replace('import { Injectable, inject }', 'import { Injectable }');
+    for (const line of added) {
+      expect(stripped).toContain(line);
+      stripped = stripped.replace(line, '');
+    }
+    expect(stripped).toBe(undeclared);
+  });
+
+  it('sends the token only on the actions whose route demands it', () => {
+    const out = generateFor({}, [
+      { ...streamingAction, routeAccess: 'AUTHENTICATED' },
+      { name: 'watch', streaming: true },
+    ]);
+    const watch = out.slice(out.indexOf('export class OrderWatchStreamClient'));
+    expect(out.slice(0, out.indexOf('export class OrderWatchStreamClient'))).toContain('headers,');
+    expect(watch).not.toContain('headers,');
+    expect(watch).not.toContain('inject(AuthService)');
+  });
+
+  describe('emitted client behaviour', () => {
+    const content = generateFor({ routeAccess: 'AUTHENTICATED' });
+    let token: string | null = 't1';
+    const load = (): new () => { stream(id: string): { subscribe(o: object): unknown } } => {
+      const js = ts.transpileModule(content.replace(/^import .*;$/gm, ''), {
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+      }).outputText;
+      const exports: Record<string, unknown> = {};
+      class Obs {
+        constructor(private readonly producer: (s: object) => () => void) {}
+        subscribe(o: object) {
+          return { unsubscribe: this.producer(o) };
+        }
+      }
+      new Function('exports', 'Injectable', 'Observable', 'inject', 'AuthService', js)(
+        exports, () => () => undefined, Obs, () => ({ token: () => token }), class {},
+      );
+      return exports.OrderTrackShipmentStreamClient as new () => { stream(id: string): { subscribe(o: object): unknown } };
+    };
+
+    it.each([
+      ['t1', { Authorization: 'Bearer t1' }],
+      [null, {}],
+    ])('with token %s sends headers %o on the POST', async (held, headers) => {
+      token = held;
+      const requests: RequestInit[] = [];
+      const realFetch = globalThis.fetch;
+      globalThis.fetch = (async (_url: string, init: RequestInit) => {
+        requests.push(init);
+        return new Response('event: ShipmentMoved\ndata: 1\n\n', { status: 200 });
+      }) as typeof fetch;
+      try {
+        await new Promise<void>((resolve, reject) => {
+          new (load())().stream('1').subscribe({ next: () => {}, error: reject, complete: resolve });
+        });
+        expect(requests).toHaveLength(1);
+        expect(requests[0].method).toBe('POST');
+        expect(requests[0].headers).toEqual(headers);
+      } finally {
+        globalThis.fetch = realFetch;
+      }
+    });
+  });
+});

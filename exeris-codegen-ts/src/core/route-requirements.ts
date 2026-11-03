@@ -39,7 +39,41 @@ export interface RouteRequirementRow {
  * admits everyone, so only `authenticated` and `anyScope` rows count.
  */
 export function demandsIdentity(rows: readonly RouteRequirementRow[]): boolean {
-  return rows.some((row) => row.requirement.kind === 'authenticated' || row.requirement.kind === 'anyScope');
+  return rows.some((row) => requiresIdentity(row.requirement));
+}
+
+/** Whether a requirement refuses a caller with no credential: `authenticated` and `anyScope` do. */
+export function requiresIdentity(requirement: RouteRequirement | undefined): boolean {
+  return requirement?.kind === 'authenticated' || requirement?.kind === 'anyScope';
+}
+
+/**
+ * The requirement of an entity's own route, `GET {base}` or `GET {base}/stream` for example, or
+ * `undefined` when no row names it and the policy abstains on it. An action or blob route is never
+ * matched: its row is keyed by the action or field as well.
+ */
+export function requirementFor(
+  rows: readonly RouteRequirementRow[],
+  entity: string,
+  method: RouteRequirementRow['method'],
+  path: string,
+): RouteRequirement | undefined {
+  return rows.find(
+    (row) =>
+      row.entity === entity && row.method === method && row.path === path && row.action === undefined && row.field === undefined,
+  )?.requirement;
+}
+
+/**
+ * The requirement of an action route, `POST {base}/{id}/actions/{action}`, streaming or not, or
+ * `undefined` when no row names it and the policy abstains on it.
+ */
+export function actionRequirementFor(
+  rows: readonly RouteRequirementRow[],
+  entity: string,
+  action: string,
+): RouteRequirement | undefined {
+  return rows.find((row) => row.entity === entity && row.method === 'POST' && row.action === action)?.requirement;
 }
 
 type AccessDeclaring = { readonly routeAccess?: 'PUBLIC' | 'AUTHENTICATED'; readonly permissions?: readonly string[] };

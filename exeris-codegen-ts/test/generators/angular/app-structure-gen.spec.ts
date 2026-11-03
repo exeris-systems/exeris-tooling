@@ -47,6 +47,8 @@ import {
   type ViewMetadata,
 } from '../../../src/models/domain-model.js';
 import type { GeneratorConfig } from '../../../src/config.js';
+import { BACKEND_SCAFFOLD_NEEDS } from '../../../src/core/scaffold-needs.js';
+import { deriveRouteRequirements, type RouteRequirementRow } from '../../../src/core/route-requirements.js';
 
 function view(overrides: Partial<ViewMetadata> & { name: string }): ViewMetadata {
   return ViewMetadataSchema.parse(overrides);
@@ -796,5 +798,86 @@ describe('generateAppStructure — @NavMenu sidebar', () => {
     expect(catIdx).toBeLessThan(groupIdx);
     expect(prodIdx).toBeLessThan(groupIdx);
     expect(groupIdx).toBeLessThan(orderIdx);
+  });
+});
+
+// ---------- route guards (ADR-105 obligation 21) ----------
+
+describe('generateAppStructure — app.routes.ts guards each page by its route requirement', () => {
+  const routesOf = (domains: DomainMetadata[], rows: readonly RouteRequirementRow[], views: ViewMetadata[] = []): string =>
+    fileAt(
+      generateAppStructure(domains, [], cfg(), views, { ...BACKEND_SCAFFOLD_NEEDS, routeRequirements: rows }),
+      'src/app/app.routes.ts',
+    )!.content;
+  /** The route object of `path` in the emitted array, from its opening brace to its closing one. */
+  const page = (routes: string, path: string): string => {
+    const start = routes.indexOf(`path: '${path}',`);
+    expect(start, path).toBeGreaterThan(0);
+    return routes.slice(start, routes.indexOf('\n  },', start));
+  };
+
+  const order = domain({ entityName: 'Order', permissions: ['order:write', 'order:read', 'order:write'] });
+  const invoice = domain({ entityName: 'Invoice', routeAccess: 'AUTHENTICATED' });
+  const catalog = domain({ entityName: 'Catalog', routeAccess: 'PUBLIC' });
+  const tag = domain({ entityName: 'Tag' });
+  const all = [order, invoice, catalog, tag];
+  const routes = routesOf(all, deriveRouteRequirements(all));
+
+  it('guards every page of an entity with permissions by any of them, in declaration order', () => {
+    for (const path of ['orders', 'orders/new', 'orders/:id', 'orders/:id/edit']) {
+      expect(page(routes, path)).toContain("canActivate: [requireAnyPermission('order:write', 'order:read')]");
+    }
+  });
+
+  it('guards every page of an AUTHENTICATED entity by requireAuthenticated', () => {
+    for (const path of ['invoices', 'invoices/new', 'invoices/:id', 'invoices/:id/edit']) {
+      expect(page(routes, path)).toContain('canActivate: [requireAuthenticated]');
+    }
+  });
+
+  it('leaves the pages of a PUBLIC or undeclared entity unguarded', () => {
+    for (const path of ['catalogs', 'catalogs/new', 'catalogs/:id', 'catalogs/:id/edit', 'tags', 'tags/:id']) {
+      expect(page(routes, path)).not.toContain('canActivate');
+    }
+  });
+
+  it('imports exactly the guards it uses, sorted, from core/route-guards', () => {
+    expect(routes).toContain("import { requireAnyPermission, requireAuthenticated } from './core/route-guards';");
+    expect(routesOf([invoice], deriveRouteRequirements([invoice]))).toContain(
+      "import { requireAuthenticated } from './core/route-guards';",
+    );
+    expect(routesOf([order], deriveRouteRequirements([order]))).toContain(
+      "import { requireAnyPermission } from './core/route-guards';",
+    );
+  });
+
+  it('reads each page from the row of the route it calls first', () => {
+    // The rows are taken as given: a page follows its own route's row, not the entity's declaration.
+    const rows: RouteRequirementRow[] = [
+      { entity: 'Tag', method: 'GET', path: '{base}', requirement: { kind: 'authenticated' }, source: 'entity' },
+      { entity: 'Tag', method: 'GET', path: '{base}/{id}', requirement: { kind: 'anyScope', scopes: ['tag:read'] }, source: 'entity' },
+      { entity: 'Tag', method: 'POST', path: '{base}', requirement: { kind: 'anyScope', scopes: ["it's"] }, source: 'entity' },
+      { entity: 'Tag', method: 'PUT', path: '{base}/{id}', requirement: { kind: 'permitAll' }, source: 'entity' },
+      { entity: 'Tag', method: 'DELETE', path: '{base}/{id}', requirement: { kind: 'authenticated' }, source: 'entity' },
+    ];
+    const out = routesOf([tag], rows);
+    expect(page(out, 'tags')).toContain('canActivate: [requireAuthenticated]');
+    expect(page(out, 'tags/:id')).toContain("canActivate: [requireAnyPermission('tag:read')]");
+    expect(page(out, 'tags/new')).toContain("canActivate: [requireAnyPermission('it\\'s')]");
+    expect(page(out, 'tags/:id/edit')).not.toContain('canActivate');
+  });
+
+  it('emits app.routes.ts byte-identical to an app with no rows when no page route demands identity', () => {
+    const open = [catalog, tag];
+    const none = routesOf(open, []);
+    expect(routesOf(open, deriveRouteRequirements(open))).toBe(none);
+    expect(none).not.toContain('route-guards');
+    expect(none).not.toContain('canActivate');
+    expect(fileAt(generateAppStructure(open, [], cfg()), 'src/app/app.routes.ts')!.content).toBe(none);
+  });
+
+  it('puts the guard import before the view route imports', () => {
+    const out = routesOf([invoice], deriveRouteRequirements([invoice]), [view({ name: 'Home', path: '/home' })]);
+    expect(out.indexOf("from './core/route-guards'")).toBeLessThan(out.indexOf("from './pages/"));
   });
 });

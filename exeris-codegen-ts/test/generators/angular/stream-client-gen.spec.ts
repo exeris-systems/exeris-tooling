@@ -6,7 +6,7 @@
  * (ADR-043 Slice 1, ADR-044 obligations 2 and 5).
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import ts from 'typescript';
 import {
   StreamClientGenerator,
@@ -475,5 +475,234 @@ describe('generateStreamClient — top-level convenience function', () => {
     const out = gen.generate(unmapped, CTX)!.content;
     expect(out).toContain('export interface OrderOrderStatusSpectatePayload {');
     expect(out).toContain('unmappedField: unknown;');
+  });
+});
+
+// ---------- identity-requiring stream routes (ADR-105 obligation 24) ----------
+
+describe('StreamClientGenerator — transport follows the stream routes’ requirement', () => {
+  const gen = new StreamClientGenerator();
+  const events = [{ name: 'InvoicePaid' }];
+  const generateFor = (overrides: Partial<DomainMetadata>, rows?: GeneratorContext['routeRequirements']): string => {
+    const d = domain({ entityName: 'Invoice', realTimeApi: true, path: '/invoices', events, ...overrides });
+    return gen.generate(d, { ...createGeneratorContext({}, [d]), routeRequirements: rows })!.content;
+  };
+  const undeclared = generateFor({});
+
+  it('keeps EventSource, byte-identically, for a PUBLIC or undeclared entity', () => {
+    expect(undeclared).toContain('new EventSource(this.streamUrl, { withCredentials: true })');
+    expect(undeclared).not.toContain('fetch(');
+    expect(undeclared).not.toContain('AuthService');
+    expect(generateFor({ routeAccess: 'PUBLIC' })).toBe(undeclared);
+    // An action's own declaration covers its action route only.
+    expect(generateFor({ actions: [{ name: 'pay', methodName: 'pay', routeAccess: 'AUTHENTICATED' }] })).toBe(undeclared);
+  });
+
+  it.each([
+    ['AUTHENTICATED', { routeAccess: 'AUTHENTICATED' as const }],
+    ['permissions', { permissions: ['invoice:read'] }],
+  ])('opens both routes with fetch and the bearer token for a %s entity', (_label, overrides) => {
+    const out = generateFor(overrides);
+    expect(out).not.toContain('EventSource(');
+    expect(out).toContain("import { Injectable, inject } from '@angular/core';");
+    expect(out).toContain("import { AuthService } from '../core/auth.service';");
+    expect(out).toContain('private readonly auth = inject(AuthService);');
+    expect(out).toContain("const headers: Record<string, string> = token === null ? {} : { Authorization: `Bearer ${token}` };");
+    expect(out).toContain('Both stream routes');
+    // The public surface the store and components read is the same as the EventSource client's.
+    for (const member of [
+      'export class InvoiceStreamClient {',
+      "static readonly STREAM_EVENT_TYPES: readonly string[] = ['InvoicePaid'];",
+      'stream(): Observable<MessageEvent<string>> {',
+      'spectate(id: string): Observable<InvoiceSpectateFrame> {',
+      'export class InvoiceSpectateError extends Error {',
+    ]) {
+      expect(out).toContain(member);
+      expect(undeclared).toContain(member);
+    }
+  });
+
+  it('picks the transport of each route from its own row', () => {
+    const rows: GeneratorContext['routeRequirements'] = [
+      { entity: 'Invoice', method: 'GET', path: '{base}/{id}/stream', requirement: { kind: 'authenticated' }, source: 'entity' },
+    ];
+    const out = generateFor({}, rows);
+    expect(out).toContain('new EventSource(this.streamUrl, { withCredentials: true })');
+    expect(out).not.toContain('new EventSource(this.spectateUrl(id)');
+    expect(out).toContain('this.connect(\n        this.spectateUrl(id),');
+    expect(out).toContain('EventSource where a stream route needs no identity, and fetch with the');
+  });
+
+  it('shares the frame reader of the per-action stream clients', () => {
+    const out = generateFor({ routeAccess: 'AUTHENTICATED' });
+    expect(out).toContain("const chunks = buffer.split('\\n\\n');");
+    expect(out).toContain("if (!onFrame({ event, data: dataLines.join('\\n') })) {");
+  });
+
+  it('is byte-identical across runs', () => {
+    expect(generateFor({ routeAccess: 'AUTHENTICATED' })).toBe(generateFor({ routeAccess: 'AUTHENTICATED' }));
+  });
+});
+
+describe('StreamClientGenerator — fetch client behaviour', () => {
+  const invoice = domain({
+    entityName: 'Invoice',
+    realTimeApi: true,
+    path: '/invoices',
+    routeAccess: 'AUTHENTICATED',
+    events: [{ name: 'InvoicePaid' }, { name: 'InvoiceVoided' }],
+  });
+  // The rows are derived from the context's domains, so the entity must be among them.
+  const content = new StreamClientGenerator().generate(invoice, createGeneratorContext({}, [invoice]))!.content;
+
+  interface FetchClient {
+    stream(): StubObservable;
+    spectate(id: string): StubObservable;
+  }
+  interface Request {
+    url: string;
+    init: RequestInit;
+  }
+
+  let token: string | null = 't1';
+  const load = (): new () => FetchClient => {
+    const js = ts.transpileModule(content.replace(/^import .*;$/gm, ''), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    }).outputText;
+    const exports: Record<string, unknown> = {};
+    new Function('exports', 'Injectable', 'Observable', 'inject', 'AuthService', js)(
+      exports, () => () => undefined, StubObservable, () => ({ token: () => token }), class {},
+    );
+    const Client = exports.InvoiceStreamClient as (new () => FetchClient) & { RECONNECT_DELAY_MS: number };
+    Client.RECONNECT_DELAY_MS = 0;
+    return Client;
+  };
+
+  /** Serves each request with the next response in `script`, and records the request. */
+  const serve = (script: Array<() => Response | Promise<Response>>): Request[] => {
+    const requests: Request[] = [];
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      requests.push({ url, init });
+      const next = script.shift();
+      if (!next) return new Promise<Response>(() => {});
+      return next();
+    }) as typeof fetch;
+    return requests;
+  };
+  const body = (text: string) => () => new Response(text, { status: 200 });
+  /** A body that stays open, as a live stream does, until the request is aborted. */
+  const open = (text: string) => () => new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(text));
+    },
+  }), { status: 200 });
+  const settle = async (): Promise<void> => {
+    for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
+  };
+
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    token = 't1';
+  });
+
+  it('sends the bearer token and delivers each declared event as a MessageEvent', async () => {
+    const requests = serve([open('event: InvoicePaid\ndata: {"id":"1"}\n\nevent: keep-alive\ndata: \n\nevent: Other\ndata: x\n\n')]);
+    const seen: MessageEvent[] = [];
+    new (load())().stream().subscribe({ next: (e) => seen.push(e as MessageEvent), error: () => {}, complete: () => {} });
+    await settle();
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0].url).toBe('/invoices/stream');
+    expect(requests[0].init.credentials).toBe('include');
+    expect(requests[0].init.headers).toEqual({ Authorization: 'Bearer t1' });
+    expect(seen.map((e) => [e.type, e.data])).toEqual([['InvoicePaid', '{"id":"1"}']]);
+  });
+
+  it('sends no Authorization header while no token is held', async () => {
+    token = null;
+    const requests = serve([open('')]);
+    new (load())().stream().subscribe({ next: () => {}, error: () => {}, complete: () => {} });
+    await settle();
+    expect(requests[0].init.headers).toEqual({});
+  });
+
+  it('opens the stream again, with the token held then, when the server ends it or the connection fails', async () => {
+    const requests = serve([
+      body('event: InvoicePaid\ndata: 1\n\n'),
+      () => {
+        token = 't2';
+        return Promise.reject(new TypeError('network'));
+      },
+      open('event: InvoiceVoided\ndata: 2\n\n'),
+    ]);
+    const seen: string[] = [];
+    const errors: unknown[] = [];
+    new (load())().stream().subscribe({ next: (e) => seen.push((e as MessageEvent).data), error: (e) => errors.push(e), complete: () => {} });
+    await settle();
+
+    expect(requests).toHaveLength(3);
+    expect(seen).toEqual(['1', '2']);
+    expect(errors).toEqual([]);
+    expect(requests[2].init.headers).toEqual({ Authorization: 'Bearer t2' });
+  });
+
+  it('errors on a refused response and does not retry it', async () => {
+    const requests = serve([() => new Response(null, { status: 401 })]);
+    const errors: Error[] = [];
+    new (load())().stream().subscribe({ next: () => {}, error: (e) => errors.push(e as Error), complete: () => {} });
+    await settle();
+
+    expect(requests).toHaveLength(1);
+    expect(errors.map((e) => e.message)).toEqual(['Invoice stream closed: /invoices/stream']);
+  });
+
+  it('aborts the fetch and opens nothing more once the subscription is torn down', async () => {
+    const requests = serve([open('')]);
+    const sub = new (load())().stream().subscribe({ next: () => {}, error: () => {}, complete: () => {} });
+    await settle();
+    sub.unsubscribe();
+    await settle();
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0].init.signal!.aborted).toBe(true);
+  });
+
+  it('spectate opens the row route and delivers each event with its payload parsed', async () => {
+    const requests = serve([open('event: InvoicePaid\ndata: {"id":"7"}\n\nevent: keep-alive\ndata: \n\n')]);
+    const seen: unknown[] = [];
+    new (load())().spectate('a b').subscribe({ next: (f) => seen.push(f), error: () => {}, complete: () => {} });
+    await settle();
+
+    expect(requests[0].url).toBe('/invoices/a%20b/stream');
+    expect(requests[0].init.headers).toEqual({ Authorization: 'Bearer t1' });
+    expect(seen).toEqual([{ event: 'InvoicePaid', data: { id: '7' } }]);
+  });
+
+  it('spectate closes for good on a stream-error frame, with the problem members', async () => {
+    const requests = serve([open('event: stream-error\ndata: {"status":403,"title":"Forbidden","detail":"no"}\n\n')]);
+    const errors: unknown[] = [];
+    new (load())().spectate('1').subscribe({ next: () => {}, error: (e) => errors.push(e), complete: () => {} });
+    await settle();
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ name: 'InvoiceSpectateError', status: 403, title: 'Forbidden', detail: 'no' });
+    expect(requests).toHaveLength(1);
+    expect(requests[0].init.signal!.aborted).toBe(true);
+  });
+
+  it('spectate errors on a payload that is not JSON, and on a refused response', async () => {
+    serve([open('event: InvoicePaid\ndata: {\n\n')]);
+    const errors: unknown[] = [];
+    new (load())().spectate('1').subscribe({ next: () => {}, error: (e) => errors.push(e), complete: () => {} });
+    await settle();
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toBeInstanceOf(SyntaxError);
+
+    serve([() => new Response(null, { status: 404 })]);
+    const refused: Error[] = [];
+    new (load())().spectate('9').subscribe({ next: () => {}, error: (e) => refused.push(e as Error), complete: () => {} });
+    await settle();
+    expect(refused.map((e) => e.message)).toEqual(['Invoice spectate stream closed: /invoices/9/stream']);
   });
 });

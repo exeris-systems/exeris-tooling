@@ -328,5 +328,11 @@
     "since": "0.11",
     "adr": "ADR-108",
     "justification": "A @Blob field is server-owned and stored on dedicated routes ({base}/{id}/blobs/{field}): the entity's JSON never carries data for it and the server leaves it null. The field is omitted from the emitted entity interface, Create and Update DTOs, Zod schemas, form models, and list queries. The generated service emits upload<Field>, download<Field>, delete<Field> and stat<Field> methods, the form uploads selected files post-save, and the detail view loads descriptors via HEAD stat calls with a download button. Shared type BlobDescriptor is emitted once in types/index.ts. An entity without @Blob fields regenerates byte-identically. docs/migration/0.11.0/ts-12-blob-field-client.md carries the step."
+  },
+  {
+    "signature": "app.routes.ts: + canActivate per entity page from declared route access; + core/route-guards.ts (requireAuthenticated, requireAnyPermission); services/<entity>.stream.ts of an entity declaring access: EventSource -> fetch with Authorization: Bearer; services/<entity>.action-streams.ts on an identity-requiring action route: + Authorization: Bearer; both inject(AuthService)",
+    "since": "0.11",
+    "adr": "ADR-105",
+    "justification": "The kernel application refuses a route that demands an identity to a caller without the bearer token, and reads identity from the Authorization header only. A page is guarded by the requirement of the backend route it calls first, so the frontend admits a navigation exactly where the backend admits the request. A live view whose stream routes demand an identity is opened with fetch, because a native EventSource cannot send the header, and a per-action stream client whose action route demands one adds the header to its POST; neither passes through the HttpClient interceptor. The stream clients keep their classes, members and types. app.routes.ts is a seed, so an existing app adds the guards by hand. An app whose entities and actions declare no access, or only PUBLIC, regenerates byte-identically. docs/migration/0.11.0/ts-13-route-guards-and-identity-live-views.md carries the step."
   }
 ]

@@ -1,11 +1,18 @@
 /**
- * Coverage for src/generators/angular/guard-gen.ts — GuardGenerator emits no route guard and no
- * permission constant: it writes only the auth service seed. A guard checks names the author
- * declared, so none exists until a declared name reaches the generator.
+ * Coverage for src/generators/angular/guard-gen.ts — GuardGenerator writes the auth service seed,
+ * and `generateRouteGuards` the two functional guards `app.routes.ts` attaches. No guard carries a
+ * permission name of its own: the names arrive as the arguments the routes pass, copied from the
+ * declared route access.
  */
 
 import { describe, expect, it } from 'vitest';
-import { GuardGenerator, AUTH_SERVICE_PATH } from '../../../src/generators/angular/guard-gen.js';
+import ts from 'typescript';
+import {
+  GuardGenerator,
+  AUTH_SERVICE_PATH,
+  ROUTE_GUARDS_PATH,
+  generateRouteGuards,
+} from '../../../src/generators/angular/guard-gen.js';
 import {
   createGeneratorContext,
   type GeneratorContext,
@@ -83,4 +90,66 @@ describe('GuardGenerator — no invented permission, no role bypass', () => {
       for (const f of all) expect(f.content).not.toMatch(pattern);
     },
   );
+});
+
+describe('generateRouteGuards', () => {
+  const file = generateRouteGuards();
+
+  it('is the generated core/route-guards.ts, overwritten on every run', () => {
+    expect(file.path).toBe(ROUTE_GUARDS_PATH);
+    expect(file.path).toBe('core/route-guards.ts');
+    expect(file.overwritable).toBe(true);
+    expect(file.artifactType).toBe('GUARD');
+  });
+
+  it('declares functional guards over the auth service', () => {
+    expect(file.content).toContain("import { CanActivateFn } from '@angular/router';");
+    expect(file.content).toContain("import { AuthService } from './auth.service';");
+    expect(file.content).toContain('export const requireAuthenticated: CanActivateFn = () => inject(AuthService).isAuthenticated();');
+    expect(file.content).toContain('export function requireAnyPermission(...permissions: string[]): CanActivateFn {');
+    expect(file.content).toContain('return () => inject(AuthService).hasAnyPermission(permissions);');
+  });
+
+  it('names no permission and no role of its own', () => {
+    for (const pattern of [/'[a-z]+:[a-z]+'/, /hasRole/, /'ADMIN'/, /_PERMISSIONS/]) {
+      expect(file.content).not.toMatch(pattern);
+    }
+  });
+
+  it('is byte-identical across runs', () => {
+    expect(generateRouteGuards()).toEqual(file);
+  });
+
+  describe('behaviour of the emitted guards', () => {
+    interface Auth {
+      isAuthenticated(): boolean;
+      hasAnyPermission(permissions: string[]): boolean;
+    }
+    const load = (auth: Auth) => {
+      const js = ts.transpileModule(file.content.replace(/^import .*;$/gm, ''), {
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+      }).outputText;
+      const exports: Record<string, unknown> = {};
+      new Function('exports', 'inject', 'AuthService', js)(exports, () => auth, class {});
+      return exports as {
+        requireAuthenticated: () => boolean;
+        requireAnyPermission: (...p: string[]) => () => boolean;
+      };
+    };
+    const user = (permissions: string[] | null): Auth => ({
+      isAuthenticated: () => permissions !== null,
+      hasAnyPermission: (wanted) => permissions !== null && wanted.some((p) => permissions.includes(p)),
+    });
+
+    it('requireAuthenticated admits a signed-in user and refuses with false otherwise', () => {
+      expect(load(user([])).requireAuthenticated()).toBe(true);
+      expect(load(user(null)).requireAuthenticated()).toBe(false);
+    });
+
+    it('requireAnyPermission admits a user holding any one of the names', () => {
+      expect(load(user(['order:write'])).requireAnyPermission('order:read', 'order:write')()).toBe(true);
+      expect(load(user(['order:approve'])).requireAnyPermission('order:read', 'order:write')()).toBe(false);
+      expect(load(user(null)).requireAnyPermission('order:read')()).toBe(false);
+    });
+  });
 });

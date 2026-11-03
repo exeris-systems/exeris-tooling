@@ -6,6 +6,7 @@
  */
 
 import type { BackendType } from './backend-strategy.js';
+import type { RouteRequirementRow } from './route-requirements.js';
 
 // Re-export types from domain-model for convenience
 export type {
@@ -86,6 +87,11 @@ export interface GeneratorContext {
    * names is not an enum. Without it a type is taken for an enum by its name (`TypeScope.enums`).
    */
   enumsComplete?: boolean;
+  /**
+   * The access each generated route demands (ADR-105), in the row shape of
+   * `contract/route-policy.json`. Absent, a generator derives the rows from `allDomains`.
+   */
+  routeRequirements?: readonly RouteRequirementRow[];
 }
 
 export interface GeneratorConfig {
