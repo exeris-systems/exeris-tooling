@@ -318,7 +318,7 @@
     {
       "id": "openapi",
       "generator": "KernelOpenApiGenerator",
-      "artefact": "The OpenAPI 3.1 document of the entity's routes.",
+      "artefact": "The OpenAPI 3.1 document of the entity's routes; a route whose route-policy requirement demands an identity declares the `bearerAuth` scheme, 401, and 403 where it demands scopes.",
       "outputRoot": "main",
       "pathPattern": "^openapi/[^/]+-api\\.yaml$",
       "pathTemplate": "openapi/{kebab(E)}-api.yaml",

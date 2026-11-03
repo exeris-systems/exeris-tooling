@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-13
+last-verified: 2026-11-03
 ---
 
 # Diagnostic identifiers
@@ -136,7 +136,7 @@ so it is visible without `mvn -e`.
 | ID | Meaning | What to do |
 |---|---|---|
 | `EXT-PLUG-2101` | Detach failed moving the generated sources or updating the ignore file. | Check the cause; the source tree may be partly moved, so check `git status` before rerunning. |
-| `EXT-PLUG-2102` | Generated files already existed at the detach target and were left in place. | Reconcile the listed files by hand, or set `-Dexeris.failOnConflict=false` to accept them as a warning. |
+| `EXT-PLUG-2102` | Generated files already existed at the detach target and were left in place. A warning, followed by one `conflict:` line per file; with `-Dexeris.failOnConflict=true` the goal also fails. | Reconcile each listed file by hand. Set `-Dexeris.failOnConflict=true` to make a conflict fail the build. |
 
 ### 22xx — `exeris:verify-capabilities`
 
@@ -180,7 +180,7 @@ fail-fast.
 |---|---|---|
 | `EXT-GEN-3001` | The codegen command line failed to generate code. | Read the cause printed with it: for an I/O failure, check the path, permissions and disk space of the metadata and output directories. |
 | `EXT-GEN-3002` | The codegen command line was given missing or malformed arguments, or a switch it does not know. Exit status 2. | Pass `--metadata-dir` and `--output-dir`, and only the switches the usage text printed under it lists. A switch a newer release added fails on an older jar. |
-| `EXT-GEN-3003` | An entity field has a type the generated repository cannot store and read back: a parameterised type other than `List<…>` (`Map`, `Set`, `Optional`, …), a `List` whose element is not a plain type (`List<Map<String, String>>`, `List<List<X>>`, `List<X[]>`), an array (`byte[]`, …), `char` / `Character`, `BigInteger`, or a JDK value type with no static `valueOf(String)` (`LocalTime`, `OffsetTime`, `Duration`, `Period`, `Year`, `YearMonth`, `MonthDay`, `ZoneId`, `ZoneOffset`, `java.util.Date`, `Currency`, `Locale`, `URI`, `URL`, `Object`). An enum is never refused. Nothing is generated. Raised by the Java pipeline only: the limit is the Java repository's column encoding. | Declare the field as a `List<…>` of a plain element type (stored as a JSON column) or as a supported scalar (`String`, `UUID`, `Long`, `Integer`, `Short`, `Byte`, `Boolean`, `Float`, `Double`, `BigDecimal`, `Instant`, `LocalDateTime`, `OffsetDateTime`, `ZonedDateTime`, `LocalDate`, an enum) — `BigDecimal` in place of `BigInteger`, a `String` for a time of day or a duration. The message names every such field. |
+| `EXT-GEN-3003` | An entity field has a type the generated repository cannot store and read back: a parameterised type other than `List<…>` (`Map`, `Set`, `Optional`, …), a `List` whose element is not a plain type (`List<Map<String, String>>`, `List<List<X>>`, `List<X[]>`), an array (`byte[]`, …), `char` / `Character`, `BigInteger`, or a JDK value type with no static `valueOf(String)` (`LocalTime`, `OffsetTime`, `Duration`, `Period`, `Year`, `YearMonth`, `MonthDay`, `ZoneId`, `ZoneOffset`, `java.util.Date`, `Currency`, `Locale`, `URI`, `URL`, `Object`), or another entity of the build, which no column stores. An enum is never refused. Nothing is generated. Raised by the Java pipeline only: the limit is the Java repository's column encoding. | Declare the field as a `List<…>` of a plain element type (stored as a JSON column) or as a supported scalar (`String`, `UUID`, `Long`, `Integer`, `Short`, `Byte`, `Boolean`, `Float`, `Double`, `BigDecimal`, `Instant`, `LocalDateTime`, `OffsetDateTime`, `ZonedDateTime`, `LocalDate`, an enum) — `BigDecimal` in place of `BigInteger`, a `String` for a time of day or a duration, and the referenced entity's `UUID` key (`UUID customerId`, with `@Relationship(targetEntity = Customer.class)` for a foreign key) in place of a field typed as that entity. The message names every such field. |
 | `EXT-GEN-3004` | The codegen command line could not read the generator catalogue it carries. | `--print-catalogue` found no `META-INF/exeris/generator-catalogue.json` on its classpath: run it from the `exeris-codegen-cli` jar, or with `exeris-codegen-java` on the classpath, of one release. |
 
 ### 31xx — warnings
@@ -190,7 +190,7 @@ fail-fast.
 | `EXT-GEN-3101` | Generation found no domain or capability metadata to generate from. | Usually a compile that failed before the processor ran: fix the compile, then rerun. Nothing is generated and nothing committed is deleted (see `EXT-PLUG-2001`). |
 | `EXT-GEN-3102` | An optional `@Requires` has no matching provider, so the requirement is skipped. | Nothing, if the capability is meant to be optional. Otherwise add the `@Provides` the message names, or widen its version range. |
 | `EXT-GEN-3103` | The capability graph did not resolve on possibly stale metadata; the post-compile gate decides. | Nothing yet: `exeris:verify-capabilities` checks the freshly compiled metadata later in the same build and fails it with `EXT-PLUG-2201` if the graph is still unresolved. |
-| `EXT-GEN-3104` | No base package was given and the entities span more than one package. `Application`, `RuntimeComponents`, `RuntimeLifecycle` and the generated `testsupport` package go to the package of the entity whose fully-qualified name sorts first, with `.domain` removed (`com.shop.billing.domain.Invoice` and `com.shop.order.domain.Order` give `com.shop.billing`). | Nothing, if that package suits you. Otherwise set `exeris.basePackage` (`--base-package` on the command line) to the package you want; the warning is not printed when it is set. |
+| `EXT-GEN-3104` | No base package was given and the entities span more than one package. `Application`, `RuntimeComponents`, `RuntimeLifecycle`, `GeneratedRoutePolicy` and the generated `testsupport` package go to the package of the entity whose fully-qualified name sorts first, with `.domain` removed (`com.shop.billing.domain.Invoice` and `com.shop.order.domain.Order` give `com.shop.billing`). | Nothing, if that package suits you. Otherwise set `exeris.basePackage` (`--base-package` on the command line) to the package you want; the warning is not printed when it is set. |
 
 ## Initializr — `EXT-INIT`
 
