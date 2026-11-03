@@ -4168,7 +4168,7 @@ keeps compiling where it still uses one. 0.10.0 removes them.
 
 ## 0.11.0 — SDK annotations to emitted output, scope set 2026-10-07
 
-Pins SDK 0.13.0 and kernel 0.13.0, both final on Maven Central. Order, gates and the Java/TS
+Pins SDK 0.13.3 and kernel 0.13.1, both final on Maven Central. Order, gates and the Java/TS
 pairing are in [`docs/0.11.0-release-plan.md`](docs/0.11.0-release-plan.md). Every extraction row
 reads an SDK 0.13 half: the `-io` reader half under ADR-042 (exeris-sdk#187, exeris-sdk#161) or a
 carrier (exeris-sdk#186).

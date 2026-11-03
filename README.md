@@ -21,7 +21,7 @@ module, glossary and stability matrix.
 - Maven 3.9+ (enforced alongside the JDK rule).
 - Node 18+ to build `exeris-codegen-ts`; the **generated** Angular v22 app targets
   Node 22+.
-- `eu.exeris:exeris-kernel-*:0.13.1` and `eu.exeris:exeris-sdk-*:0.13.2`, both final
+- `eu.exeris:exeris-kernel-*:0.13.1` and `eu.exeris:exeris-sdk-*:0.13.3`, both final
   releases on Maven Central (the pins in `exeris-tooling-bom/pom.xml`). Every dependency
   resolves from Central with no settings file, and nothing is built from source first. A
   local repository that holds a kernel or SDK of the pinned version fetched from GitHub
