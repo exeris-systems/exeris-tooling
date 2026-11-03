@@ -1,7 +1,9 @@
 package eu.exeris.tooling.codegen.core.driver;
 
+import eu.exeris.sdk.sourcemodel.ast.BlobMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
 import org.junit.jupiter.api.DisplayName;
@@ -119,5 +121,23 @@ class RequiredDriversTest {
             assertThat(RequiredDrivers.forDomains(domains).contains(RequiredDrivers.FLOW_PROVIDER))
                     .isEqualTo(names.contains(RequiredSubsystems.FLOW));
         }
+    }
+
+    @Test
+    @DisplayName("a @Blob field adds the blob-storage SPI, because that is what makes a handler take a store")
+    void blobFieldAddsTheBlobStorageProvider() {
+        DomainMetadata withBlob = order()
+                .fields(List.of(FieldMetadata.builder("receipt", "BlobRef")
+                        .blob(BlobMetadata.ofContentTypes(List.of("application/pdf"))).build()))
+                .build();
+
+        assertThat(RequiredDrivers.forDomains(List.of(withBlob)))
+                .containsExactly(
+                        RequiredDrivers.SUBSYSTEM_PROVIDER,
+                        RequiredDrivers.PERSISTENCE_PROVIDER,
+                        RequiredDrivers.HTTP_PROVIDER,
+                        RequiredDrivers.BLOB_STORAGE_PROVIDER);
+        assertThat(RequiredDrivers.forDomains(List.of(order().build())))
+                .doesNotContain(RequiredDrivers.BLOB_STORAGE_PROVIDER);
     }
 }

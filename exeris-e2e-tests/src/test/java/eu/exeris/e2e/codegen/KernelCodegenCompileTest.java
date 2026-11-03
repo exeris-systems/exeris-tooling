@@ -5,6 +5,7 @@ import eu.exeris.e2e.codegen.compile.InMemoryJavaCompiler;
 import eu.exeris.e2e.codegen.compile.ProcessorCompiler;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
+import eu.exeris.sdk.sourcemodel.ast.BlobMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DataScope;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
@@ -395,6 +396,100 @@ class KernelCodegenCompileTest {
                             public void rename(String name) { this.name = name; }
                         }
                         """.formatted(UNIVERSE_PACKAGE, javaScopeType, javaScopeType, javaScopeType));
+        for (GeneratedFile file : generated) {
+            if ("java".equals(file.extension())) {
+                compiler.addSource(file.packageName() + "." + file.className(), file.content());
+            }
+        }
+        for (GeneratedFile file : applicationFiles) {
+            if ("java".equals(file.extension())) {
+                compiler.addSource(file.packageName() + "." + file.className(), file.content());
+            }
+        }
+
+        InMemoryJavaCompiler.Result result = compiler.compile();
+        assertThat(result.success())
+                .as("javac output:%n%s", result.renderErrors())
+                .isTrue();
+    }
+
+    private static final String BLOB_PACKAGE = "eu.exeris.e2e.blobapp.domain";
+
+    /**
+     * ADR-108: an entity with a restricted and an unrestricted {@code @Blob} field through the full
+     * strategy and the composition root, hard- and soft-deleted. The handler is the first emitted
+     * code to call {@code BlobStore}, {@code BlobUploadHandle} and {@code BlobDownloadHandle} and to
+     * answer a raw {@code HttpResponse} over a buffer of its own, so javac against the real kernel SPI
+     * is the proof those calls have the shape the emitter assumes. A {@code DELETE}-triggered event
+     * puts the publisher ahead of the store in the handler's constructor.
+     */
+    @ParameterizedTest(name = "softDelete={0}")
+    @ValueSource(booleans = {false, true})
+    @DisplayName("ADR-108: a @Blob entity's artefacts compile against the kernel SPI, hard- and soft-deleted")
+    void blobFieldArtifactsCompile(boolean softDelete) {
+        String blobRef = "eu.exeris.kernel.spi.storage.blob.BlobRef";
+        DomainMetadata metadata = DomainMetadata.builder("Ticket", BLOB_PACKAGE)
+                .path("/tickets")
+                .module("support")
+                .dataScope(DataScope.TENANT)
+                .softDelete(softDelete)
+                .fields(List.of(
+                        FieldMetadata.builder("code", "String").required(true).filterable(true).build(),
+                        FieldMetadata.builder("receipt", blobRef)
+                                .blob(BlobMetadata.ofContentTypes(
+                                        List.of("application/pdf")))
+                                .build(),
+                        FieldMetadata.builder("photo", blobRef)
+                                .blob(new BlobMetadata("photos", List.of()))
+                                .build()))
+                .events(List.of(DomainEventMetadata.builder("TicketClosed")
+                        .trigger(DomainEventMetadata.Trigger.DELETE)
+                        .build()))
+                .build();
+
+        List<GeneratedFile> generated = new KernelGeneratorStrategy().generate(metadata);
+        String handler = generated.stream().filter(f -> f.className().equals("TicketHandler"))
+                .findFirst().orElseThrow().content();
+        assertThat(handler)
+                .as("non-vacuous: the code under compilation uses the blob SPI")
+                .contains("public TicketHandler(TicketService service, MemoryAllocator allocator,")
+                .contains("blobStore.beginUpload(")
+                .contains("blobStore.openDownload(ref)")
+                .contains("handleUploadPhoto");
+        assertThat(handler.contains("deleteBlobObjects(id)")).isEqualTo(!softDelete);
+
+        List<GeneratedFile> applicationFiles = new KernelApplicationGenerator()
+                .generateAll(List.of(metadata), BLOB_PACKAGE.replace(".domain", ""), false);
+
+        InMemoryJavaCompiler compiler = new InMemoryJavaCompiler()
+                .addSource(BLOB_PACKAGE + ".Ticket", """
+                        package %s;
+
+                        import eu.exeris.kernel.spi.storage.blob.BlobRef;
+                        import java.util.UUID;
+
+                        public class Ticket {
+                            private UUID id;
+                            private String code;
+                            private UUID tenantId;
+                            private boolean deleted;
+                            private BlobRef receipt;
+                            private BlobRef photo;
+
+                            public UUID getId() { return id; }
+                            public void setId(UUID id) { this.id = id; }
+                            public String getCode() { return code; }
+                            public void setCode(String code) { this.code = code; }
+                            public UUID getTenantId() { return tenantId; }
+                            public void setTenantId(UUID tenantId) { this.tenantId = tenantId; }
+                            public boolean isDeleted() { return deleted; }
+                            public void setDeleted(boolean deleted) { this.deleted = deleted; }
+                            public BlobRef getReceipt() { return receipt; }
+                            public void setReceipt(BlobRef receipt) { this.receipt = receipt; }
+                            public BlobRef getPhoto() { return photo; }
+                            public void setPhoto(BlobRef photo) { this.photo = photo; }
+                        }
+                        """.formatted(BLOB_PACKAGE));
         for (GeneratedFile file : generated) {
             if ("java".equals(file.extension())) {
                 compiler.addSource(file.packageName() + "." + file.className(), file.content());

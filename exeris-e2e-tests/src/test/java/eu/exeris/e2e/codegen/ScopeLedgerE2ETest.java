@@ -1,5 +1,6 @@
 package eu.exeris.e2e.codegen;
 
+import eu.exeris.e2e.codegen.compile.BlobFacet;
 import eu.exeris.e2e.codegen.compile.GeneratedTree;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.http.HttpKernelProviders;
@@ -51,9 +52,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       request scope by the code that serves a request, never by the bootstrap files.</li>
  * </ul>
  *
- * <p>The corpora cover each feature that brings a scope in — events, a stream, a saga, a tenant —
- * alone and together, and the plain entity that brings in only the two every app reads. The
- * emitted <em>test</em> tree is out of scope: it binds its own scopes.
+ * <p>The corpora cover each feature that brings a scope in — events, a stream, a saga, a tenant, a
+ * {@code @Blob} field — alone and together, and the plain entity that brings in only the two every
+ * app reads. The emitted <em>test</em> tree is out of scope: it binds its own scopes.
  */
 @Tag("e2e")
 @Tag("codegen")
@@ -85,7 +86,12 @@ class ScopeLedgerE2ETest {
             "\\b(COMPOSITION_SCOPES|REQUEST_SCOPES)\\s*=\\s*List\\.of\\([^;]*\\);");
 
     record Corpus(String name, Map<String, String> sources,
-                  List<String> composition, List<String> request) {
+                  List<String> composition, List<String> request, GeneratedTree.MetadataEdit edit) {
+
+        Corpus(String name, Map<String, String> sources, List<String> composition, List<String> request) {
+            this(name, sources, composition, request, metadataDir -> { });
+        }
+
         @Override
         public String toString() {
             return name;
@@ -111,14 +117,20 @@ class ScopeLedgerE2ETest {
                 new Corpus("tenant only", ledger(),
                         List.of("KernelProviders.MEMORY_ALLOCATOR"),
                         List.of("HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY",
-                                "KernelProviders.STORAGE_CONTEXT")));
+                                "KernelProviders.STORAGE_CONTEXT")),
+                new Corpus("blob field", voucher(),
+                        List.of("KernelProviders.MEMORY_ALLOCATOR", "KernelProviders.BLOB_STORE"),
+                        List.of("HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY",
+                                "KernelProviders.STORAGE_CONTEXT"),
+                        BlobFacet.on("Voucher", "scan", List.of("application/pdf"))));
     }
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("corpora")
     @DisplayName("every read is listed or allowlisted, every listed scope is read, and each sits in its phase")
     void scopeListsMatchTheReads(Corpus corpus, @TempDir Path workspace) throws Exception {
-        try (GeneratedTree tree = GeneratedTree.build(workspace, BASE_PACKAGE, corpus.sources(), Map.of())) {
+        try (GeneratedTree tree = GeneratedTree.build(workspace, BASE_PACKAGE, corpus.sources(), Map.of(),
+                corpus.edit())) {
             Map<String, Set<String>> reads = scanReads(tree);
             Class<?> components = tree.loader().loadClass(BASE_PACKAGE + ".RuntimeComponents");
             List<String> composition = names(scopeList(components, "COMPOSITION_SCOPES"));
@@ -363,6 +375,35 @@ class ScopeLedgerE2ETest {
                     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
                     public Instant getUpdatedAt() { return updatedAt; }
                     public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
+                }
+                """);
+    }
+
+    /** Tenant-partitioned, with a {@code @Blob} field (its facet written onto the metadata). */
+    private static Map<String, String> voucher() {
+        return Map.of("eu/exeris/e2e/ledger/domain/Voucher.java", """
+                package eu.exeris.e2e.ledger.domain;
+
+                import eu.exeris.kernel.spi.storage.blob.BlobRef;
+                import eu.exeris.sdk.annotation.ExerisDomain;
+                import eu.exeris.sdk.annotation.Field;
+
+                import java.util.UUID;
+
+                @ExerisDomain(module = "books", path = "/vouchers", dataScope = ExerisDomain.DataScope.TENANT)
+                public class Voucher {
+                    private UUID id;
+                    @Field(label = "Code", required = true) private String code;
+                    @Field(label = "Tenant") private UUID tenantId;
+                    private BlobRef scan;
+                    public UUID getId() { return id; }
+                    public void setId(UUID id) { this.id = id; }
+                    public String getCode() { return code; }
+                    public void setCode(String code) { this.code = code; }
+                    public UUID getTenantId() { return tenantId; }
+                    public void setTenantId(UUID tenantId) { this.tenantId = tenantId; }
+                    public BlobRef getScan() { return scan; }
+                    public void setScan(BlobRef scan) { this.scan = scan; }
                 }
                 """);
     }

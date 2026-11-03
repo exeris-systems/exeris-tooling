@@ -58,7 +58,7 @@
     {
       "id": "handler",
       "generator": "KernelHandlerGenerator",
-      "artefact": "The HTTP handler serving the entity's routes.",
+      "artefact": "The HTTP handler serving the entity's routes, the routes of its `@Blob` fields included (ADR-108).",
       "outputRoot": "main",
       "pathPattern": "^(?:[^/]+/)*handler/[^/]+Handler\\.java$",
       "pathTemplate": "{base}/handler/{E}Handler.java",

@@ -5,6 +5,7 @@ import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ParamSource;
+import eu.exeris.tooling.codegen.java.support.BlobFields;
 import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
 import eu.exeris.tooling.codegen.java.support.ListQuerySupport;
 import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
@@ -87,6 +88,10 @@ public final class OpenApiComponentsBuilder {
         Set<String> serverOwned = serverOwnedFields(metadata);
         if (metadata.hasFields()) {
             for (FieldMetadata field : metadata.fields()) {
+                if (field.hasBlob()) {
+                    properties.put(field.name(), buildBlobFieldSchema(metadata, field));
+                    continue;
+                }
                 Schema<?> fieldSchema = buildFieldSchema(field);
                 if (serverOwned.contains(field.name())) {
                     fieldSchema.setReadOnly(true);
@@ -104,6 +109,21 @@ public final class OpenApiComponentsBuilder {
             putAuditStamp(properties, ServerOwnedFields.updatedAtField(metadata), "Last update timestamp");
         }
         schema.setProperties(properties);
+        return schema;
+    }
+
+    /**
+     * A {@code @Blob} field as the entity's JSON carries it: always {@code null}, since the generated
+     * application never fills it (ADR-108 Amendment 1), and so {@code readOnly}. Its bytes and their
+     * descriptor are on the field's own route.
+     */
+    private static Schema<?> buildBlobFieldSchema(DomainMetadata metadata, FieldMetadata field) {
+        Schema<Object> schema = OpenApiSchemas.typed(new Schema<>(), "null");
+        schema.setReadOnly(true);
+        schema.setDescription((field.description() != null ? field.description() + ". " : "")
+                + "Always null: the bytes are served on " + metadata.effectivePath()
+                + BlobFields.routeSuffix(field) + ", and HEAD on that path answers their content type "
+                + "and length");
         return schema;
     }
 

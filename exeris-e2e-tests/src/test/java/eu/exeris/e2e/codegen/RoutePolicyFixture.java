@@ -5,7 +5,9 @@ import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpRoutePolicy;
 import eu.exeris.kernel.spi.http.RouteRequirement;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
+import eu.exeris.sdk.sourcemodel.ast.BlobMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RouteAccess;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.kernel.KernelApplicationGenerator;
@@ -24,16 +26,19 @@ import java.util.regex.Pattern;
  * The domain model the route-policy tests generate from, and the compiled policy it yields.
  *
  * <p>{@code Order} requires scopes on the entity, one action replaces them and two inherit them,
- * one of which streams. {@code Invoice} requires an identity and makes one action public.
- * {@code Catalog} is public and its base path sits under {@code /orders}, so its exact routes and
- * {@code Order}'s templates compete for the same requests. {@code Tag} declares nothing, so its
- * routes are rows the policy abstains on.
+ * one of which streams; its {@code receipt} is a {@code @Blob} field restricted to one media type.
+ * {@code Invoice} requires an identity and makes one action public. {@code Catalog} is public, has
+ * an unrestricted {@code @Blob} field {@code image}, and its base path sits under {@code /orders},
+ * so its exact routes and {@code Order}'s templates compete for the same requests. {@code Tag}
+ * declares nothing, so its routes are rows the policy abstains on.
  */
 final class RoutePolicyFixture {
 
     static final String DOMAIN_PACKAGE = "eu.exeris.e2e.parity.domain";
     static final String BASE_PACKAGE = "eu.exeris.e2e.parity";
     static final String POLICY_TYPE = "GeneratedRoutePolicy";
+
+    private static final String BLOB_REF = "eu.exeris.kernel.spi.storage.blob.BlobRef";
 
     private static final Pattern REGISTRATION = Pattern.compile(
             "routerBuilder\\.(route|streamRoute)\\(HttpMethod\\.(\\w+),\\s*\"([^\"]+)\"");
@@ -45,6 +50,8 @@ final class RoutePolicyFixture {
         DomainMetadata order = DomainMetadata.builder("Order", DOMAIN_PACKAGE)
                 .path("/orders")
                 .realTimeApi(true)
+                .fields(List.of(FieldMetadata.builder("receipt", BLOB_REF)
+                        .blob(BlobMetadata.ofContentTypes(List.of("application/pdf"))).build()))
                 .permissions(List.of("order:read", "order:write"))
                 .actions(List.of(
                         ActionMetadata.builder("cancel").methodName("cancel").build(),
@@ -64,6 +71,7 @@ final class RoutePolicyFixture {
         DomainMetadata catalog = DomainMetadata.builder("Catalog", DOMAIN_PACKAGE)
                 .path("/orders/catalog")
                 .realTimeApi(true)
+                .fields(List.of(FieldMetadata.builder("image", BLOB_REF).blob(BlobMetadata.unrestricted()).build()))
                 .routeAccess(RouteAccess.PUBLIC)
                 .build();
         DomainMetadata tag = DomainMetadata.builder("Tag", DOMAIN_PACKAGE)
@@ -141,12 +149,15 @@ final class RoutePolicyFixture {
     }
 
     /** The concrete path of a contract row's template for {@code entity}. */
-    static String instantiate(String template, String entity, String action) {
+    static String instantiate(String template, String entity, String action, String field) {
         DomainMetadata domain = domains().stream()
                 .filter(d -> d.entityName().equals(entity))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("no fixture entity " + entity));
         String path = template.replace("{base}", domain.effectivePath());
+        if (field != null) {
+            path = path.replace("{field}", field);
+        }
         return action == null ? path : path.replace("{action}", NameCasing.kebab(action));
     }
 }

@@ -13,6 +13,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.Artifact
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.access.RouteRequirements;
 import eu.exeris.tooling.codegen.core.driver.RequiredSubsystems;
+import eu.exeris.tooling.codegen.java.support.BlobFields;
 import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
 import eu.exeris.tooling.codegen.java.support.ForeignKeys;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
@@ -21,6 +22,7 @@ import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.tooling.codegen.java.support.NameCasing;
 import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 
 import javax.lang.model.element.Modifier;
@@ -90,7 +92,9 @@ import java.util.Map;
  *       entity's {@code *Handler} and stream handler from it, builds one
  *       {@code eu.exeris.kernel.core.http.routing.HttpRouter} with the five canonical
  *       CRUD routes per entity (GET-all / GET-by-id / POST-create / PUT-update /
- *       DELETE), one per action and every generated stream route, publishes the
+ *       DELETE), three per {@code @Blob} field (PUT / GET / DELETE on
+ *       {@code {base}/{id}/blobs/<field>}), one per action and every generated
+ *       stream route, publishes the
  *       (decorated) router, and parks on a
  *       {@link java.util.concurrent.CountDownLatch} until the JVM shuts down.</li>
  * </ul>
@@ -207,6 +211,8 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         EVENT_ENGINE(KERNEL_PROVIDERS, Phase.COMPOSITION),
         /** Read by the saga-flow factories. */
         FLOW_ENGINE(KERNEL_PROVIDERS, Phase.COMPOSITION),
+        /** Read by the factory of every handler whose entity declares a {@code @Blob} field. */
+        BLOB_STORE(KERNEL_PROVIDERS, Phase.COMPOSITION),
         /** Read by payload-bearing publisher factories; unbound only empties payloads. */
         EVENT_PAYLOAD_CODEC_REGISTRY(KERNEL_PROVIDERS, Phase.OPTIONAL_COMPOSITION),
         /** Read by every handler's {@code parseBody}; bound per request by the kernel. */
@@ -1023,14 +1029,18 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                         CodeBlock.of("{@link $T}{@code .$L()}", repoType,
                                 KernelRepositoryGenerator.ACTING_TENANT_METHOD));
             }
+            CodeBlock.Builder handlerArgs = CodeBlock.builder().add("$L(), $L", serviceName, allocator);
             if (KernelHandlerGenerator.publishesFromHandler(domain)) {
-                addComponent(type, handlerType, entityLower + "Handler",
-                        CodeBlock.of("new $T($L(), $L, $L())",
-                                handlerType, serviceName, allocator, publisherName));
-            } else {
-                addComponent(type, handlerType, entityLower + "Handler",
-                        CodeBlock.of("new $T($L(), $L)", handlerType, serviceName, allocator));
+                handlerArgs.add(", $L()", publisherName);
             }
+            // The blob store is captured here for the allocator's reason: a deployment that binds
+            // none fails the boot, not the first upload (ADR-108).
+            if (BlobFields.any(domain)) {
+                read(readers, Scope.BLOB_STORE, factoryReference(entityLower + "Handler"));
+                handlerArgs.add(", $T.BLOB_STORE.get()", KERNEL_PROVIDERS);
+            }
+            addComponent(type, handlerType, entityLower + "Handler",
+                    CodeBlock.of("new $T($L)", handlerType, handlerArgs.build()));
 
             // ADR-043 Slice 1 / ADR-044 Slice 2: the SSE stream handlers go through the same
             // seam so that a consumer overriding one does not have to know which handlers take
@@ -1648,6 +1658,17 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                     HTTP_METHOD, basePath + "/{id}", entityLower);
             method.addStatement("routerBuilder.route($T.DELETE, $S, $LHandler::handleDelete)",
                     HTTP_METHOD, basePath + "/{id}", entityLower);
+            // ADR-108: each @Blob field's routes, in declaration order. HEAD reaches the GET route.
+            for (FieldMetadata field : BlobFields.of(domain)) {
+                String path = basePath + BlobFields.routeSuffix(field);
+                String pascal = NameCasing.pascal(field.name());
+                method.addStatement("routerBuilder.route($T.PUT, $S, $LHandler::handleUpload$L)",
+                        HTTP_METHOD, path, entityLower, pascal);
+                method.addStatement("routerBuilder.route($T.GET, $S, $LHandler::handleDownload$L)",
+                        HTTP_METHOD, path, entityLower, pascal);
+                method.addStatement("routerBuilder.route($T.DELETE, $S, $LHandler::handleDelete$L)",
+                        HTTP_METHOD, path, entityLower, pascal);
+            }
             // T1: one route per @Action, matching the OpenAPI path byte-for-byte
             // ({basePath}/{id}/actions/{kebab(name)}, POST — OpenAPI emits POST for
             // every action). The handler method name mirrors KernelHandlerGenerator's

@@ -208,6 +208,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
             constructor.addParameter(publisherType, PUBLISHER)
                     .addStatement("this.$L = $L", PUBLISHER, PUBLISHER);
         }
+        KernelHandlerBlobRoutes.addStore(handlerBuilder, constructor, metadata);
 
         handlerBuilder.addMethod(constructor.build())
                 .addMethod(buildHandleGetAll(entityLower, metadata, tenantPartitioned))
@@ -216,6 +217,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .addMethod(buildHandleUpdate(entityLower, entityType, metadata, tenantPartitioned, refusals))
                 .addMethod(buildHandleDelete(entityLower, optionalOfEntity, metadata, tenantPartitioned,
                         refusals));
+        KernelHandlerBlobRoutes.addRoutes(handlerBuilder, metadata);
 
         // T1: serve @Action methods. Each action gets a handler that loads the
         // aggregate, decodes its @ActionParam body (when any), invokes the actual
@@ -356,9 +358,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         appendBodyParseGuard(method, entityType);
         // The create body does not carry the server-owned fields; a value it names is dropped
         // before the service, which may set them itself.
-        for (ServerOwnedFields.Reset reset : ServerOwnedFields.resetOnCreate(metadata)) {
-            method.addStatement("entity.set$L($L)", NameCasing.pascal(reset.field()), reset.literal());
-        }
+        appendResets(method, ServerOwnedFields.resetOnCreate(metadata));
         appendValidationGuard(method, KernelValidationRules.onCreate(metadata));
         method.beginControlFlow("try")
                 .addStatement("$T saved = service.save(entity)", entityType);
@@ -376,6 +376,8 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         appendTenantGuard(method, tenantPartitioned);
         appendPathIdGuard(method);
         appendBodyParseGuard(method, entityType);
+        // A @Blob field is never filled from a body: its bytes travel on the field's own routes.
+        appendResets(method, ServerOwnedFields.resetOnUpdate(metadata));
         appendValidationGuard(method, KernelValidationRules.onUpdate(metadata));
         // A request body does not set the read-only fields; an action, which calls update, does.
         String updateMethod = KernelRepositoryGenerator.hasRequestUpdate(metadata)
@@ -389,6 +391,13 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         appendCallerFaultCatch(method, metadata);
         appendReferenceNotFoundCatch(method, refusals);
         return appendServerErrorCatch(method, "Failed to update " + entityLower).build();
+    }
+
+    /** Sets each reset property on the decoded {@code entity}. */
+    private static void appendResets(MethodSpec.Builder method, List<ServerOwnedFields.Reset> resets) {
+        for (ServerOwnedFields.Reset reset : resets) {
+            method.addStatement("entity.set$L($L)", NameCasing.pascal(reset.field()), reset.literal());
+        }
     }
 
     private MethodSpec buildHandleDelete(String entityLower, TypeName optionalOfEntity,
@@ -429,6 +438,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                     "id", "removed.get()");
             method.endControlFlow();
         }
+        KernelHandlerBlobRoutes.appendRowDelete(method, metadata);
         method.addStatement("exchange.respond($T.NO_CONTENT)", HTTP_STATUS);
         // Always the not-found type, never the conflict one: deleteById matches on id alone,
         // so a versioned entity has no stale-version failure mode on this route.
@@ -937,7 +947,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
 
     /** A {@code public void handle*(HttpExchange exchange)} skeleton — the shared
      *  signature of every CRUD handler. */
-    private static MethodSpec.Builder crudHandler(String name) {
+    static MethodSpec.Builder crudHandler(String name) {
         return MethodSpec.methodBuilder(name)
                 .addModifiers(Modifier.PUBLIC)
                 .addParameter(HTTP_EXCHANGE, EXCHANGE_PARAM);
@@ -949,7 +959,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
      * <p>A global entity needs no tenant to be readable, so guarding it would refuse requests that
      * are perfectly serviceable.
      */
-    private static void appendTenantGuard(MethodSpec.Builder method, boolean tenantPartitioned) {
+    static void appendTenantGuard(MethodSpec.Builder method, boolean tenantPartitioned) {
         if (!tenantPartitioned) {
             return;
         }
@@ -1086,7 +1096,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
     /** Emits the shared "parse {@code id} from the path or 400" guard: declares a
      *  {@code UUID id} and parses it, responding {@code BAD_REQUEST} and returning
      *  on a malformed value. Leaves {@code id} in scope for the caller. */
-    private static void appendPathIdGuard(MethodSpec.Builder method) {
+    static void appendPathIdGuard(MethodSpec.Builder method) {
         method.addStatement("String idStr = extractPathId(exchange)")
                 .addStatement("$T id", UUID)
                 .beginControlFlow("try")
@@ -1196,7 +1206,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
 
     /** Emits the shared "catch RuntimeException → log + 500" tail that closes the
      *  service-call {@code try} block of every CRUD handler. */
-    private static MethodSpec.Builder appendServerErrorCatch(MethodSpec.Builder method, String failMessage) {
+    static MethodSpec.Builder appendServerErrorCatch(MethodSpec.Builder method, String failMessage) {
         return method.nextControlFlow("catch ($T e)", RUNTIME_EXCEPTION)
                 .addStatement("LOG.log($T.ERROR, $S, e)", KernelScaffold.LOGGER_LEVEL, failMessage)
                 .addStatement(RESPOND_SERVER_ERROR, HTTP_STATUS)

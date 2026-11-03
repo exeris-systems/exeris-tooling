@@ -10,6 +10,7 @@ import com.palantir.javapoet.TypeSpec;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
+import eu.exeris.tooling.codegen.java.support.BlobFields;
 import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
 import eu.exeris.tooling.codegen.java.support.ForeignKeys;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
@@ -110,6 +111,9 @@ public final class KernelHandlerTestGenerator {
     private static final String TENANT_KEY = "00000000-0000-4000-8000-000000000002";
 
     private static final ClassName MAP = ClassName.get("java.util", "Map");
+    private static final String BLOB_PACKAGE = "eu.exeris.kernel.spi.storage.blob";
+    /** The nested blob store a handler of an entity with {@code @Blob} fields is built over. */
+    private static final String EMPTY_BLOB_STORE = "EmptyBlobStore";
     private static final ClassName BIG_DECIMAL = ClassName.get("java.math", "BigDecimal");
     private static final ClassName EXERIS_KERNEL_EXCEPTION =
             ClassName.get("eu.exeris.kernel.spi.exceptions", "ExerisKernelException");
@@ -275,6 +279,9 @@ public final class KernelHandlerTestGenerator {
                 .build());
         type.addType(stubService(entityType, serviceType, repositoryType, stubType,
                 metadata, new StubRefusals(referenceNotFound, stillReferenced)));
+        if (BlobFields.any(metadata)) {
+            type.addType(emptyBlobStore());
+        }
 
         return new GeneratedFile(packageName, className,
                 KernelScaffold.render(packageName, type.build()), ArtifactType.TEST);
@@ -308,8 +315,10 @@ public final class KernelHandlerTestGenerator {
                 .addJavadoc("decoding context requires an allocator to exist, never to allocate, so its\n")
                 .addJavadoc("allocate methods throw and are never reached.\n");
 
+        CodeBlock blobStore = BlobFields.any(metadata)
+                ? CodeBlock.of(", new $L()", EMPTY_BLOB_STORE) : CodeBlock.of("");
         if (!KernelHandlerGenerator.publishesFromHandler(metadata)) {
-            return factory.addStatement("return new $T(service, allocator)", handlerType).build();
+            return factory.addStatement("return new $T(service, allocator$L)", handlerType, blobStore).build();
         }
 
         ClassName publisherType = ClassName.get(
@@ -322,9 +331,67 @@ public final class KernelHandlerTestGenerator {
                 .addJavadoc("<p>The publisher is built over a fresh {@link $T}, so a\n", engineType)
                 .addJavadoc("test that wants to assert on published events can construct one\n")
                 .addJavadoc("itself and keep the reference.\n")
-                .addStatement("return new $T(service, allocator, new $T(new $T()))",
-                        handlerType, publisherType, engineType)
+                .addStatement("return new $T(service, allocator, new $T(new $T())$L)",
+                        handlerType, publisherType, engineType, blobStore)
                 .build();
+    }
+
+    /**
+     * The blob store a handler of an entity with {@code @Blob} fields is built over: it holds no
+     * object, so a row delete finds nothing to delete, and any other use fails the test that made
+     * it. Nested rather than in the shared support package because only such a handler needs one,
+     * and a stub of the kernel SPI keeps the dependency contract at JUnit 5 + AssertJ (ADR-058).
+     */
+    private static TypeSpec emptyBlobStore() {
+        ClassName blobRef = ClassName.get(BLOB_PACKAGE, "BlobRef");
+        ClassName unsupported = ClassName.get(UnsupportedOperationException.class);
+        String refused = "the generated handler tests do not exercise the blob routes";
+        return TypeSpec.classBuilder(EMPTY_BLOB_STORE)
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                .addSuperinterface(ClassName.get(BLOB_PACKAGE, "BlobStore"))
+                .addJavadoc("A blob store that holds nothing; only {@code stat} and {@code delete} answer.\n")
+                .addMethod(blobStoreMethod("beginUpload", ClassName.get(BLOB_PACKAGE, "BlobUploadHandle"))
+                        .addParameter(blobRef, "ref")
+                        .addParameter(TypeName.LONG, "contentLength")
+                        .addParameter(String.class, "contentType")
+                        .addStatement("throw new $T($S)", unsupported, refused)
+                        .build())
+                .addMethod(blobStoreMethod("openDownload", ClassName.get(BLOB_PACKAGE, "BlobDownloadHandle"))
+                        .addParameter(blobRef, "ref")
+                        .addStatement("throw new $T($S)", unsupported, refused)
+                        .build())
+                .addMethod(blobStoreMethod("openDownload", ClassName.get(BLOB_PACKAGE, "BlobDownloadHandle"))
+                        .addParameter(blobRef, "ref")
+                        .addParameter(ClassName.get(BLOB_PACKAGE, "BlobRange"), "range")
+                        .addStatement("throw new $T($S)", unsupported, refused)
+                        .build())
+                .addMethod(blobStoreMethod("stat",
+                                ParameterizedTypeName.get(OPTIONAL, ClassName.get(BLOB_PACKAGE, "BlobMetadata")))
+                        .addParameter(blobRef, "ref")
+                        .addStatement("return $T.empty()", OPTIONAL)
+                        .build())
+                .addMethod(blobStoreMethod("delete", TypeName.BOOLEAN)
+                        .addParameter(blobRef, "ref")
+                        .addStatement("return false")
+                        .build())
+                .addMethod(blobStoreMethod("signedUrl",
+                                ParameterizedTypeName.get(OPTIONAL, ClassName.get("java.net", "URI")))
+                        .addParameter(blobRef, "ref")
+                        .addParameter(ClassName.get(BLOB_PACKAGE, "BlobAccess"), "access")
+                        .addParameter(ClassName.get("java.time", "Duration"), "ttl")
+                        .addStatement("return $T.empty()", OPTIONAL)
+                        .build())
+                .addMethod(blobStoreMethod("close", TypeName.VOID)
+                        .addComment("holds nothing to release")
+                        .build())
+                .build();
+    }
+
+    private static MethodSpec.Builder blobStoreMethod(String name, TypeName returns) {
+        return MethodSpec.methodBuilder(name)
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(returns);
     }
 
     /**

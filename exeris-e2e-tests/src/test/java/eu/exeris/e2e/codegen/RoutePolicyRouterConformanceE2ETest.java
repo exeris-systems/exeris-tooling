@@ -44,7 +44,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>The corpus is every route at an id, plus a trailing slash, a doubled and an empty segment, a
  * query component, {@code HEAD} for every {@code GET}, ids that are another route's literal
- * segment ({@code stream}, {@code catalog}), and paths no route serves.
+ * segment ({@code stream}, {@code catalog}, {@code blobs}), and paths no route serves.
  */
 @Tag("e2e")
 @Tag("codegen")
@@ -124,7 +124,7 @@ class RoutePolicyRouterConformanceE2ETest {
         Set<Probe> probes = new LinkedHashSet<>();
         for (RegisteredRoute route : registered) {
             HttpMethod method = RoutePolicyFixture.method(route.method());
-            for (String id : List.of("42", "stream", "catalog", "")) {
+            for (String id : List.of("42", "stream", "catalog", "blobs", "")) {
                 String path = route.template().replace("{id}", id);
                 for (String variant : List.of(path, path + "/", path.replaceFirst("/", "//"), path + "?q=1&x=/a")) {
                     probes.add(new Probe(method, variant));
@@ -135,8 +135,8 @@ class RoutePolicyRouterConformanceE2ETest {
             }
         }
         for (String path : List.of("/", "/nothing", "/orders/42/actions/unknown", "/orders/42/stream/extra",
-                "/tags/42/actions/merge/x")) {
-            for (HttpMethod method : List.of(HttpMethod.GET, HttpMethod.POST, HttpMethod.PATCH)) {
+                "/tags/42/actions/merge/x", "/orders/42/blobs/unknown", "/tags/42/blobs/receipt")) {
+            for (HttpMethod method : List.of(HttpMethod.GET, HttpMethod.POST, HttpMethod.PUT, HttpMethod.PATCH)) {
                 probes.add(new Probe(method, path));
             }
         }
