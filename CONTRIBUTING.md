@@ -68,23 +68,12 @@ it afterwards; `PostgresTypeMatrixE2ETest` creates no role.
 the build pins. It covers:
 
 - every scenario package at the tag is classified, so a new scenario fails the gate until it is added;
-- the domain scenarios (`graph`, `invoicing`, `ordering`, `presentation`) produce one metadata file per
-  entity and per view;
-- every entity of the scenarios the Java application is generated from is served by an emitted
-  handler, service and repository;
-- the corpus as written is refused by the processor with exactly one `EXT-PROC-1033` per entity (no
-  package ends in `.domain`) and `EXT-PROC-1034` naming each accessor the generated application calls
-  (the entities declare none), and its metadata by the pipeline with `EXT-PROC-1033`, before anything
-  is written;
-- a copy with each scenario moved to `<scenario>.domain`, and nothing else changed, is refused with the
-  same `EXT-PROC-1034` errors and no other. The gate works on that copy's metadata, written by a
-  processor run with `-Aexeris.metadataOnly=true`, and asserts it is the metadata the refused run
-  writes;
-- the Java pipeline refuses the fields typed as another entity (`Invoice.customer`,
-  `InvoiceLine.invoice`, `Product.category`) with EXT-GEN-3003, so the Java application is generated
-  from `ordering` and `presentation`, while the frontend half generates from every domain scenario;
-- the emitted main and test trees are compiled. They fail on one known gap, pinned exactly: the example
-  entities declare no JavaBean accessors. Any other diagnostic fails the gate;
+- the processor accepts the domain scenarios (`graph`, `invoicing`, `ordering`, `presentation`) with no
+  error or warning and writes one metadata file per entity and per view;
+- the Java application and the frontend half are generated from every domain scenario, and every entity
+  is served by an emitted handler, service and repository;
+- the emitted main and test trees compile with no error or warning under `-Xlint:all`, and the emitted
+  tests pass when run against the emitted code and the example entities;
 - `capability` is refused by the capability graph: `LedgerCap` requires `AuditTrail`, which no module
   of the scenario provides;
 - a second run in a fresh workspace writes the same metadata and emitted trees, file for file.

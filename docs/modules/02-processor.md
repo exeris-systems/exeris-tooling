@@ -89,7 +89,7 @@ Every diagnostic is printed through one method, `print`, which `ProcessorArchite
 
 The full list of what `KernelAccessors` derives for `EXT-PROC-1034` is in that class's Javadoc.
 
-Trade-off: the processor refuses at the declaration, which puts every refusal in the author's IDE at the right line, at the price of encoding knowledge of the generated application (its `.domain` layout, its accessor calls) inside a module that otherwise knows only the SDK. `-Aexeris.metadataOnly` exists because a consumer that generates no application, such as the SDK conformance kit or the SDK examples gate, would otherwise be refused for a layout it does not need.
+Trade-off: the processor refuses at the declaration, which puts every refusal in the author's IDE at the right line, at the price of encoding knowledge of the generated application (its `.domain` layout, its accessor calls) inside a module that otherwise knows only the SDK. `-Aexeris.metadataOnly` exists because a consumer that generates no application, such as the SDK conformance kit, would otherwise be refused for a layout it does not need.
 
 ## Owning ADRs
 
