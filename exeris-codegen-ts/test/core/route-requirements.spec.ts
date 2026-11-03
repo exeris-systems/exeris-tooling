@@ -112,7 +112,7 @@ describe('deriveRouteRequirements', () => {
     expect(rows[5]).toEqual({
       entity: 'Order',
       method: 'PUT',
-      path: '{base}/{id}/blobs/receipt',
+      path: '{base}/{id}/blobs/{field}',
       field: 'receipt',
       requirement: { kind: 'authenticated' },
       source: 'entity',
@@ -120,7 +120,7 @@ describe('deriveRouteRequirements', () => {
     expect(rows[6]).toEqual({
       entity: 'Order',
       method: 'GET',
-      path: '{base}/{id}/blobs/receipt',
+      path: '{base}/{id}/blobs/{field}',
       field: 'receipt',
       requirement: { kind: 'authenticated' },
       source: 'entity',
@@ -128,7 +128,7 @@ describe('deriveRouteRequirements', () => {
     expect(rows[7]).toEqual({
       entity: 'Order',
       method: 'DELETE',
-      path: '{base}/{id}/blobs/receipt',
+      path: '{base}/{id}/blobs/{field}',
       field: 'receipt',
       requirement: { kind: 'authenticated' },
       source: 'entity',
@@ -138,7 +138,7 @@ describe('deriveRouteRequirements', () => {
     expect(rows[8]).toEqual({
       entity: 'Order',
       method: 'PUT',
-      path: '{base}/{id}/blobs/scan',
+      path: '{base}/{id}/blobs/{field}',
       field: 'scan',
       requirement: { kind: 'authenticated' },
       source: 'entity',
@@ -146,7 +146,7 @@ describe('deriveRouteRequirements', () => {
     expect(rows[9]).toEqual({
       entity: 'Order',
       method: 'GET',
-      path: '{base}/{id}/blobs/scan',
+      path: '{base}/{id}/blobs/{field}',
       field: 'scan',
       requirement: { kind: 'authenticated' },
       source: 'entity',
@@ -154,7 +154,7 @@ describe('deriveRouteRequirements', () => {
     expect(rows[10]).toEqual({
       entity: 'Order',
       method: 'DELETE',
-      path: '{base}/{id}/blobs/scan',
+      path: '{base}/{id}/blobs/{field}',
       field: 'scan',
       requirement: { kind: 'authenticated' },
       source: 'entity',

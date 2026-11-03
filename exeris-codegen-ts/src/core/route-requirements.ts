@@ -98,11 +98,8 @@ export function deriveRouteRequirements(domains: readonly DomainMetadata[]): Rou
     const entity = ownRequirement(domain);
     for (const [method, path] of CRUD_ROUTES) push(domain.entityName, method, path, entity, 'entity');
     for (const f of domain.fields ?? []) {
-      if (f.blob !== undefined) {
-        push(domain.entityName, 'PUT', `{base}/{id}/blobs/${f.name}`, entity, 'entity', undefined, f.name);
-        push(domain.entityName, 'GET', `{base}/{id}/blobs/${f.name}`, entity, 'entity', undefined, f.name);
-        push(domain.entityName, 'DELETE', `{base}/{id}/blobs/${f.name}`, entity, 'entity', undefined, f.name);
-      }
+      if (f.blob === undefined) continue;
+      for (const method of BLOB_METHODS) push(domain.entityName, method, BLOB_PATH, entity, 'entity', undefined, f.name);
     }
     for (const action of domain.actions) if (!action.streaming) actionRow(domain, action);
   }
@@ -118,6 +115,10 @@ export function deriveRouteRequirements(domains: readonly DomainMetadata[]): Rou
 }
 
 const ACTION_PATH = '{base}/{id}/actions/{action}';
+
+const BLOB_PATH = '{base}/{id}/blobs/{field}';
+
+const BLOB_METHODS: readonly RouteRequirementRow['method'][] = ['PUT', 'GET', 'DELETE'];
 
 const CRUD_ROUTES: readonly (readonly [RouteRequirementRow['method'], string])[] = [
   ['GET', '{base}'],
