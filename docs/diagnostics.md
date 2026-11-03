@@ -45,7 +45,10 @@ from, not what severity it has now. An event that two layers report carries one 
 ## Annotation processor — `EXT-PROC`
 
 Printed by `javac` while it compiles your sources. `-Aexeris.strict=true` enables the 12xx audit and
-`-Aexeris.verbose=true` the 19xx trail; both are off by default.
+`-Aexeris.verbose=true` the 19xx trail; both are off by default. `-Aexeris.metadataOnly=true` declares
+that the metadata feeds no generated kernel application, such as a conformance kit's, and skips
+`EXT-PROC-1033` and `EXT-PROC-1034`, which only the generated application needs; the metadata
+written is the same either way.
 
 ### 10xx — declaration refusals (error)
 
@@ -82,6 +85,8 @@ Printed by `javac` while it compiles your sources. `-Aexeris.strict=true` enable
 | `EXT-PROC-1030` | `@Schedule` is declared on an element. At 1.0 the kernel issues no service principal, so a declared background job is refused whatever its action requires (kernel ADR-057 Amendment A1). | Remove `@Schedule`; schedule the work outside the generated application until the kernel issues a service principal. |
 | `EXT-PROC-1031` | `@Blob` is on a field of an `@ExerisDomain` entity whose `dataScope` is `GLOBAL`. Global scope leaves `StorageContext.isolationKey` empty, and the kernel blob store terminally denies blob operations without an isolation key ([SDK ADR-072](https://github.com/exeris-systems/exeris-sdk/blob/main/docs/adr/ADR-072-kernel-preview-spi-reserved-surface.md) obligation 30, kernel ADR-056). | Declare `dataScope = TENANT` or `UNIVERSE` on the entity, or remove `@Blob` if the field should not be stored in the blob store. |
 | `EXT-PROC-1032` | `@Blob` is on a field whose type is not `eu.exeris.kernel.spi.storage.blob.BlobRef`. The generated application serves `@Blob` fields on dedicated upload and download routes backed by the kernel blob store ([ADR-108](adr/ADR-108-blob-field-routes.md)). | Declare the field as `BlobRef` (`private BlobRef <name>;`), or remove `@Blob` if the field is an ordinary inline column value. |
+| `EXT-PROC-1033` | An `@ExerisDomain` entity's package does not end in `.domain`. The generated application derives the packages of the entity's repository, service, handler and event types by replacing that suffix (`com.shop.order.domain.Order` gives `com.shop.order.repository.OrderRepository`). The code-generation pipeline prints the same identifier, before it writes anything, for metadata whose package does not end in `.domain`, such as metadata handed to the `exeris-codegen-cli` jar. | Move the entity into a package ending in `.domain`, such as `com.shop.order.domain`. |
+| `EXT-PROC-1034` | An `@ExerisDomain` entity has no public instance getter or setter that the generated application calls on it. The generated repository binds every column through its getter and reads it back through its setter: the primary key, every field that is a column, and the owning tenant, audit times, soft-delete flag and version the entity enables. A primitive `boolean` field and the soft-delete flag read as `is<Name>()`, every other column as `get<Name>()`. The create and update handlers set the audit, version and soft-delete properties and every `@Blob` field after decoding a body, so a `@Blob` field needs a setter only. The handlers also read the fields they validate, the repository the required read-only fields, and the event publishers and graph projection the fields they carry. A field nothing reads or writes needs nothing, and a static or transient field is not an entity field. Lombok's `@Getter`, `@Setter`, `@Data` and `@Value` on the entity or the field count as the accessors they generate, in either processor order: `@Value` generates getters only, `@Data` setters only for non-final fields, and an access level other than `PUBLIC` (`AccessLevel.NONE` included) none. | Add the methods the message names, as `public` instance methods of the entity or a superclass, or the Lombok annotation that generates them. |
 
 ### 11xx — warnings on an ordinary build
 
@@ -157,8 +162,9 @@ is bound to take the verdict, and by the `CodegenMain` command line, which has n
 ## Code-generation pipeline — `EXT-GEN`
 
 Logged by the pipeline in `exeris-codegen-java` through `System.Logger`, so they appear inside a
-Maven build as well as from the `CodegenMain` command line. A refusal (`EXT-GEN-3003`) fails the
-run instead: `exeris:generate` prints it as its goal failure, and `CodegenMain` prints it and exits
+Maven build as well as from the `CodegenMain` command line. A refusal (`EXT-GEN-3003`, and
+`EXT-PROC-1033` for an entity outside a `.domain` package) fails the run instead: `exeris:generate`
+prints it as its goal failure, and `CodegenMain` prints it and exits
 with status 1.
 
 `CodegenMain` (the `exeris-codegen-cli` jar, ADR-097) exits with `0` on success, `1` when generation

@@ -217,17 +217,25 @@ class SharedScopeSqlE2ETest {
                 public class GalaxyPresence {
 
                     private java.util.UUID id;
+                    public java.util.UUID getId() { return id; }
+                    public void setId(java.util.UUID id) { this.id = id; }
 
                     @Field(label = "X")
                     private int x;
+                    public int getX() { return x; }
+                    public void setX(int x) { this.x = x; }
 
                     @Field(label = "Owner")
                     @TenantId
                     private UUID ownerTenantId;
+                    public UUID getOwnerTenantId() { return ownerTenantId; }
+                    public void setOwnerTenantId(UUID ownerTenantId) { this.ownerTenantId = ownerTenantId; }
 
                     @Field(label = "Universe")
                     @SharedScope
                     private UUID universeId;
+                    public UUID getUniverseId() { return universeId; }
+                    public void setUniverseId(UUID universeId) { this.universeId = universeId; }
                 }
                 """);
         sources.put("com/world/domain/Fleet.java",
@@ -243,12 +251,18 @@ class SharedScopeSqlE2ETest {
                 public class Fleet {
 
                     private java.util.UUID id;
+                    public java.util.UUID getId() { return id; }
+                    public void setId(java.util.UUID id) { this.id = id; }
 
                     @Field(label = "Name")
                     private String name;
+                    public String getName() { return name; }
+                    public void setName(String name) { this.name = name; }
 
                     @Field(label = "Tenant")
                     private UUID tenantId;
+                    public UUID getTenantId() { return tenantId; }
+                    public void setTenantId(UUID tenantId) { this.tenantId = tenantId; }
                 }
                 """);
         return sources;

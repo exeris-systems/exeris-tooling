@@ -3,6 +3,7 @@ package eu.exeris.tooling.processor.tck;
 import static com.google.testing.compile.Compiler.javac;
 
 import com.google.testing.compile.Compilation;
+import com.google.testing.compile.Compiler;
 import com.google.testing.compile.JavaFileObjects;
 import eu.exeris.sdk.tck.Facet;
 import eu.exeris.sdk.tck.TckCorpus;
@@ -82,7 +83,7 @@ final class TckCorpusProducer {
         }
         String simpleName = type.group(1);
         String qualifiedName = pkg.find() ? pkg.group(1) + "." + simpleName : simpleName;
-        Compilation compilation = javac().withProcessors(new ExerisDomainProcessor())
+        Compilation compilation = producer()
                 .compile(JavaFileObjects.forSourceString(qualifiedName, asBlobRefs(entitySource)));
         if (compilation.status() != Compilation.Status.SUCCESS) {
             throw new IllegalStateException("the processor refuses " + qualifiedName + ": " + compilation.errors());
@@ -98,7 +99,7 @@ final class TckCorpusProducer {
             sources.add(JavaFileObjects.forSourceString(
                     TckCorpus.packageName() + "." + entity.getKey(), asBlobRefs(entity.getValue())));
         }
-        Compilation compilation = javac().withProcessors(new ExerisDomainProcessor()).compile(sources);
+        Compilation compilation = producer().compile(sources);
         if (compilation.status() != Compilation.Status.SUCCESS) {
             throw new IllegalStateException("the TCK corpus does not compile under the processor: "
                     + compilation.diagnostics());
@@ -111,6 +112,17 @@ final class TckCorpusProducer {
             metadata.put(name, read(file));
         }
         return Collections.unmodifiableMap(metadata);
+    }
+
+    /**
+     * The processor as a metadata producer for a conformance kit, which generates no kernel
+     * application: {@code -Aexeris.metadataOnly=true} skips the refusals only the generated
+     * application needs (EXT-PROC-1033, EXT-PROC-1034) and leaves the metadata unchanged. The
+     * corpus declares its entities in {@code eu.exeris.sdk.tck.corpus}, with no accessors.
+     */
+    static Compiler producer() {
+        return javac().withOptions("-A" + ExerisDomainProcessor.OPTION_METADATA_ONLY + "=true")
+                .withProcessors(new ExerisDomainProcessor());
     }
 
     /**

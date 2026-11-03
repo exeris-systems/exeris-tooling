@@ -114,6 +114,9 @@ import java.util.Map;
  */
 public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
+    /** The package suffix an entity's package ends in, which the infrastructure packages replace. */
+    private static final String DOMAIN_SUFFIX = ".domain";
+
     private static final String TX_EXECUTOR_NAME = "transactionalExecutor";
     /** The scope-ledger entry of a stream or respond-once handler's tenant guard. */
     private static final String TENANT_GUARD_READER = "the tenant guard in {@link $T}";
@@ -257,6 +260,8 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
      *                    {@code RuntimeLifecycle} are emitted here
      * @return the four emitted files; always
      *         {@code [Application, RuntimeComponents, RuntimeLifecycle, GeneratedRoutePolicy]}
+     * @throws EntityPackageLayoutException ({@code EXT-PROC-1033}) if an entity's package does not
+     *         end in {@code .domain}; nothing is emitted
      */
     public List<GeneratedFile> generateAll(List<DomainMetadata> domains, String basePackage) {
         return generateAll(domains, basePackage, false);
@@ -278,10 +283,13 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
      *                 {@link #buildApplication(String, boolean, boolean, String)}
      * @return the four emitted files; always
      *         {@code [Application, RuntimeComponents, RuntimeLifecycle, GeneratedRoutePolicy]}
+     * @throws EntityPackageLayoutException ({@code EXT-PROC-1033}) if an entity's package does not
+     *         end in {@code .domain}; nothing is emitted
      * @since 0.7
      */
     public List<GeneratedFile> generateAll(List<DomainMetadata> domains, String basePackage,
                                            boolean composed) {
+        requireDomainPackages(domains);
         List<GeneratedFile> files = new ArrayList<>(4);
         // The Jackson 3 sentence is emitted only when a repository in this tree imports it.
         boolean importsJackson = domains.stream().anyMatch(KernelRepositoryGenerator::importsJackson);
@@ -842,30 +850,45 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     private record InfraPackages(String repository, String service, String handler, String event) {}
 
     /**
-     * Derives the {@code .repository} / {@code .service} / {@code .handler} package paths
-     * from an entity's domain package. The {@code .domain} suffix substitution is the only
-     * thing locating the generated infrastructure types, so a package without it is rejected
-     * here rather than emitted as an unresolvable import.
+     * Refuses the entity set when any entity's package does not end in {@code .domain}. The
+     * {@code .domain} suffix substitution is the only thing locating the generated infrastructure
+     * types, so a package without it would be emitted as an import of a type that is not there.
+     *
+     * <p>Called by the pipeline before it writes anything, so a refused build leaves the generated
+     * tree as it was; {@link #generateAll(List, String, boolean)} and the per-entity test
+     * generators apply the same check to what they are handed.
+     *
+     * @param domains the entities of one generation run
+     * @throws EntityPackageLayoutException ({@code EXT-PROC-1033}) naming every refused entity,
+     *         sorted
+     */
+    public static void requireDomainPackages(List<DomainMetadata> domains) {
+        List<String> refused = new ArrayList<>();
+        for (DomainMetadata domain : domains) {
+            String packageName = domain.packageName() == null ? "" : domain.packageName();
+            if (!packageName.endsWith(DOMAIN_SUFFIX)) {
+                refused.add(packageName.isEmpty()
+                        ? domain.entityName() + " (the unnamed package)"
+                        : packageName + "." + domain.entityName());
+            }
+        }
+        if (!refused.isEmpty()) {
+            throw new EntityPackageLayoutException(refused.stream().sorted().toList());
+        }
+    }
+
+    /**
+     * Derives the {@code .repository} / {@code .service} / {@code .handler} / {@code .event}
+     * package paths from an entity's domain package, whose {@code .domain} suffix
+     * {@link #requireDomainPackages} has already established.
      */
     private InfraPackages infraPackages(DomainMetadata domain) {
         String domainPkg = domain.packageName();
-        if (!domainPkg.endsWith(".domain")) {
-            throw new IllegalArgumentException(
-                    "Domain package '" + domainPkg + "' for entity '" + domain.entityName()
-                            + "' does not end with '.domain'. The Application "
-                            + "generator derives the .repository/.service/.handler/.event "
-                            + "package paths by replacing the '.domain' suffix; "
-                            + "without it the per-entity wiring would resolve "
-                            + "Repository/Service/Handler to the wrong location. "
-                            + "Either rename the domain package to end with "
-                            + "'.domain' or extend DomainMetadata to carry explicit "
-                            + "infrastructure package paths.");
-        }
         return new InfraPackages(
-                domainPkg.replace(".domain", ".repository"),
-                domainPkg.replace(".domain", ".service"),
-                domainPkg.replace(".domain", ".handler"),
-                domainPkg.replace(".domain", ".event"));
+                domainPkg.replace(DOMAIN_SUFFIX, ".repository"),
+                domainPkg.replace(DOMAIN_SUFFIX, ".service"),
+                domainPkg.replace(DOMAIN_SUFFIX, ".handler"),
+                domainPkg.replace(DOMAIN_SUFFIX, ".event"));
     }
 
     /**

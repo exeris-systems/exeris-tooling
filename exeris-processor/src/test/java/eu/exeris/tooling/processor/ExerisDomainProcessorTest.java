@@ -60,6 +60,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("ExerisDomainProcessor Tests")
 class ExerisDomainProcessorTest {
 
+    /**
+     * These cases read what the processor extracts; the refusals that only the generated kernel
+     * application needs are covered by {@code KernelApplicationLayoutTest}.
+     */
+    private static final String METADATA_ONLY = "-Aexeris.metadataOnly=true";
+
     @Nested
     @DisplayName("1.1.1 Field Annotation Processing")
     class FieldAnnotationTests {
@@ -1008,7 +1014,7 @@ class ExerisDomainProcessorTest {
                 files.setLocationFromPaths(StandardLocation.CLASS_OUTPUT, List.of(out));
                 JavaCompiler.CompilationTask task = compiler.getTask(null, files,
                         diagnostic -> { },
-                        List.of("-proc:only", "-classpath", System.getProperty("java.class.path")),
+                        List.of("-proc:only", METADATA_ONLY, "-classpath", System.getProperty("java.class.path")),
                         null, List.of(source));
                 task.setProcessors(List.of(new ExerisDomainProcessor()));
                 task.call();
@@ -2327,7 +2333,7 @@ class ExerisDomainProcessorTest {
         @DisplayName("T29 B: -Aexeris.strict no longer reports @SharedScope as never read")
         void strictDoesNotReportSharedScopeAsNeverRead() {
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(universeItem("""
                                 @TenantId private UUID ownerTenantId;
@@ -2826,7 +2832,7 @@ class ExerisDomainProcessorTest {
             assertThat(normalCompilation).succeededWithoutWarnings();
 
             Compilation strictCompilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -3082,7 +3088,7 @@ class ExerisDomainProcessorTest {
         @DisplayName("-Aexeris.strict does not report tableName as inert or unread")
         void strictDoesNotReportTableName() {
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(entity("Colony", ", tableName = \"colonys\""));
 
@@ -3463,6 +3469,7 @@ class ExerisDomainProcessorTest {
             JavaFileObject source = simpleDomainSource();
 
             Compilation compilation = javac()
+                    .withOptions(METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -3482,7 +3489,7 @@ class ExerisDomainProcessorTest {
             JavaFileObject source = simpleDomainSource();
 
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.verbose=true")
+                    .withOptions("-Aexeris.verbose=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -3563,7 +3570,7 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -3598,7 +3605,7 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -3633,7 +3640,7 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -3669,6 +3676,7 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = javac()
+                    .withOptions(METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -3710,7 +3718,7 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -3754,7 +3762,7 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -3821,7 +3829,7 @@ class ExerisDomainProcessorTest {
             JavaFileObject source = JavaFileObjects.forSourceString("com.example.Subject", sourceText);
 
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -3853,7 +3861,7 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -3886,6 +3894,7 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = javac()
+                    .withOptions(METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -3918,7 +3927,7 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -4180,7 +4189,7 @@ class ExerisDomainProcessorTest {
         @DisplayName("-Aexeris.strict reports @RouteAccess and permissions neither as inert nor as unread")
         void strictDoesNotReportRouteAccessOrPermissionsAsInert() {
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(order("@RouteAccess(RouteAccess.Level.AUTHENTICATED)",
                             ", permissions = {\"order:read\"}", """
@@ -4348,7 +4357,7 @@ class ExerisDomainProcessorTest {
         void strictDoesNotReportStreamEventType() {
             Compilation compilation = javac()
                     .withProcessors(new ExerisDomainProcessor())
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .compile(order("", """
                         @Action(name = "trackShipment", label = "Track", streaming = true,
                                 streamEventType = "ShipmentMoved")
@@ -4418,6 +4427,7 @@ class ExerisDomainProcessorTest {
         @DisplayName("Default build stays quiet even when an inert attribute is set")
         void defaultBuildDoesNotWarnOnInertAttribute() {
             Compilation compilation = javac()
+                    .withOptions(METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(actionParamWithInertAttributes());
 
@@ -4434,7 +4444,7 @@ class ExerisDomainProcessorTest {
             // parity + emitters), so its INERT_ATTRIBUTES entry was removed; the
             // strict audit must NOT flag it as inert any more.
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(fieldWithConsumedDataType());
 
@@ -4451,7 +4461,7 @@ class ExerisDomainProcessorTest {
         @DisplayName("-Aexeris.strict does not warn on @ExerisDomain.primaryKeyField: the generators key the row by it")
         void strictDoesNotWarnOnPrimaryKeyField() {
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(JavaFileObjects.forSourceString(
                             "com.example.Invoice",
@@ -4475,7 +4485,7 @@ class ExerisDomainProcessorTest {
         @DisplayName("-Aexeris.strict warns on @ActionParam.description and .required")
         void strictWarnsOnInertActionParamAttributes() {
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(actionParamWithInertAttributes());
 
@@ -4511,7 +4521,7 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -4542,7 +4552,7 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -4579,7 +4589,7 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -4612,7 +4622,7 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -4645,6 +4655,7 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = javac()
+                    .withOptions(METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -4674,7 +4685,7 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(clean);
 
@@ -4712,7 +4723,7 @@ class ExerisDomainProcessorTest {
             // at once — the saga ones on an @ExerisDomain entity carrying @Saga — so a
             // future entry added without its call site fails here rather than going quiet.
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(everyInertAttributeSet());
 
@@ -4735,7 +4746,7 @@ class ExerisDomainProcessorTest {
         @DisplayName("-Aexeris.strict reaches a standalone @Saga and every repeat of a @SagaStep")
         void strictReachesStandaloneSagaAndRepeatedSteps() {
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(standaloneSagaWithInertAttributes());
 
@@ -4785,7 +4796,7 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -4803,6 +4814,7 @@ class ExerisDomainProcessorTest {
         @DisplayName("Default build stays quiet on a standalone @Saga that sets every registered saga attribute")
         void defaultBuildDoesNotWarnOnSagaAttributes() {
             Compilation compilation = javac()
+                    .withOptions(METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(standaloneSagaWithInertAttributes());
 
@@ -4819,7 +4831,7 @@ class ExerisDomainProcessorTest {
             // the OpenAPI document and the TS service all use POST. Without this entry an author
             // writing httpMethod = "GET" hears nothing.
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(everyInertAttributeSet());
 
@@ -4841,7 +4853,7 @@ class ExerisDomainProcessorTest {
             // a working audit would have warned on all of them. Omitting it is legal
             // now, and the audit reports only what an author actually wrote.
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(actionWithoutPath());
 
@@ -4855,6 +4867,7 @@ class ExerisDomainProcessorTest {
         @DisplayName("Default build stays quiet on @Action.path and @ExerisDomain.apiVersion too")
         void defaultBuildDoesNotWarnOnTheNewlyReachedEntries() {
             Compilation compilation = javac()
+                    .withOptions(METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(everyInertAttributeSet());
 
@@ -4873,7 +4886,7 @@ class ExerisDomainProcessorTest {
             // on arrival. This fixture places all registered annotations at their
             // declared targets in one compilation unit.
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(everyInertAnnotationSet());
 
@@ -4892,7 +4905,7 @@ class ExerisDomainProcessorTest {
         @DisplayName("-Aexeris.strict does not report @Blob as inert or unread")
         void strictDoesNotReportBlobAsInert() {
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(blobOnAFieldWithoutFieldAnnotation());
 
@@ -4920,7 +4933,7 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -4956,7 +4969,7 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -4992,7 +5005,7 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -5027,7 +5040,7 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -5039,6 +5052,7 @@ class ExerisDomainProcessorTest {
         @DisplayName("@Schedule is refused at build time with EXT-PROC-1030 (kernel ADR-057 Amendment A1)")
         void scheduleIsRefusedAtBuildTime() {
             Compilation compilation = javac()
+                    .withOptions(METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(scheduleOnAMethodWithoutAction());
 
@@ -5054,6 +5068,7 @@ class ExerisDomainProcessorTest {
         @DisplayName("Default build stays quiet on the registered inert annotations")
         void defaultBuildDoesNotWarnOnTheNewAnnotationEntries() {
             Compilation compilation = javac()
+                    .withOptions(METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(everyInertAnnotationSet());
 
@@ -5258,7 +5273,7 @@ class ExerisDomainProcessorTest {
         @DisplayName("-Aexeris.strict warns on unconsumed @DomainEvent attributes, with the inert-attribute id")
         void strictWarnsOnInertDomainEventAttributes() {
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(domainEvent(", description = \"Order created\", retentionDays = 90"));
 
@@ -5277,7 +5292,7 @@ class ExerisDomainProcessorTest {
         @DisplayName("-Aexeris.strict stays quiet on the @DomainEvent attributes a generator reads")
         void strictDoesNotWarnOnConsumedDomainEventAttributes() {
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(domainEvent(", name = \"OrderPlaced\", includeFields = {\"total\"}, "
                             + "excludeFields = {}, sensitiveFields = {\"total\"}"));
@@ -5291,7 +5306,7 @@ class ExerisDomainProcessorTest {
         @DisplayName("-Aexeris.strict warns on an unconsumed attribute of a nested @DomainEvent class")
         void strictWarnsOnInertAttributeOfNestedDomainEvent() {
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(JavaFileObjects.forSourceString(
                             "com.example.Order",
@@ -5318,7 +5333,7 @@ class ExerisDomainProcessorTest {
         @DisplayName("-Aexeris.strict warns that a nested @DomainEvent class ignores name, and the class name wins")
         void strictWarnsThatNestedDomainEventIgnoresName() {
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(nestedEventNamed(", name = \"OrderShipped\""));
 
@@ -5330,7 +5345,7 @@ class ExerisDomainProcessorTest {
         @DisplayName("A nested @DomainEvent class without name draws no name warning under -Aexeris.strict")
         void strictStaysQuietOnNestedDomainEventWithoutName() {
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(nestedEventNamed(""));
 
@@ -5342,6 +5357,7 @@ class ExerisDomainProcessorTest {
         @DisplayName("A default build stays quiet when a nested @DomainEvent class sets name")
         void defaultBuildStaysQuietOnNestedDomainEventName() {
             Compilation compilation = javac()
+                    .withOptions(METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(nestedEventNamed(", name = \"OrderShipped\""));
 
@@ -5371,6 +5387,7 @@ class ExerisDomainProcessorTest {
         @DisplayName("Default build stays quiet when an inert @DomainEvent attribute is set")
         void defaultBuildDoesNotWarnOnInertDomainEventAttribute() {
             Compilation compilation = javac()
+                    .withOptions(METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(domainEvent(", description = \"Order created\", retentionDays = 90"));
 
@@ -5403,6 +5420,7 @@ class ExerisDomainProcessorTest {
                     """;
 
             Compilation compilation = javac()
+                    .withOptions(METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(JavaFileObjects.forSourceString("com.example.Order", source));
 
@@ -5468,6 +5486,7 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = javac()
+                    .withOptions(METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -5512,6 +5531,7 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = javac()
+                    .withOptions(METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -5554,6 +5574,7 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = javac()
+                    .withOptions(METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -5657,6 +5678,7 @@ class ExerisDomainProcessorTest {
         @DisplayName("@View PAGE emits view_*.json with the wrapper identity")
         void emitsViewJsonWithIdentity() throws IOException {
             Compilation compilation = javac()
+                    .withOptions(METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(productLandingFixture());
 
@@ -5676,6 +5698,7 @@ class ExerisDomainProcessorTest {
         @DisplayName("The emitted JSON deserializes to the expected ViewMetadata tree")
         void deserializesToExpectedTree() throws IOException {
             Compilation compilation = javac()
+                    .withOptions(METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(productLandingFixture());
 
@@ -5745,6 +5768,7 @@ class ExerisDomainProcessorTest {
             // union). Strict mode must therefore stay silent about @View — both
             // with strict unset (always quiet) and with strict enabled.
             Compilation quiet = javac()
+                    .withOptions(METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(productLandingFixture());
             assertThat(quiet).succeeded();
@@ -5760,7 +5784,7 @@ class ExerisDomainProcessorTest {
             // warnings naming @View (the INERT_ANNOTATIONS @View entry was removed
             // in lock-step with wiring the ViewGenerator).
             Compilation strict = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(productLandingFixture());
             assertThat(strict).succeeded();
@@ -5821,6 +5845,7 @@ class ExerisDomainProcessorTest {
                     """);
 
             Compilation compilation = javac()
+                    .withOptions(METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(source);
 
@@ -5839,6 +5864,7 @@ class ExerisDomainProcessorTest {
 
             // The well-formed fixture stays silent.
             Compilation clean = javac()
+                    .withOptions(METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(productLandingFixture());
             assertThat(clean.warnings().stream()
@@ -6120,7 +6146,7 @@ class ExerisDomainProcessorTest {
         @DisplayName("-Aexeris.strict reports neither @PrimaryKey nor the other system-field markers as never read")
         void strictDoesNotReportPrimaryKeyOrTheNine() {
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(JavaFileObjects.forSourceString(
                             "com.example.Order",
@@ -6155,7 +6181,7 @@ class ExerisDomainProcessorTest {
         @DisplayName("-Aexeris.strict reports an attribute the role extraction does not consume")
         void strictReportsUnconsumedRoleAttribute() {
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(JavaFileObjects.forSourceString(
                             "com.example.Order",
@@ -6183,7 +6209,7 @@ class ExerisDomainProcessorTest {
             // Nothing emits a restore: no route, handler, repository method or client un-sets the
             // flag, so neither note may cite one.
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(JavaFileObjects.forSourceString(
                             "com.example.Order",
@@ -6360,6 +6386,7 @@ class ExerisDomainProcessorTest {
 
     private Compilation compileWithProcessor(JavaFileObject... sources) {
         return javac()
+                .withOptions(METADATA_ONLY)
                 .withProcessors(new ExerisDomainProcessor())
                 .compile(sources);
     }
@@ -6399,7 +6426,7 @@ class ExerisDomainProcessorTest {
 
         private Compilation strictCompile(String className, String source) {
             return javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(JavaFileObjects.forSourceString("com.example." + className, source));
         }
@@ -6494,6 +6521,7 @@ class ExerisDomainProcessorTest {
         @DisplayName("default build stays quiet about @UI at either level")
         void defaultBuildIsQuietAboutUi() {
             Compilation compilation = javac()
+                    .withOptions(METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(JavaFileObjects.forSourceString("com.example.Widget", """
                             package com.example;
@@ -6878,7 +6906,7 @@ class ExerisDomainProcessorTest {
         @DisplayName("Strict mode reports inert attributes for @NavMenu and @Tab")
         void strictModeReportsInertAttributes() {
             Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
                     .withProcessors(new ExerisDomainProcessor())
                     .compile(JavaFileObjects.forSourceString("com.example.Order", """
                             package com.example;

@@ -99,6 +99,14 @@
             <artifactId>exeris-sdk-source-model-io</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Runs beside the processor in KernelApplicationLayoutTest, in either order. Never a
+             processor path entry of this module's own build. -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>1.18.46</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

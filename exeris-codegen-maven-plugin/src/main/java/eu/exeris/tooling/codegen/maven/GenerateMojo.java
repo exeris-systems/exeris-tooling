@@ -6,6 +6,7 @@ import eu.exeris.tooling.codegen.java.EmptyMetadataException;
 import eu.exeris.tooling.codegen.java.kernel.RequiredCompileArtifacts;
 import eu.exeris.tooling.codegen.java.kernel.RequiredCompileArtifacts.Classpath;
 import eu.exeris.tooling.codegen.java.kernel.RequiredCompileArtifacts.Requirement;
+import eu.exeris.tooling.codegen.java.kernel.EntityPackageLayoutException;
 import eu.exeris.tooling.codegen.java.kernel.UnpersistableFieldTypeException;
 import eu.exeris.tooling.diagnostics.DiagnosticId;
 import org.apache.maven.artifact.Artifact;
@@ -268,6 +269,9 @@ public class GenerateMojo extends AbstractMojo {
             // A field type the repository cannot persist — user-side. The message already carries
             // its own identifier (EXT-GEN-3003), so it is passed through, not re-labelled.
             throw new MojoFailureException(e.getMessage(), e);
+        } catch (EntityPackageLayoutException e) {
+            // An entity outside a .domain package — user-side; the message carries EXT-PROC-1033.
+            throw new MojoFailureException(e.getMessage(), e);
         } catch (IOException e) {
             throw new MojoExecutionException(DiagnosticId.GENERATION_FAILED.format(
                     "Code generation failed (metadataDir=" + metadataDir + "): " + e), e);
@@ -323,6 +327,8 @@ public class GenerateMojo extends AbstractMojo {
             testPipeline.runTests(metadataDir.toPath(), testOutputDir.toPath(), basePackage);
         } catch (EmptyMetadataException e) {
             throw new MojoFailureException(DiagnosticId.EMPTY_METADATA_REFUSED.format(e.getMessage()), e);
+        } catch (EntityPackageLayoutException e) {
+            throw new MojoFailureException(e.getMessage(), e);
         } catch (IOException e) {
             throw new MojoExecutionException(DiagnosticId.TEST_GENERATION_FAILED.format(
                     "Test generation failed (testOutputDir=" + testOutputDir + "): " + e), e);

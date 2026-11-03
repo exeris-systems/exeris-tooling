@@ -92,7 +92,8 @@ A narrower file may restrict behaviour; it may never relax a higher-order rule.
 - `mvn clean install` runs the full reactor build.
 - Compile gate: `mvn -pl exeris-e2e-tests -am test -Dtest=KernelCodegenCompileTest` verifies generated code compiles against kernel SPI via in-memory `JavaCompiler`.
 - E2E snapshot: `mvn -pl exeris-e2e-tests -am test -Dtest=KernelCodegenE2ETest` verifies exact emitted shapes.
-- Processor flags: `-Aexeris.verbose` (opt-in chatter), `-Aexeris.strict` (completeness audit: extracted-but-unconsumed vs never-read).
+- Processor flags: `-Aexeris.verbose` (opt-in chatter), `-Aexeris.strict` (completeness audit: extracted-but-unconsumed vs never-read),
+  `-Aexeris.metadataOnly` (a consumer that generates no kernel application, such as the SDK TCK producer: skips EXT-PROC-1033/1034).
 - Determinism check: regenerate twice, `diff -r`, expect byte-identical output.
 - TypeScript suite: `cd exeris-codegen-ts && npm test`.
 

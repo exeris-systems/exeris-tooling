@@ -128,7 +128,8 @@ public final class KernelRepositoryTestGenerator {
      * @param basePackage the project base package (the {@code testsupport} package is resolved from
      *                    it, since the persistence double is project-wide)
      * @return the emitted test; never {@code null}
-     * @throws IllegalArgumentException if the entity's package does not end in {@code .domain}
+     * @throws EntityPackageLayoutException ({@code EXT-PROC-1033}) if the entity's package does not
+     *         end in {@code .domain}
      */
     public GeneratedFile generate(DomainMetadata metadata, String basePackage) {
         return generate(metadata, basePackage, List.of(metadata));
@@ -143,18 +144,14 @@ public final class KernelRepositoryTestGenerator {
      * @param basePackage the project base package
      * @param build       every entity of the build, {@code metadata} included
      * @return the emitted test; never {@code null}
-     * @throws IllegalArgumentException if the entity's package does not end in {@code .domain}
+     * @throws EntityPackageLayoutException ({@code EXT-PROC-1033}) if the entity's package does not
+     *         end in {@code .domain}
      */
     public GeneratedFile generate(DomainMetadata metadata, String basePackage, List<DomainMetadata> build) {
         serverSet = ServerOwnedFields.setByServerOnCreate(metadata);
         String entity = metadata.entityName();
         String domainPackage = metadata.packageName();
-        if (!domainPackage.endsWith(".domain")) {
-            throw new IllegalArgumentException(
-                    "Domain package '" + domainPackage + "' for entity '" + entity
-                            + "' does not end with '.domain' — the repository-test generator derives"
-                            + " the .repository package path from that suffix");
-        }
+        KernelApplicationGenerator.requireDomainPackages(List.of(metadata));
         String infrastructureBase = domainPackage.substring(0, domainPackage.lastIndexOf(".domain"));
         String packageName = infrastructureBase + ".repository";
         String className = entity + "RepositoryTest";

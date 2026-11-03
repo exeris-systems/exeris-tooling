@@ -34,6 +34,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("ExerisDomainProcessor — every diagnostic carries a stable identifier")
 class ExerisDomainProcessorDiagnosticIdTest {
 
+    /**
+     * These cases read what the processor extracts; the refusals that only the generated kernel
+     * application needs are covered by {@code KernelApplicationLayoutTest}.
+     */
+    private static final String METADATA_ONLY = "-Aexeris.metadataOnly=true";
+
     private static final Pattern PRINTED =
             Pattern.compile("^\\[Exeris] (EXT-PROC-\\d{4}): \\S");
 
@@ -45,7 +51,7 @@ class ExerisDomainProcessorDiagnosticIdTest {
     @DisplayName("NOTE, ordinary WARNING and -Aexeris.strict WARNING all carry a registered EXT-PROC id")
     void warningsAndNotesCarryIds() {
         Compilation compilation = javac()
-                .withOptions("-Aexeris.verbose=true", "-Aexeris.strict=true")
+                .withOptions("-Aexeris.verbose=true", "-Aexeris.strict=true", METADATA_ONLY)
                 .withProcessors(new ExerisDomainProcessor())
                 .compile(JavaFileObjects.forSourceString("com.example.Item", """
                         package com.example;
@@ -81,6 +87,7 @@ class ExerisDomainProcessorDiagnosticIdTest {
     @DisplayName("an ERROR carries a registered EXT-PROC id")
     void errorsCarryIds() {
         Compilation compilation = javac()
+                .withOptions(METADATA_ONLY)
                 .withProcessors(new ExerisDomainProcessor())
                 .compile(JavaFileObjects.forSourceString("com.example.Shape", """
                         package com.example;

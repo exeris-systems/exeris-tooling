@@ -1,0 +1,14 @@
+[
+  {
+    "signature": "@Blob field (processor, exeris-codegen-java): EXT-PROC-1031 on a GLOBAL entity, EXT-PROC-1032 on a non-BlobRef field; the field is no column and leaves the create and update bodies; + PUT/GET/HEAD/DELETE {base}/{id}/blobs/{field}; + 'storage' in the required subsystems",
+    "since": "0.11",
+    "adr": "ADR-108",
+    "justification": "A @Blob field was emitted as an ordinary column and nothing stored its bytes. It is now served on its own routes through the kernel blob store, so it stops being a column and a request-body member, and an application with one requires a store at boot. A consumer that read or wrote the field as a column moves to the field's routes; docs/migration/0.11.0/java-18-blob-extracted.md and java-19-blob-field-routes.md carry the steps."
+  },
+  {
+    "signature": "@ExerisDomain entity (processor): EXT-PROC-1033 when its package does not end in .domain; EXT-PROC-1034 per JavaBean accessor the generated application calls and the entity lacks (Lombok @Getter/@Setter/@Data/@Value count); + -Aexeris.metadataOnly=true skips both",
+    "since": "0.11",
+    "adr": "ADR-095",
+    "justification": "The generated kernel application places its infrastructure beside a .domain package and binds entity state through accessors. Without either, generation threw an exception after a partial write or the generated code failed in javac. Both are now stable build-time refusals on the source element. A build that only produces metadata for something other than kernel generation sets -Aexeris.metadataOnly=true; docs/migration/0.11.0/java-21-entity-layout-and-accessors-refused.md carries the steps."
+  }
+]

@@ -79,6 +79,8 @@ class DiagnosticIdTest {
         m.put(DiagnosticId.SCHEDULE_REFUSED, "EXT-PROC-1030");
         m.put(DiagnosticId.BLOB_ON_GLOBAL_ENTITY, "EXT-PROC-1031");
         m.put(DiagnosticId.BLOB_FIELD_NOT_BLOB_REF, "EXT-PROC-1032");
+        m.put(DiagnosticId.ENTITY_PACKAGE_NOT_DOMAIN, "EXT-PROC-1033");
+        m.put(DiagnosticId.ENTITY_ACCESSOR_MISSING, "EXT-PROC-1034");
         m.put(DiagnosticId.TENANT_SCOPED_DEPRECATED, "EXT-PROC-1101");
         m.put(DiagnosticId.VALIDATION_ATTRIBUTE_DEPRECATED, "EXT-PROC-1102");
         m.put(DiagnosticId.VALIDATE_ON_UNRECOGNISED, "EXT-PROC-1103");

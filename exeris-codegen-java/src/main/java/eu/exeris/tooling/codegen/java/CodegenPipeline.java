@@ -216,6 +216,9 @@ public final class CodegenPipeline {
      * @throws eu.exeris.tooling.codegen.java.kernel.UnpersistableFieldTypeException
      *         (unchecked, {@code EXT-GEN-3003}) if an entity has a field whose type the generated
      *         repository cannot store and read back; nothing is written
+     * @throws eu.exeris.tooling.codegen.java.kernel.EntityPackageLayoutException
+     *         (unchecked, {@code EXT-PROC-1033}) if an entity's package does not end in
+     *         {@code .domain}; nothing is written
      * @since 0.6
      */
     public int run(Path metadataDir, Path outputDir, String explicitBasePackage, boolean allowEmpty,
@@ -257,6 +260,7 @@ public final class CodegenPipeline {
         }
 
         // Refused before the first write, so a refused run leaves the generated tree as it was.
+        KernelApplicationGenerator.requireDomainPackages(domains);
         KernelRepositoryGenerator.requirePersistableFields(domains);
 
         Files.createDirectories(outputDir);
@@ -551,6 +555,9 @@ public final class CodegenPipeline {
      *                            hangs off it)
      * @return the number of test files written
      * @throws IOException if metadata or output cannot be read/written
+     * @throws eu.exeris.tooling.codegen.java.kernel.EntityPackageLayoutException
+     *         (unchecked, {@code EXT-PROC-1033}) if an entity's package does not end in
+     *         {@code .domain}; nothing is written
      * @since 0.7
      */
     public int runTests(Path metadataDir, Path testOutputDir, String explicitBasePackage)
@@ -564,6 +571,9 @@ public final class CodegenPipeline {
                     + " — no tests to generate (existing generated tests left untouched)");
             return 0;
         }
+
+        // Refused before the first write, as run(...) refuses it.
+        KernelApplicationGenerator.requireDomainPackages(domains);
 
         String basePackage = explicitBasePackage;
         if (basePackage == null) {

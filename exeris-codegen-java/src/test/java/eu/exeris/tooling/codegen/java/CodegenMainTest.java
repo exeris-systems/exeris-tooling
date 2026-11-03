@@ -201,6 +201,26 @@ class CodegenMainTest {
         }
 
         @Test
+        @DisplayName("an entity outside a .domain package prints EXT-PROC-1033 and writes nothing, though "
+                + "another entity of the run is in one")
+        void entityOutsideDomainPackageIsPrinted() throws IOException {
+            mapper.writeValue(metadataDir.resolve("Product.json").toFile(),
+                    DomainMetadata.builder("Product", "com.shop.domain").module("catalog").path("/products")
+                            .build());
+            mapper.writeValue(metadataDir.resolve("Order.json").toFile(),
+                    DomainMetadata.builder("Order", "com.shop.order").module("sales").path("/orders").build());
+
+            assertThat(run(argsFor())).isEqualTo(CodegenMain.EXIT_FAILED);
+            assertThat(stderr())
+                    .startsWith(DiagnosticId.ENTITY_PACKAGE_NOT_DOMAIN.format(""))
+                    .contains("com.shop.order.Order")
+                    .doesNotContain("com.shop.domain.Product");
+            try (Stream<Path> written = Files.list(outputDir)) {
+                assertThat(written).isEmpty();
+            }
+        }
+
+        @Test
         @DisplayName("empty metadata over an owned tree prints EXT-PLUG-2001, names --allow-empty, and keeps the tree")
         void emptyMetadataOverOwnedTreeIsRefused() throws IOException {
             Path owned = ownedTree();

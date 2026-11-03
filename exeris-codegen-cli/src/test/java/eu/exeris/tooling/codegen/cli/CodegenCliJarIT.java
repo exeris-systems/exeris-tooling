@@ -266,6 +266,10 @@ class CodegenCliJarIT {
                 public class Beacon {
                     private UUID id;
                     @Field(label = "Label", required = true) private String label;
+                    public UUID getId() { return id; }
+                    public void setId(UUID id) { this.id = id; }
+                    public String getLabel() { return label; }
+                    public void setLabel(String label) { this.label = label; }
                     @Action(name = "track", label = "Track", streaming = true)
                     public void track() { }
                     @SagaStep(order = 1, name = "relay", service = "relay", command = "Relay")
@@ -287,6 +291,14 @@ class CodegenCliJarIT {
                     @Field(label = "Name", required = true) private String name;
                     @Field(label = "Tenant") private UUID tenantId;
                     @Field(label = "Version") private long version;
+                    public UUID getId() { return id; }
+                    public void setId(UUID id) { this.id = id; }
+                    public String getName() { return name; }
+                    public void setName(String name) { this.name = name; }
+                    public UUID getTenantId() { return tenantId; }
+                    public void setTenantId(UUID tenantId) { this.tenantId = tenantId; }
+                    public long getVersion() { return version; }
+                    public void setVersion(long version) { this.version = version; }
                 }
                 """);
         sources.put(DOMAIN + "Customer.java", """
@@ -301,6 +313,10 @@ class CodegenCliJarIT {
                 public class Customer {
                     private UUID id;
                     @Field(label = "Name") private String name;
+                    public UUID getId() { return id; }
+                    public void setId(UUID id) { this.id = id; }
+                    public String getName() { return name; }
+                    public void setName(String name) { this.name = name; }
                 }
                 """);
         sources.put(DOMAIN + "Shipment.java", """
@@ -320,6 +336,12 @@ class CodegenCliJarIT {
                     @Field(label = "Reference") private String reference;
                     @Relationship(targetEntity = Customer.class, displayField = "name")
                     private UUID customerId;
+                    public UUID getId() { return id; }
+                    public void setId(UUID id) { this.id = id; }
+                    public String getReference() { return reference; }
+                    public void setReference(String reference) { this.reference = reference; }
+                    public UUID getCustomerId() { return customerId; }
+                    public void setCustomerId(UUID customerId) { this.customerId = customerId; }
                 }
                 """);
         sources.put("eu/exeris/cli/fixture/caps/AuditModule.java", """

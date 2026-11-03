@@ -104,7 +104,8 @@ import java.util.stream.Collectors;
         "eu.exeris.sdk.annotation.View",
         "eu.exeris.sdk.annotation.Schedule"
 })
-@SupportedOptions({ExerisDomainProcessor.OPTION_VERBOSE, ExerisDomainProcessor.OPTION_STRICT})
+@SupportedOptions({ExerisDomainProcessor.OPTION_VERBOSE, ExerisDomainProcessor.OPTION_STRICT,
+        ExerisDomainProcessor.OPTION_METADATA_ONLY})
 @SuppressWarnings({
         "PMD.TooManyMethods",
         "PMD.CouplingBetweenObjects"
@@ -135,6 +136,17 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * compiler plugin) to enable it.
      */
     public static final String OPTION_STRICT = "exeris.strict";
+
+    /**
+     * Annotation processor option that declares the compilation's metadata is read by a consumer
+     * that generates no kernel application, such as a conformance kit or an editor. It skips the
+     * two refusals that only the generated application needs: an entity package that does not end
+     * in {@code .domain} ({@code EXT-PROC-1033}) and an accessor the generated code calls but the
+     * entity lacks ({@code EXT-PROC-1034}). The metadata written is the same either way. Off by
+     * default: the processor's metadata feeds the kernel-target generators. Pass
+     * {@code -Aexeris.metadataOnly=true} to {@code javac} to enable it.
+     */
+    public static final String OPTION_METADATA_ONLY = "exeris.metadataOnly";
 
     /** Attribute name shared by {@code @Saga} and the capability {@code @Provides}/{@code @Requires}. */
     private static final String VERSION_ATTRIBUTE = "version";
@@ -971,6 +983,16 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     /** The one type a primary key may have (ADR-104), and one of the two a shared-scope key may. */
     private static final String UUID_FQN = "java.util.UUID";
 
+    /** The Lombok annotations that generate accessors, matched by name. */
+    private static final String LOMBOK_GETTER = "lombok.Getter";
+    private static final String LOMBOK_SETTER = "lombok.Setter";
+    private static final String LOMBOK_DATA = "lombok.Data";
+    private static final String LOMBOK_VALUE = "lombok.Value";
+
+    /** The suffix the generated application strips from an entity's package to place its other types. */
+    private static final String DOMAIN_PACKAGE_SUFFIX = ".domain";
+
+
     /** A type-use annotation as {@code TypeMirror.toString()} renders it, with its arguments. */
     private static final Pattern TYPE_USE_ANNOTATION = Pattern.compile("@(?:[\\w.]+\\.)?\\w+(?:\\([^()]*\\))?\\s*");
 
@@ -1015,6 +1037,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     private Trees trees;
     private boolean verbose;
     private boolean strict;
+    private boolean metadataOnly;
 
     /** Enum types referenced by the fields of processed entities, including as type arguments. */
     private final Set<TypeElement> discoveredEnums = new HashSet<>();
@@ -1051,10 +1074,14 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         } catch (IllegalArgumentException notJavac) {
             this.trees = null;
         }
-        this.verbose = Boolean.parseBoolean(
-                processingEnv.getOptions().getOrDefault(OPTION_VERBOSE, "false"));
-        this.strict = Boolean.parseBoolean(
-                processingEnv.getOptions().getOrDefault(OPTION_STRICT, "false"));
+        this.verbose = booleanOption(processingEnv, OPTION_VERBOSE);
+        this.strict = booleanOption(processingEnv, OPTION_STRICT);
+        this.metadataOnly = booleanOption(processingEnv, OPTION_METADATA_ONLY);
+    }
+
+    /** A boolean processor option: {@code true} only when passed as {@code -A<name>=true}. */
+    private static boolean booleanOption(ProcessingEnvironment processingEnv, String name) {
+        return Boolean.parseBoolean(processingEnv.getOptions().get(name));
     }
 
     @Override
@@ -2077,14 +2104,30 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         DomainMetadata metadata = builder.build();
         refuseInvalidBlobDeclarations(element, metadata, scopeContradicted);
         if (domainAnnotation != null) {
-            refuseInvalidPrimaryKey(element, domainAnnotation, metadata);
-            // Not on a contradicted declaration: its tier is undecided until the author fixes the
-            // line EXT-PROC-1003 already reports.
-            if (!scopeContradicted) {
-                refuseRealTimeApiOnTenantPartitioned(element, domainAnnotation, metadata);
-            }
+            refuseDomainDeclarations(element, domainAnnotation, metadata, scopeContradicted);
         }
         return metadata;
+    }
+
+    /**
+     * The refusals that read the built metadata of an {@code @ExerisDomain} type. A declaration
+     * whose {@code dataScope} and {@code tenantScoped} contradict each other has an undecided tier
+     * until the author fixes the line EXT-PROC-1003 already reports, so the checks that follow the
+     * tier skip it: the realtime refusal, and the accessors, since the owner column follows the tier.
+     */
+    private void refuseDomainDeclarations(TypeElement element, AnnotationMirror domainAnnotation,
+                                          DomainMetadata metadata, boolean scopeContradicted) {
+        refuseInvalidPrimaryKey(element, domainAnnotation, metadata);
+        if (!scopeContradicted) {
+            refuseRealTimeApiOnTenantPartitioned(element, domainAnnotation, metadata);
+        }
+        if (metadataOnly) {
+            return;
+        }
+        refuseOutsideDomainPackage(element, domainAnnotation, metadata);
+        if (!scopeContradicted) {
+            refuseMissingAccessors(element, domainAnnotation, metadata);
+        }
     }
 
     /**
@@ -2218,6 +2261,219 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "the migration, rename or remove the field 'id' instead.",
                     element, domainAnnotation);
         }
+    }
+
+    /**
+     * Refuses an {@code @ExerisDomain} type whose package does not end in {@code .domain}
+     * ({@code EXT-PROC-1033}). The generated application puts the entity's repository, service,
+     * handler, event and graph types in sibling packages it derives by replacing that suffix, and
+     * its bootstrap imports them from there.
+     */
+    private void refuseOutsideDomainPackage(TypeElement element, AnnotationMirror domainAnnotation,
+                                            DomainMetadata metadata) {
+        String packageName = metadata.packageName();
+        if (packageName.endsWith(DOMAIN_PACKAGE_SUFFIX)) {
+            return;
+        }
+        String entity = element.getSimpleName().toString();
+        String base = packageName.isEmpty() ? "com.example" : packageName;
+        error(DiagnosticId.ENTITY_PACKAGE_NOT_DOMAIN,
+                "@ExerisDomain entity '" + entity + "' is in "
+                        + (packageName.isEmpty() ? "the unnamed package" : "package '" + packageName + "'")
+                        + ", which does not end in '.domain'. The generated application puts the entity's "
+                        + "repository, service, handler and event types in sibling packages it derives by "
+                        + "replacing that suffix. Move '" + entity + "' into a package ending in '.domain', "
+                        + "such as '" + base + DOMAIN_PACKAGE_SUFFIX + "', whose repository is then generated in '"
+                        + base + ".repository'.",
+                element, domainAnnotation);
+    }
+
+    /**
+     * Refuses an {@code @ExerisDomain} type that lacks a public accessor the generated application
+     * calls on it ({@code EXT-PROC-1034}); {@link KernelAccessors} names them. One error per
+     * property, on the field when the entity declares it and on the type otherwise. A missing key
+     * field is left to {@code EXT-PROC-1015}, which already asks for it with its accessors.
+     */
+    private void refuseMissingAccessors(TypeElement element, AnnotationMirror domainAnnotation,
+                                        DomainMetadata metadata) {
+        String entity = element.getSimpleName().toString();
+        for (Map.Entry<String, List<KernelAccessors.Accessor>> entry : missingAccessors(element, metadata).entrySet()) {
+            String property = entry.getKey();
+            VariableElement field = inheritedInstanceField(element, property);
+            String message = missingAccessorMessage(entity, property, field, entry.getValue());
+            if (field != null && field.getEnclosingElement().equals(element)) {
+                error(DiagnosticId.ENTITY_ACCESSOR_MISSING, message, field);
+            } else {
+                error(DiagnosticId.ENTITY_ACCESSOR_MISSING, message, element, domainAnnotation);
+            }
+        }
+    }
+
+    /**
+     * The accessors the entity neither declares nor has Lombok generate, by property, in the
+     * order {@link KernelAccessors} names them; the key's are left out when no key field exists.
+     */
+    private Map<String, List<KernelAccessors.Accessor>> missingAccessors(TypeElement element,
+                                                                        DomainMetadata metadata) {
+        String key = primaryKeyField(metadata);
+        boolean keyDeclared = inheritedInstanceField(element, key) != null;
+        List<ExecutableElement> methods = ElementFilter.methodsIn(
+                processingEnv.getElementUtils().getAllMembers(element));
+        Map<String, List<KernelAccessors.Accessor>> missing = new LinkedHashMap<>();
+        for (KernelAccessors.Accessor accessor : KernelAccessors.required(metadata)) {
+            boolean skipped = accessor.field().equals(key) && !keyDeclared;
+            if (!skipped && !declaresAccessor(methods, accessor)
+                    && !lombokGenerates(inheritedInstanceField(element, accessor.field()), accessor)) {
+                missing.computeIfAbsent(accessor.field(), name -> new ArrayList<>()).add(accessor);
+            }
+        }
+        return missing;
+    }
+
+    /** The EXT-PROC-1034 text for one property, naming the calls and the declarations to add. */
+    private static String missingAccessorMessage(String entity, String property, VariableElement field,
+                                                 List<KernelAccessors.Accessor> accessors) {
+        List<String> calls = new ArrayList<>();
+        for (KernelAccessors.Accessor accessor : accessors) {
+            calls.add(accessor.method() + (accessor.setter() ? "(…)" : "()"));
+        }
+        String prefix = "The generated application calls " + String.join(" and ", calls)
+                + " on @ExerisDomain entity '" + entity + "' for ";
+        if (field == null) {
+            return prefix + "the property '" + property + "', which '" + entity + "' declares no field for, and '"
+                    + entity + "' has no such public instance method. Add them as public instance methods, "
+                    + "usually by declaring the field '" + property + "' with its getter and setter.";
+        }
+        String type = simpleTypeText(field.asType());
+        List<String> declarations = new ArrayList<>();
+        for (KernelAccessors.Accessor accessor : accessors) {
+            declarations.add(accessorDeclaration(accessor, property, type));
+        }
+        return prefix + "its field '" + property + "', and '" + entity + "' has no such public instance method. Add "
+                + String.join(" and ", declarations) + ".";
+    }
+
+    /**
+     * Whether {@code methods} hold a public instance method of the accessor's name and arity: no
+     * parameter and a value for a getter, one parameter for a setter.
+     */
+    private static boolean declaresAccessor(List<ExecutableElement> methods, KernelAccessors.Accessor accessor) {
+        for (ExecutableElement method : methods) {
+            if (method.getSimpleName().contentEquals(accessor.method())
+                    && method.getModifiers().contains(Modifier.PUBLIC)
+                    && !method.getModifiers().contains(Modifier.STATIC)
+                    && method.getParameters().size() == (accessor.setter() ? 1 : 0)
+                    && (accessor.setter() || method.getReturnType().getKind() != TypeKind.VOID)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether Lombok generates {@code accessor} on {@code field}: a public {@code @Getter} or
+     * {@code @Setter} on the field, or one on the type declaring it, or {@code @Data} (getters, and
+     * setters for non-final fields) or {@code @Value} (getters) on that type. A field-level
+     * annotation overrides the type's, so {@code @Getter(AccessLevel.NONE)} on the field withholds
+     * the getter a type-level annotation would generate, and an access level other than
+     * {@code PUBLIC} generates nothing the generated code can call from its own packages. Lombok
+     * runs as an annotation processor of its own and may add the methods after this one reads the
+     * type, so its annotations stand for the methods. They are matched by name: the processor has
+     * no Lombok dependency. Lombok names a getter {@code is<Name>} for a primitive {@code boolean}
+     * and {@code get<Name>} otherwise, and its setter {@code set<Name>}, so it provides an accessor
+     * only when that name is the one the generated code calls.
+     */
+    private boolean lombokGenerates(VariableElement field, KernelAccessors.Accessor accessor) {
+        if (field == null || !accessor.method().equals(lombokAccessorName(field, accessor.setter()))) {
+            return false;
+        }
+        String annotation = accessor.setter() ? LOMBOK_SETTER : LOMBOK_GETTER;
+        AnnotationMirror onField = findAnnotation(field, annotation);
+        if (onField != null) {
+            return isPublicAccessLevel(onField) && !(accessor.setter() && isFinal(field));
+        }
+        Element type = field.getEnclosingElement();
+        AnnotationMirror onType = findAnnotation(type, annotation);
+        if (onType != null) {
+            return isPublicAccessLevel(onType) && !(accessor.setter() && isFinal(field));
+        }
+        if (findAnnotation(type, LOMBOK_DATA) != null) {
+            return !(accessor.setter() && isFinal(field));
+        }
+        return !accessor.setter() && findAnnotation(type, LOMBOK_VALUE) != null;
+    }
+
+    /** The accessor name Lombok gives {@code field}. */
+    private static String lombokAccessorName(VariableElement field, boolean setter) {
+        String name = field.getSimpleName().toString();
+        boolean primitiveBoolean = field.asType().getKind() == TypeKind.BOOLEAN;
+        if (primitiveBoolean && name.length() > 2 && name.startsWith("is")
+                && Character.isUpperCase(name.charAt(2))) {
+            return setter ? "set" + name.substring(2) : name;
+        }
+        String suffix = Character.toUpperCase(name.charAt(0)) + name.substring(1);
+        if (setter) {
+            return "set" + suffix;
+        }
+        return (primitiveBoolean ? "is" : "get") + suffix;
+    }
+
+    /** Whether a Lombok {@code @Getter} or {@code @Setter} declares {@code AccessLevel.PUBLIC}, its default. */
+    private static boolean isPublicAccessLevel(AnnotationMirror annotation) {
+        for (Map.Entry<? extends ExecutableElement, ? extends AnnotationValue> entry
+                : annotation.getElementValues().entrySet()) {
+            if (entry.getKey().getSimpleName().contentEquals(VALUE_ELEMENT)) {
+                return entry.getValue().getValue() instanceof VariableElement level
+                        && level.getSimpleName().contentEquals("PUBLIC");
+            }
+        }
+        return true;
+    }
+
+    private static boolean isFinal(VariableElement field) {
+        return field.getModifiers().contains(Modifier.FINAL);
+    }
+
+    /** The declaration the fix names, typed by the declared field. */
+    private static String accessorDeclaration(KernelAccessors.Accessor accessor, String property, String type) {
+        return accessor.setter()
+                ? "'public void " + accessor.method() + "(" + type + " " + property + ")'"
+                : "'public " + type + " " + accessor.method() + "()'";
+    }
+
+    /**
+     * A type as source writes it with imports: every package qualifier dropped. A qualifier is a
+     * dot-terminated segment that starts with a lower-case letter, {@code _} or {@code $}, inside
+     * a dotted name ({@code java.util.} in {@code java.util.List}); a nested type keeps its outer
+     * type ({@code Order.Status}).
+     */
+    private static String simpleTypeText(TypeMirror type) {
+        String text = type.toString();
+        StringBuilder out = new StringBuilder(text.length());
+        int segmentStart = 0;
+        boolean inQualifier = true;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (Character.isJavaIdentifierPart(c)) {
+                continue;
+            }
+            String segment = text.substring(segmentStart, i);
+            boolean qualifier = c == '.' && inQualifier && isPackageSegment(segment);
+            if (!qualifier) {
+                out.append(segment).append(c);
+                inQualifier = c != '.';
+            }
+            segmentStart = i + 1;
+        }
+        return out.append(text, segmentStart, text.length()).toString();
+    }
+
+    private static boolean isPackageSegment(String segment) {
+        if (segment.isEmpty()) {
+            return false;
+        }
+        char first = segment.charAt(0);
+        return Character.isLowerCase(first) || first == '_' || first == '$';
     }
 
     /** The EXT-PROC-1015 text, naming the key the entity lacks and where its name came from. */
