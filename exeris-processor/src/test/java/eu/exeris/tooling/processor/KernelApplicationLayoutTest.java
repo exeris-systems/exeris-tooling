@@ -217,9 +217,15 @@ class KernelApplicationLayoutTest {
                         public UUID getId() { return id; }
                         public void setId(UUID id) { this.id = id; }
                     }
-                    """, entity("", "").replace("public class Note {\n    private UUID id;\n"
-                    + "    public UUID getId() { return id; }\n    public void setId(UUID id) { this.id = id; }\n",
-                    "public class Note extends Identified {\n"));
+                    """, """
+                    package com.example.notes.domain;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "notes", path = "/notes")
+                    public class Note extends Identified {
+                    }
+                    """);
 
             assertThat(compilation).succeededWithoutWarnings();
         }

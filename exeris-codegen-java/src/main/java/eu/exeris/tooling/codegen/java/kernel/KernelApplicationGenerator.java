@@ -114,6 +114,9 @@ import java.util.Map;
  */
 public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
+    /** The package suffix an entity's package ends in, which the infrastructure packages replace. */
+    private static final String DOMAIN_SUFFIX = ".domain";
+
     private static final String TX_EXECUTOR_NAME = "transactionalExecutor";
     /** The scope-ledger entry of a stream or respond-once handler's tenant guard. */
     private static final String TENANT_GUARD_READER = "the tenant guard in {@link $T}";
@@ -863,7 +866,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         List<String> refused = new ArrayList<>();
         for (DomainMetadata domain : domains) {
             String packageName = domain.packageName() == null ? "" : domain.packageName();
-            if (!packageName.endsWith(".domain")) {
+            if (!packageName.endsWith(DOMAIN_SUFFIX)) {
                 refused.add(packageName.isEmpty()
                         ? domain.entityName() + " (the unnamed package)"
                         : packageName + "." + domain.entityName());
@@ -882,10 +885,10 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     private InfraPackages infraPackages(DomainMetadata domain) {
         String domainPkg = domain.packageName();
         return new InfraPackages(
-                domainPkg.replace(".domain", ".repository"),
-                domainPkg.replace(".domain", ".service"),
-                domainPkg.replace(".domain", ".handler"),
-                domainPkg.replace(".domain", ".event"));
+                domainPkg.replace(DOMAIN_SUFFIX, ".repository"),
+                domainPkg.replace(DOMAIN_SUFFIX, ".service"),
+                domainPkg.replace(DOMAIN_SUFFIX, ".handler"),
+                domainPkg.replace(DOMAIN_SUFFIX, ".event"));
     }
 
     /**

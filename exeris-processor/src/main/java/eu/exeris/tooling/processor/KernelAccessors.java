@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.stream.Stream;
 
 /**
  * The accessors the generated kernel application calls on an {@code @ExerisDomain} entity,
@@ -50,9 +51,24 @@ import java.util.TreeSet;
 final class KernelAccessors {
 
     private static final String ID_FIELD = "id";
+    private static final String BOOLEAN = "boolean";
+    private static final String GET = "get";
+    private static final String IS = "is";
+    private static final String SET = "set";
+
+    /** The default names of the system roles, when the {@code systemFields} block names none. */
+    private static final String TENANT_ID = "tenantId";
+    private static final String CREATED_AT = "createdAt";
+    private static final String CREATED_BY = "createdBy";
+    private static final String UPDATED_AT = "updatedAt";
+    private static final String UPDATED_BY = "updatedBy";
+    private static final String DELETED = "deleted";
+    private static final String DELETED_AT = "deletedAt";
+    private static final String DELETED_BY = "deletedBy";
+    private static final String VERSION = "version";
 
     private static final Set<String> PRIMITIVE_TYPES =
-            Set.of("boolean", "byte", "short", "int", "long", "float", "double", "char");
+            Set.of(BOOLEAN, "byte", "short", "int", "long", "float", "double", "char");
 
     private static final Set<String> PRIMITIVE_NUMERIC_TYPES =
             Set.of("byte", "short", "int", "long", "float", "double");
@@ -74,6 +90,26 @@ final class KernelAccessors {
     }
 
     /**
+     * The name of each system role: the one the {@code systemFields} block declares, else the
+     * default.
+     */
+    private record Roles(String key, String tenantId, String createdAt, String createdBy, String updatedAt,
+                         String updatedBy, String deleted, String deletedAt, String deletedBy, String version) {
+
+        static Roles of(SystemFieldsMetadata declared) {
+            if (declared == null) {
+                return new Roles(ID_FIELD, TENANT_ID, CREATED_AT, CREATED_BY, UPDATED_AT, UPDATED_BY, DELETED,
+                        DELETED_AT, DELETED_BY, VERSION);
+            }
+            return new Roles(role(declared.primaryKeyField(), ID_FIELD), role(declared.tenantIdField(), TENANT_ID),
+                    role(declared.createdAtField(), CREATED_AT), role(declared.createdByField(), CREATED_BY),
+                    role(declared.updatedAtField(), UPDATED_AT), role(declared.updatedByField(), UPDATED_BY),
+                    role(declared.softDeleteField(), DELETED), role(declared.softDeleteTimestampField(), DELETED_AT),
+                    role(declared.softDeletedByField(), DELETED_BY), role(declared.versionField(), VERSION));
+        }
+    }
+
+    /**
      * The accessors the generated main sources call on the entity, each once, in a fixed order:
      * the columns in table order, then the handler resets, the validated and server-set fields,
      * the event payloads and the graph projection.
@@ -83,111 +119,102 @@ final class KernelAccessors {
      */
     static List<Accessor> required(DomainMetadata metadata) {
         Map<String, Accessor> accessors = new LinkedHashMap<>();
-        SystemFieldsMetadata declared = metadata.systemFields();
         List<FieldMetadata> fields = metadata.hasFields() ? metadata.fields() : List.of();
-        String key = primaryKeyField(metadata);
+        Roles roles = Roles.of(metadata.systemFields());
 
-        columns(metadata, fields, key, accessors);
-        resets(metadata, fields, declared, accessors);
-
-        Set<String> systemRoles = systemFieldNames(metadata, fields, key);
-        Set<String> notInCreate = notInCreateBody(fields, systemRoles);
-        Set<String> notInUpdate = notInUpdateBody(metadata, fields, systemRoles);
-        for (FieldMetadata field : fields) {
-            String name = field.name();
-            if (hasRules(field) && (!notInCreate.contains(name) || !notInUpdate.contains(name))) {
-                add(accessors, name, "get" + pascal(name), false);
-            }
-            if (field.required() && field.readOnly() && !systemRoles.contains(name)
-                    && !PRIMITIVE_TYPES.contains(field.type()) && !field.hasBlob()) {
-                add(accessors, name, "get" + pascal(name), false);
-            }
-        }
-
+        columns(metadata, fields, roles, accessors);
+        resets(metadata, fields, roles, accessors);
+        readFields(metadata, fields, roles, accessors);
         eventPayloads(metadata, fields, accessors);
-        graph(metadata, fields, key, accessors);
+        graph(metadata, fields, roles.key(), accessors);
         return List.copyOf(accessors.values());
     }
 
-    /** The repository's column layout: the key, the domain columns, then the system columns. */
-    private static void columns(DomainMetadata metadata, List<FieldMetadata> fields, String key,
-                                Map<String, Accessor> accessors) {
-        SystemFieldsMetadata declared = metadata.systemFields();
-        String tenantId = role(declared == null ? null : declared.tenantIdField(), "tenantId");
-        String createdAt = role(declared == null ? null : declared.createdAtField(), "createdAt");
-        String updatedAt = role(declared == null ? null : declared.updatedAtField(), "updatedAt");
-        String deleted = role(declared == null ? null : declared.softDeleteField(), "deleted");
-        String version = role(declared == null ? null : declared.versionField(), "version");
-        boolean tenantPartitioned = metadata.effectiveDataScope() != DataScope.GLOBAL;
-
-        Set<String> systemColumns = new HashSet<>();
-        if (tenantPartitioned) {
-            systemColumns.add(snakeCase(tenantId));
-        }
-        if (metadata.audited()) {
-            systemColumns.add(snakeCase(createdAt));
-            systemColumns.add(snakeCase(updatedAt));
-        }
-        if (metadata.softDelete()) {
-            systemColumns.add(snakeCase(deleted));
-        }
-        if (metadata.versioned()) {
-            systemColumns.add(snakeCase(version));
-        }
-
-        addColumn(accessors, key, "get");
-        Set<String> seen = new HashSet<>();
-        seen.add(snakeCase(key));
+    /** The getters the handlers validate a body through, and the repository checks a server-set field by. */
+    private static void readFields(DomainMetadata metadata, List<FieldMetadata> fields, Roles roles,
+                                   Map<String, Accessor> accessors) {
+        Set<String> systemRoles = systemFieldNames(metadata, fields, roles);
+        Set<String> notInCreate = notInCreateBody(fields, systemRoles);
+        Set<String> notInUpdate = notInUpdateBody(metadata, fields, roles, systemRoles);
         for (FieldMetadata field : fields) {
-            String column = snakeCase(field.name());
-            if (field.hasBlob() || seen.contains(column) || systemColumns.contains(column)) {
-                continue;
+            String name = field.name();
+            boolean validated = hasRules(field) && (!notInCreate.contains(name) || !notInUpdate.contains(name));
+            if (validated || isSetByServer(field, systemRoles)) {
+                add(accessors, name, GET + pascal(name), false);
             }
-            seen.add(column);
-            addColumn(accessors, field.name(), "boolean".equals(field.type()) ? "is" : "get");
-        }
-        if (tenantPartitioned) {
-            addColumn(accessors, tenantId, "get");
-        }
-        if (metadata.audited()) {
-            addColumn(accessors, createdAt, "get");
-            addColumn(accessors, updatedAt, "get");
-        }
-        if (metadata.softDelete()) {
-            addColumn(accessors, deleted, "is");
-        }
-        if (metadata.versioned()) {
-            addColumn(accessors, version, "get");
         }
     }
 
-    /** The properties the create and update handlers set on the entity they decoded. */
-    private static void resets(DomainMetadata metadata, List<FieldMetadata> fields,
-                               SystemFieldsMetadata declared, Map<String, Accessor> accessors) {
-        List<String> reset = new ArrayList<>();
-        if (metadata.audited()) {
-            reset.add(role(declared == null ? null : declared.createdAtField(), "createdAt"));
-            reset.add(role(declared == null ? null : declared.updatedAtField(), "updatedAt"));
-            addIfDeclared(reset, fields, role(declared == null ? null : declared.createdByField(), "createdBy"));
-            addIfDeclared(reset, fields, role(declared == null ? null : declared.updatedByField(), "updatedBy"));
+    /** A required, read-only, non-system reference-typed column, which the server sets before insert. */
+    private static boolean isSetByServer(FieldMetadata field, Set<String> systemRoles) {
+        return field.required() && field.readOnly() && !systemRoles.contains(field.name())
+                && !PRIMITIVE_TYPES.contains(field.type()) && !field.hasBlob();
+    }
+
+    /** The repository's column layout: the key, the domain columns, then the system columns. */
+    private static void columns(DomainMetadata metadata, List<FieldMetadata> fields, Roles roles,
+                                Map<String, Accessor> accessors) {
+        List<String[]> systemColumns = systemColumns(metadata, roles);
+        Set<String> systemColumnNames = new HashSet<>();
+        for (String[] column : systemColumns) {
+            systemColumnNames.add(snakeCase(column[0]));
         }
-        if (metadata.softDelete()) {
-            reset.add(role(declared == null ? null : declared.softDeleteField(), "deleted"));
-            addIfDeclared(reset, fields,
-                    role(declared == null ? null : declared.softDeleteTimestampField(), "deletedAt"));
-            addIfDeclared(reset, fields,
-                    role(declared == null ? null : declared.softDeletedByField(), "deletedBy"));
-        }
-        if (metadata.versioned()) {
-            reset.add(role(declared == null ? null : declared.versionField(), "version"));
-        }
+
+        addColumn(accessors, roles.key(), GET);
+        Set<String> seen = new HashSet<>();
+        seen.add(snakeCase(roles.key()));
         for (FieldMetadata field : fields) {
-            if (field.hasBlob()) {
-                reset.add(field.name());
+            String column = snakeCase(field.name());
+            if (!field.hasBlob() && !seen.contains(column) && !systemColumnNames.contains(column)) {
+                seen.add(column);
+                addColumn(accessors, field.name(), getterPrefix(field.type()));
             }
         }
+        for (String[] column : systemColumns) {
+            addColumn(accessors, column[0], column[1]);
+        }
+    }
+
+    /** The system columns the flags enable, in table order: each its field name and getter prefix. */
+    private static List<String[]> systemColumns(DomainMetadata metadata, Roles roles) {
+        List<String[]> columns = new ArrayList<>();
+        if (metadata.effectiveDataScope() != DataScope.GLOBAL) {
+            columns.add(new String[] {roles.tenantId(), GET});
+        }
+        if (metadata.audited()) {
+            columns.add(new String[] {roles.createdAt(), GET});
+            columns.add(new String[] {roles.updatedAt(), GET});
+        }
+        if (metadata.softDelete()) {
+            columns.add(new String[] {roles.deleted(), IS});
+        }
+        if (metadata.versioned()) {
+            columns.add(new String[] {roles.version(), GET});
+        }
+        return columns;
+    }
+
+    /** The properties the create and update handlers set on the entity they decoded. */
+    private static void resets(DomainMetadata metadata, List<FieldMetadata> fields, Roles roles,
+                               Map<String, Accessor> accessors) {
+        List<String> reset = new ArrayList<>();
+        if (metadata.audited()) {
+            reset.add(roles.createdAt());
+            reset.add(roles.updatedAt());
+            addIfDeclared(reset, fields, roles.createdBy());
+            addIfDeclared(reset, fields, roles.updatedBy());
+        }
+        if (metadata.softDelete()) {
+            reset.add(roles.deleted());
+            addIfDeclared(reset, fields, roles.deletedAt());
+            addIfDeclared(reset, fields, roles.deletedBy());
+        }
+        if (metadata.versioned()) {
+            reset.add(roles.version());
+        }
+        fields.stream().filter(FieldMetadata::hasBlob).forEach(field -> reset.add(field.name()));
         for (String name : reset) {
-            add(accessors, name, "set" + pascal(name), true);
+            add(accessors, name, SET + pascal(name), true);
         }
     }
 
@@ -199,13 +226,10 @@ final class KernelAccessors {
         }
         for (DomainEventMetadata event : metadata.events()) {
             Set<String> sensitive = new HashSet<>(event.sensitiveFields());
-            for (String name : event.payloadFields()) {
-                if (sensitive.contains(name)) {
-                    continue;
-                }
-                findField(fields, name).ifPresent(field -> add(accessors, name,
-                        ("boolean".equals(field.type()) ? "is" : "get") + capitalize(name), false));
-            }
+            event.payloadFields().stream()
+                    .filter(name -> !sensitive.contains(name))
+                    .forEach(name -> findField(fields, name).ifPresent(field -> add(accessors, name,
+                            getterPrefix(field.type()) + capitalize(name), false)));
         }
     }
 
@@ -216,26 +240,27 @@ final class KernelAccessors {
         if (graph == null) {
             return;
         }
-        add(accessors, key, "get" + capitalize(key), false);
+        add(accessors, key, GET + capitalize(key), false);
         if (graph.properties() != null) {
             for (GraphPropertyMetadata property : graph.properties()) {
-                String name = property.effectiveField();
-                if (name != null && !name.isEmpty()) {
-                    add(accessors, name, typedGetterPrefix(fields, name) + capitalize(name), false);
-                }
+                addTypedGetter(accessors, fields, property.effectiveField());
             }
         }
         if (graph.edges() != null) {
             for (GraphEdgeMetadata edge : graph.edges()) {
                 String name = edge.effectiveField();
                 if (name != null && !name.isEmpty()) {
-                    add(accessors, name, "get" + capitalize(name), false);
+                    add(accessors, name, GET + capitalize(name), false);
                 }
-                String weight = edge.weightField();
-                if (weight != null && !weight.isEmpty()) {
-                    add(accessors, weight, typedGetterPrefix(fields, weight) + capitalize(weight), false);
-                }
+                addTypedGetter(accessors, fields, edge.weightField());
             }
+        }
+    }
+
+    /** The getter of {@code name}, typed by its declared field, unless {@code name} is absent. */
+    private static void addTypedGetter(Map<String, Accessor> accessors, List<FieldMetadata> fields, String name) {
+        if (name != null && !name.isEmpty()) {
+            add(accessors, name, typedGetterPrefix(fields, name) + capitalize(name), false);
         }
     }
 
@@ -244,40 +269,37 @@ final class KernelAccessors {
      * the audit, version and soft-delete fields the flags enable, and every name the
      * {@code systemFields} block declares.
      */
-    private static Set<String> systemFieldNames(DomainMetadata metadata, List<FieldMetadata> fields, String key) {
-        SystemFieldsMetadata declared = metadata.systemFields();
+    private static Set<String> systemFieldNames(DomainMetadata metadata, List<FieldMetadata> fields, Roles roles) {
         Set<String> names = new TreeSet<>();
-        names.add(key);
+        names.add(roles.key());
         if (metadata.effectiveDataScope() != DataScope.GLOBAL) {
-            names.add(role(declared == null ? null : declared.tenantIdField(), "tenantId"));
+            names.add(roles.tenantId());
         }
         sharedScopeField(metadata, fields).ifPresent(names::add);
         if (metadata.audited()) {
-            names.add(role(declared == null ? null : declared.createdAtField(), "createdAt"));
-            names.add(role(declared == null ? null : declared.createdByField(), "createdBy"));
-            names.add(role(declared == null ? null : declared.updatedAtField(), "updatedAt"));
-            names.add(role(declared == null ? null : declared.updatedByField(), "updatedBy"));
+            names.addAll(List.of(roles.createdAt(), roles.createdBy(), roles.updatedAt(), roles.updatedBy()));
         }
         if (metadata.versioned()) {
-            names.add(role(declared == null ? null : declared.versionField(), "version"));
+            names.add(roles.version());
         }
         if (metadata.softDelete()) {
-            names.add(role(declared == null ? null : declared.softDeleteField(), "deleted"));
-            names.add(role(declared == null ? null : declared.softDeleteTimestampField(), "deletedAt"));
-            names.add(role(declared == null ? null : declared.softDeletedByField(), "deletedBy"));
+            names.addAll(List.of(roles.deleted(), roles.deletedAt(), roles.deletedBy()));
         }
-        if (declared != null) {
-            for (String name : new String[] {declared.primaryKeyField(), declared.createdAtField(),
-                    declared.createdByField(), declared.updatedAtField(), declared.updatedByField(),
-                    declared.tenantIdField(), declared.versionField(), declared.softDeleteField(),
-                    declared.softDeleteTimestampField(), declared.softDeletedByField(),
-                    declared.sharedScopeField()}) {
-                if (name != null && !name.isBlank()) {
-                    names.add(name);
-                }
-            }
-        }
+        names.addAll(declaredRoleNames(metadata.systemFields()));
         return names;
+    }
+
+    /** Every non-blank name the {@code systemFields} block declares. */
+    private static List<String> declaredRoleNames(SystemFieldsMetadata declared) {
+        if (declared == null) {
+            return List.of();
+        }
+        return Stream.of(declared.primaryKeyField(), declared.createdAtField(), declared.createdByField(),
+                        declared.updatedAtField(), declared.updatedByField(), declared.tenantIdField(),
+                        declared.versionField(), declared.softDeleteField(), declared.softDeleteTimestampField(),
+                        declared.softDeletedByField(), declared.sharedScopeField())
+                .filter(name -> name != null && !name.isBlank())
+                .toList();
     }
 
     /** The fields the create body does not carry, so the create handler validates none of them. */
@@ -292,11 +314,10 @@ final class KernelAccessors {
     }
 
     /** The fields the update body does not carry, so the update handler validates none of them. */
-    private static Set<String> notInUpdateBody(DomainMetadata metadata, List<FieldMetadata> fields,
+    private static Set<String> notInUpdateBody(DomainMetadata metadata, List<FieldMetadata> fields, Roles roles,
                                                Set<String> systemRoles) {
-        SystemFieldsMetadata declared = metadata.systemFields();
         Set<String> names = new HashSet<>(systemRoles);
-        names.remove(role(declared == null ? null : declared.versionField(), "version"));
+        names.remove(roles.version());
         sharedScopeField(metadata, fields).ifPresent(names::remove);
         for (FieldMetadata field : fields) {
             boolean fixedOnUpdate = (field.readOnly() || !field.inUpdate()) && !systemRoles.contains(field.name());
@@ -342,7 +363,12 @@ final class KernelAccessors {
 
     /** {@code is} for a declared primitive {@code boolean} field, {@code get} for anything else. */
     private static String typedGetterPrefix(List<FieldMetadata> fields, String name) {
-        return findField(fields, name).filter(field -> "boolean".equals(field.type())).isPresent() ? "is" : "get";
+        return findField(fields, name).map(field -> getterPrefix(field.type())).orElse(GET);
+    }
+
+    /** {@code is} for the primitive {@code boolean} type, {@code get} for any other. */
+    private static String getterPrefix(String type) {
+        return BOOLEAN.equals(type) ? IS : GET;
     }
 
     private static void addIfDeclared(List<String> reset, List<FieldMetadata> fields, String name) {
@@ -357,17 +383,11 @@ final class KernelAccessors {
 
     private static void addColumn(Map<String, Accessor> accessors, String field, String getterPrefix) {
         add(accessors, field, getterPrefix + capitalize(field), false);
-        add(accessors, field, "set" + capitalize(field), true);
+        add(accessors, field, SET + capitalize(field), true);
     }
 
     private static void add(Map<String, Accessor> accessors, String field, String method, boolean setter) {
         accessors.putIfAbsent(method + (setter ? "/1" : "/0"), new Accessor(field, method, setter));
-    }
-
-    /** The primary key: the field {@code systemFields.primaryKeyField} names, else {@code id}. */
-    private static String primaryKeyField(DomainMetadata metadata) {
-        SystemFieldsMetadata declared = metadata.systemFields();
-        return role(declared == null ? null : declared.primaryKeyField(), ID_FIELD);
     }
 
     private static String role(String declared, String fallback) {
