@@ -16,9 +16,9 @@
  * of its own control: a select needs an enum the app's enum module declares, because it imports
  * that enum's constants, and a date or date-time input is given only to a value without a zone,
  * because the input's value carries none. A foreign key whose target's records the app's services
- * list is picked from those records (`foreignKeyPickers`). Where the list resolves by its own rule — its
- * `java.util.Date` date-time and its `BigDecimal` / `BigInteger` number cell — the difference is
- * listed in `docs/codegen-ts-track-plan.md`.
+ * list is picked from those records (`foreignKeyPickers`). The list resolves by its own rule in two
+ * places: `java.util.Date` is a date-time cell (`LIST_DATETIME_TYPES`), and `BigDecimal` /
+ * `BigInteger` are number cells although the DTO carries them as strings (`LIST_DECIMAL_TYPES`).
  *
  * The list's rules: a boolean or a number is any type the DTO carries as one, an enum is a type
  * the processor emitted an enum for (the only enums `types/enums` exports), and a date-time type
