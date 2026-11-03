@@ -988,6 +988,60 @@ class KernelCodegenCompileTest {
         return sources;
     }
 
+    /**
+     * A {@code @GraphEdge} on a {@code List} of entities holds no key the graph sync can write, so
+     * the run is refused with {@code EXT-GEN-3003} before anything is written, naming the
+     * {@code List<UUID>} to hold instead.
+     */
+    @Test
+    @DisplayName("EXT-GEN-3003: a @GraphEdge on a List of entities is refused through the real chain, nothing written")
+    void collectionEdgeOfEntitiesIsRefused(@TempDir Path workspace) throws IOException {
+        Path entityClasses = workspace.resolve("target/classes");
+        Path generatedMain = workspace.resolve("src/main/generated/java");
+        ProcessorCompiler.compile(workspace.resolve("src/main/java"), entityClasses, null, Map.of(
+                "com/catalog/domain/Product.java", """
+                        package com.catalog.domain;
+
+                        import eu.exeris.sdk.annotation.ExerisDomain;
+                        import eu.exeris.sdk.annotation.Field;
+                        import eu.exeris.sdk.annotation.Graph;
+                        import eu.exeris.sdk.annotation.GraphEdge;
+
+                        import java.util.List;
+                        import java.util.UUID;
+
+                        @ExerisDomain(module = "catalog", path = "/products")
+                        @Graph(nodeClass = "Product")
+                        public class Product {
+
+                            private UUID id;
+
+                            @Field(label = "Title", required = true)
+                            private String title;
+
+                            @GraphEdge(type = "RELATED_TO", target = Product.class)
+                            private List<Product> related;
+
+                            public UUID getId() { return id; }
+                            public void setId(UUID id) { this.id = id; }
+                            public String getTitle() { return title; }
+                            public void setTitle(String title) { this.title = title; }
+                            public List<Product> getRelated() { return related; }
+                            public void setRelated(List<Product> related) { this.related = related; }
+                        }
+                        """));
+
+        CodegenPipeline pipeline = CodegenPipeline.createDefault();
+        Path metadataDir = entityClasses.resolve("exeris-metadata");
+        assertThatThrownBy(() -> pipeline.run(metadataDir, generatedMain, "com.catalog"))
+                .isInstanceOfSatisfying(UnpersistableFieldTypeException.class, e -> assertThat(e.fields())
+                        .containsExactly("com.catalog.domain.Product.related : java.util.List<com.catalog.domain"
+                                + ".Product> (a collection graph edge to the entity Product, which no edge stores;"
+                                + " hold the targets' keys instead: List<UUID> relatedIds)"))
+                .hasMessageStartingWith("[Exeris] EXT-GEN-3003: ");
+        assertThat(generatedMain).doesNotExist();
+    }
+
     /** Reads the one emitted migration whose file name contains {@code fragment}. */
     private static String migration(Path generated, String fragment) throws IOException {
         try (Stream<Path> files = Files.walk(generated.resolve("db/migration"))) {

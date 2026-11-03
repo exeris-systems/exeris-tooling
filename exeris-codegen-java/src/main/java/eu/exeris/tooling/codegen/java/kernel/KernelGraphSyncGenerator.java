@@ -1,14 +1,17 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
+import com.palantir.javapoet.ArrayTypeName;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.FieldSpec;
 import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.java.support.DomainTypeKind;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
@@ -17,6 +20,8 @@ import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphPropertyMetadata;
 
 import javax.lang.model.element.Modifier;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -45,9 +50,13 @@ import java.util.stream.Collectors;
  *       Pass them to {@code GraphEngine.registerEdges(...)} at bootstrap.</li>
  *   <li>{@code syncToGraph(entity)} — opens a {@code GraphSession} via
  *       try-with-resources, calls {@code session.upsertNode(NODE_LABEL, id, properties)}
- *       with the encoded {@code @GraphProperty} values, or {@code null} without any, then per
- *       declared edge calls {@code session.upsertEdge(EDGE, sourceId, targetId, weight, null)}
- *       with the weight described below.</li>
+ *       with the encoded {@code @GraphProperty} values, or {@code null} without any, then
+ *       synchronises each declared edge: it reads the targets stored from the node along the
+ *       edge's relation type in one outgoing hop ({@code traverseBreadthFirst}), calls
+ *       {@code session.deleteEdge(EDGE, sourceId, targetId)} for each target the entity no longer
+ *       holds, and {@code session.upsertEdge(EDGE, sourceId, targetId, weight, null)} for each it
+ *       holds, with the weight described below. The same method serves a created and an updated
+ *       entity: a new node has no stored targets.</li>
  *   <li>{@code deleteFromGraph(entityId)} — opens a session and calls
  *       {@code session.deleteNode(NODE_LABEL, entityId)}.</li>
  * </ul>
@@ -58,6 +67,13 @@ import java.util.stream.Collectors;
  * that JSON object. An entity with no {@code @GraphProperty} passes {@code null} and takes no
  * allocator. An edge carries its declared direction and static weight in its descriptor, and its
  * {@code weightField} value, else its static weight, else {@code 1.0}, as the upsert weight.
+ * <p>
+ * An edge's field holds its target's {@code UUID} key, or, for a collection edge, a
+ * {@code List<UUID>} of keys: one edge per distinct non-{@code null} key, in list order, each with
+ * the edge's one weight. A {@code null} field or element holds no target, so an edge to it is
+ * deleted. Edges that share a relation type share their stored relationship set and are
+ * synchronised together. Any other field type is refused with {@code EXT-GEN-3003}
+ * ({@code unwritableEdgeFields}).
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
  *
@@ -65,7 +81,10 @@ import java.util.stream.Collectors;
  */
 public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
 
-    private static final ClassName UUID = ClassName.get("java.util", "UUID");
+    private static final String JAVA_UTIL = "java.util";
+    private static final String GRAPH_MODEL = "eu.exeris.kernel.spi.graph.model";
+
+    private static final ClassName UUID = ClassName.get(JAVA_UTIL, "UUID");
     private static final ClassName RUNTIME_EXCEPTION = ClassName.get("java.lang", "RuntimeException");
 
     private static final ClassName GRAPH_ENGINE =
@@ -73,9 +92,9 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
     private static final ClassName GRAPH_SESSION =
             ClassName.get("eu.exeris.kernel.spi.graph", "GraphSession");
     private static final ClassName GRAPH_NODE_DESCRIPTOR =
-            ClassName.get("eu.exeris.kernel.spi.graph.model", "GraphNodeDescriptor");
+            ClassName.get(GRAPH_MODEL, "GraphNodeDescriptor");
     private static final ClassName GRAPH_EDGE_DESCRIPTOR =
-            ClassName.get("eu.exeris.kernel.spi.graph.model", "GraphEdgeDescriptor");
+            ClassName.get(GRAPH_MODEL, "GraphEdgeDescriptor");
     private static final ClassName LOANED_BUFFER =
             ClassName.get("eu.exeris.kernel.spi.memory", "LoanedBuffer");
     private static final ClassName MEMORY_SEGMENT =
@@ -87,7 +106,15 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
     private static final ClassName STANDARD_CHARSETS =
             ClassName.get("java.nio.charset", "StandardCharsets");
     private static final ClassName LIST =
-            ClassName.get("java.util", "List");
+            ClassName.get(JAVA_UTIL, "List");
+    private static final ClassName LINKED_HASH_SET =
+            ClassName.get(JAVA_UTIL, "LinkedHashSet");
+    private static final ClassName GRAPH_TRAVERSAL =
+            ClassName.get(GRAPH_MODEL, "GraphTraversal");
+    private static final ClassName DIRECTION = GRAPH_EDGE_DESCRIPTOR.nestedClass("Direction");
+    private static final ParameterizedTypeName UUID_SET =
+            ParameterizedTypeName.get(ClassName.get(JAVA_UTIL, "Set"), UUID);
+    private static final String TARGETS_METHOD = "targets";
 
     /**
      * Creates the generator. It keeps no per-domain state, so one instance serves every domain
@@ -112,6 +139,10 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
         boolean hasEdges = graph.edges() != null && !graph.edges().isEmpty();
         if (hasEdges) {
             assertDistinctEdgeNames(entity, graph);
+            List<String> unwritable = unwritableEdgeFields(metadata, List.of(metadata));
+            if (!unwritable.isEmpty()) {
+                throw new UnpersistableFieldTypeException(unwritable);
+            }
         }
         boolean hasProperties = graph.properties() != null && !graph.properties().isEmpty();
 
@@ -170,6 +201,9 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
 
         builder.addMethod(buildSyncToGraph(entityType, metadata, graph, hasEdges, hasProperties));
         builder.addMethod(buildDeleteFromGraph());
+        if (hasEdges) {
+            addEdgeSyncHelpers(builder, metadata, graph);
+        }
 
         if (hasProperties) {
             builder.addMethod(buildEncodeNodeProperties(entityType, metadata, graph.properties()));
@@ -182,9 +216,9 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
     }
 
     private FieldSpec buildEdgeDescriptor(String sourceLabel, GraphEdgeMetadata edge) {
-        String edgeType = edge.relationType() != null ? edge.relationType() : "RELATES_TO";
+        String edgeType = relationType(edge);
         String targetLabel = edge.targetLabel() != null ? edge.targetLabel() : "Node";
-        String constantName = toConstantCase(edge.name()) + "_EDGE";
+        String constantName = edgeConstant(edge);
         boolean hasCustomAttributes = edge.direction() != null
                 || Boolean.TRUE.equals(edge.bidirectional())
                 || edge.staticWeight() != null;
@@ -197,7 +231,7 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
             field.initializer("new $T($S, $S, $S, $L, $L, $T.$L, null)",
                     GRAPH_EDGE_DESCRIPTOR, sourceLabel, edgeType, targetLabel,
                     weight, bidirectional,
-                    GRAPH_EDGE_DESCRIPTOR.nestedClass("Direction"), directionName);
+                    DIRECTION, directionName);
         } else {
             field.initializer("$T.create($S, $S, $S)",
                     GRAPH_EDGE_DESCRIPTOR, sourceLabel, edgeType, targetLabel);
@@ -217,7 +251,10 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
                         ? "encoded properties, then upserts\n"
                         : "no properties (pass {@code null} per the SPI contract), then upserts\n")
                 .addJavadoc("each declared edge with its configured direction, weight, and {@code null}\n")
-                .addJavadoc("properties. Subclasses override this method to customize payload bytes\n")
+                .addJavadoc(hasEdges
+                        ? "properties, and deletes each stored edge to a target the entity no longer holds.\n"
+                        : "properties.\n")
+                .addJavadoc("Subclasses override this method to customize payload bytes\n")
                 .addJavadoc("via an allocator-owned {@link eu.exeris.kernel.spi.memory.LoanedBuffer}.\n")
                 .beginControlFlow("try ($T session = graphEngine.openSession())", GRAPH_SESSION);
 
@@ -230,14 +267,8 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
         }
 
         if (hasEdges) {
-            for (GraphEdgeMetadata edge : graph.edges()) {
-                String getter = "get" + capitalize(edge.effectiveField());
-                String constantName = toConstantCase(edge.name()) + "_EDGE";
-                String weightExpr = weightExpression(metadata, edge);
-                method.beginControlFlow("if (entity.$L() != null)", getter)
-                        .addStatement("session.upsertEdge($L, entity.$L(), entity.$L(), $L, null)",
-                                constantName, keyGetter, getter, weightExpr)
-                        .endControlFlow();
+            for (List<GraphEdgeMetadata> group : edgesByRelationType(graph).values()) {
+                addEdgeGroupSync(method, metadata, keyGetter, group);
             }
         }
 
@@ -253,6 +284,215 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
                 .addStatement("throw e")
                 .endControlFlow()
                 .build();
+    }
+
+    /**
+     * The entity's edges grouped by relation type, in declaration order. Edges of one relation type
+     * from one source share their stored relationship set, so one group is synchronised as a whole:
+     * a target one of its edges still holds is not stale for another.
+     */
+    private static Map<String, List<GraphEdgeMetadata>> edgesByRelationType(GraphMetadata graph) {
+        Map<String, List<GraphEdgeMetadata>> groups = new LinkedHashMap<>();
+        for (GraphEdgeMetadata edge : graph.edges()) {
+            groups.computeIfAbsent(relationType(edge), type -> new ArrayList<>()).add(edge);
+        }
+        return groups;
+    }
+
+    /**
+     * Synchronises one relation-type group: reads the targets stored from this source, deletes the
+     * edges to those no edge of the group holds any longer, then upserts each held target.
+     */
+    private static void addEdgeGroupSync(MethodSpec.Builder method, DomainMetadata metadata, String keyGetter,
+                                         List<GraphEdgeMetadata> group) {
+        List<String> targetSets = new ArrayList<>(group.size());
+        for (GraphEdgeMetadata edge : group) {
+            String targets = edge.name() + "Targets";
+            method.addStatement("$T $L = targets(entity.$L())", UUID_SET, targets,
+                    "get" + capitalize(edge.effectiveField()));
+            targetSets.add(targets);
+        }
+        String kept = targetSets.size() == 1
+                ? targetSets.get(0)
+                : "union(" + String.join(", ", targetSets) + ")";
+        String descriptors = group.stream()
+                .map(KernelGraphSyncGenerator::edgeConstant)
+                .collect(Collectors.joining(", "));
+        method.addStatement("removeStaleEdges(session, entity.$L(), $L, $L)", keyGetter, kept, descriptors);
+        for (int i = 0; i < group.size(); i++) {
+            GraphEdgeMetadata edge = group.get(i);
+            method.addStatement("upsertEdges(session, $L, entity.$L(), $L, $L)", edgeConstant(edge), keyGetter,
+                    targetSets.get(i), weightExpression(metadata, edge));
+        }
+    }
+
+    /** Emits {@code targets(UUID)}: the edge's one target, or none when the field is {@code null}. */
+    private static MethodSpec buildScalarTargets() {
+        return MethodSpec.methodBuilder(TARGETS_METHOD)
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(UUID_SET)
+                .addParameter(UUID, "target")
+                .addJavadoc("The edge's target, or none when the field holds no key.\n")
+                .addStatement("$T targets = new $T<>()", UUID_SET, LINKED_HASH_SET)
+                .beginControlFlow("if (target != null)")
+                .addStatement("targets.add(target)")
+                .endControlFlow()
+                .addStatement("return targets")
+                .build();
+    }
+
+    /** Emits {@code targets(List<UUID>)}: the listed keys, {@code null}s left out, each once, in order. */
+    private static MethodSpec buildCollectionTargets() {
+        return MethodSpec.methodBuilder(TARGETS_METHOD)
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(UUID_SET)
+                .addParameter(ParameterizedTypeName.get(LIST, UUID), "keys")
+                .addJavadoc("The edge's targets: the listed keys without {@code null}, each once, in list order.\n")
+                .addStatement("$T targets = new $T<>()", UUID_SET, LINKED_HASH_SET)
+                .beginControlFlow("if (keys != null)")
+                .beginControlFlow("for ($T key : keys)", UUID)
+                .beginControlFlow("if (key != null)")
+                .addStatement("targets.add(key)")
+                .endControlFlow()
+                .endControlFlow()
+                .endControlFlow()
+                .addStatement("return targets")
+                .build();
+    }
+
+    /** Emits {@code union(Set<UUID>...)}, for a relation type more than one edge declares. */
+    private static MethodSpec buildUnion() {
+        return MethodSpec.methodBuilder("union")
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .addAnnotation(SafeVarargs.class)
+                .returns(UUID_SET)
+                .addParameter(ArrayTypeName.of(UUID_SET), "targetSets")
+                .varargs()
+                .addJavadoc("The targets every edge of one relation type holds, together.\n")
+                .addStatement("$T union = new $T<>()", UUID_SET, LINKED_HASH_SET)
+                .beginControlFlow("for ($T targets : targetSets)", UUID_SET)
+                .addStatement("union.addAll(targets)")
+                .endControlFlow()
+                .addStatement("return union")
+                .build();
+    }
+
+    /**
+     * Emits {@code removeStaleEdges}. The stored targets are read along the relation type outgoing
+     * from the source, whatever direction the descriptor declares for traversal: the sync writes
+     * every edge source to target, so only that direction holds the edges it owns.
+     */
+    private static MethodSpec buildRemoveStaleEdges() {
+        return MethodSpec.methodBuilder("removeStaleEdges")
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .addParameter(GRAPH_SESSION, "session")
+                .addParameter(UUID, "sourceId")
+                .addParameter(UUID_SET, "kept")
+                .addParameter(ArrayTypeName.of(GRAPH_EDGE_DESCRIPTOR), "edges")
+                .varargs()
+                .addJavadoc("Deletes each edge of {@code edges}' relation type from {@code sourceId} to a\n")
+                .addJavadoc("target not in {@code kept}. The stored targets are read in one hop outgoing from\n")
+                .addJavadoc("the source, the direction every edge is written in, and a stale one is deleted\n")
+                .addJavadoc("through each descriptor of the relation type, since a binding may key the edge\n")
+                .addJavadoc("by its target label.\n")
+                .addStatement("$T edge = edges[0]", GRAPH_EDGE_DESCRIPTOR)
+                .addStatement("$T outgoing = new $T(edge.sourceNode(), edge.edgeType(), edge.targetNode(),\n"
+                                + "edge.weight(), false, $T.OUTGOING, edge.tableName())",
+                        GRAPH_EDGE_DESCRIPTOR, GRAPH_EDGE_DESCRIPTOR, DIRECTION)
+                .beginControlFlow("for ($T stored : session.traverseBreadthFirst($T.create(sourceId, outgoing, 1)))",
+                        UUID, GRAPH_TRAVERSAL)
+                .beginControlFlow("if (!kept.contains(stored))")
+                .beginControlFlow("for ($T descriptor : edges)", GRAPH_EDGE_DESCRIPTOR)
+                .addStatement("session.deleteEdge(descriptor, sourceId, stored)")
+                .endControlFlow()
+                .endControlFlow()
+                .endControlFlow()
+                .build();
+    }
+
+    /** Emits {@code upsertEdges}: one upsert per target, each with the same weight. */
+    private static MethodSpec buildUpsertEdges() {
+        return MethodSpec.methodBuilder("upsertEdges")
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .addParameter(GRAPH_SESSION, "session")
+                .addParameter(GRAPH_EDGE_DESCRIPTOR, "edge")
+                .addParameter(UUID, "sourceId")
+                .addParameter(UUID_SET, "targets")
+                .addParameter(TypeName.DOUBLE, "weight")
+                .addJavadoc("Upserts an edge from {@code sourceId} to each of {@code targets}, all with\n")
+                .addJavadoc("{@code weight}.\n")
+                .beginControlFlow("for ($T target : targets)", UUID)
+                .addStatement("session.upsertEdge(edge, sourceId, target, weight, null)")
+                .endControlFlow()
+                .build();
+    }
+
+    /** Adds the edge-sync helpers the entity's edges call, and only those. */
+    private static void addEdgeSyncHelpers(TypeSpec.Builder builder, DomainMetadata metadata, GraphMetadata graph) {
+        boolean scalar = graph.edges().stream().anyMatch(edge -> !isCollectionEdge(metadata, edge));
+        boolean collection = graph.edges().stream().anyMatch(edge -> isCollectionEdge(metadata, edge));
+        if (scalar) {
+            builder.addMethod(buildScalarTargets());
+        }
+        if (collection) {
+            builder.addMethod(buildCollectionTargets());
+        }
+        if (edgesByRelationType(graph).values().stream().anyMatch(group -> group.size() > 1)) {
+            builder.addMethod(buildUnion());
+        }
+        builder.addMethod(buildRemoveStaleEdges());
+        builder.addMethod(buildUpsertEdges());
+    }
+
+    /** Whether the edge's field is a {@code List} of target keys rather than one key. */
+    private static boolean isCollectionEdge(DomainMetadata metadata, GraphEdgeMetadata edge) {
+        String type = fieldType(metadata, edge.effectiveField());
+        return type != null && DomainTypeKind.listElementType(type) != null;
+    }
+
+    /**
+     * The entity's {@code @GraphEdge} fields the graph sync cannot write, one entry per field in
+     * the {@code EXT-GEN-3003} format: an edge targets a node by its {@code UUID} key, so a single
+     * edge is a {@code UUID} field and a collection edge a {@code List<UUID>}. A field whose type
+     * the metadata does not carry is not checked.
+     *
+     * @param metadata the entity
+     * @param build    every entity of the build, {@code metadata} included
+     * @return the refused fields, in declaration order of their first edge
+     */
+    static List<String> unwritableEdgeFields(DomainMetadata metadata, List<DomainMetadata> build) {
+        if (!metadata.hasGraphMetadata() || metadata.graphMetadata().edges() == null) {
+            return List.of();
+        }
+        Map<String, String> refused = new LinkedHashMap<>();
+        for (GraphEdgeMetadata edge : metadata.graphMetadata().edges()) {
+            String field = edge.effectiveField();
+            String type = fieldType(metadata, field);
+            String reason = type != null ? edgeTypeRefusal(type, field, metadata, build) : null;
+            if (reason != null) {
+                refused.putIfAbsent(field, metadata.packageName() + "." + metadata.entityName() + "." + field
+                        + " : " + type + " (" + reason + ")");
+            }
+        }
+        return List.copyOf(refused.values());
+    }
+
+    /** Why an edge field of {@code type} cannot be written, or {@code null} when it can. */
+    private static String edgeTypeRefusal(String type, String field, DomainMetadata metadata,
+                                          List<DomainMetadata> build) {
+        String element = DomainTypeKind.listElementType(type);
+        if (element == null) {
+            return DomainTypeKind.of(type) == DomainTypeKind.UUID ? null
+                    : "a graph edge holds its target's key: UUID " + field;
+        }
+        if (DomainTypeKind.of(element) == DomainTypeKind.UUID) {
+            return null;
+        }
+        String entity = KernelRepositoryGenerator.referencedEntity(element, metadata, build);
+        return entity != null
+                ? "a collection graph edge to the entity " + entity + ", which no edge stores; hold the"
+                        + " targets' keys instead: List<UUID> " + field + "Ids"
+                : "a collection graph edge holds its targets' keys: List<UUID> " + field;
     }
 
     private MethodSpec buildDeleteFromGraph() {
@@ -453,7 +693,15 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
         return Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 
-    private String toConstantCase(String camelCase) {
+    private static String relationType(GraphEdgeMetadata edge) {
+        return edge.relationType() != null ? edge.relationType() : "RELATES_TO";
+    }
+
+    private static String edgeConstant(GraphEdgeMetadata edge) {
+        return toConstantCase(edge.name()) + "_EDGE";
+    }
+
+    private static String toConstantCase(String camelCase) {
         StringBuilder sb = new StringBuilder(camelCase.length() + 4);
         for (int i = 0; i < camelCase.length(); i++) {
             char c = camelCase.charAt(i);

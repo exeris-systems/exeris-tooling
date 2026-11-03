@@ -91,6 +91,10 @@ import java.util.Set;
  *       same way. A reference is persisted as the referenced row's key — a {@code UUID} field,
  *       which a {@code @Relationship} makes a foreign key — and no column holds the entity
  *       itself.</li>
+ *   <li>A {@code @GraphEdge} field that is neither a {@code UUID} nor a {@code List<UUID>} is
+ *       refused the same way ({@code KernelGraphSyncGenerator.unwritableEdgeFields}): the graph
+ *       sync writes one edge per target key, so a {@code List} of entities, or of anything but
+ *       keys, holds no target it can write.</li>
  * </ul>
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
@@ -223,7 +227,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      * Refuses the entity set when any entity has a domain column whose type the repository cannot
      * store and read back — a {@link DomainTypeKind#UNSTORABLE} field, or a {@code List} whose
      * element type is not a plain type name (a parameterised type, an array, a wildcard), or a field
-     * typed as an entity of {@code domains}. An enum field is never refused, whatever its type is
+     * typed as an entity of {@code domains}, or a {@code @GraphEdge} field that is neither a
+     * {@code UUID} nor a {@code List<UUID>}. An enum field is never refused, whatever its type is
      * named, when its {@code enumType} is set.
      * A field that is not a column — a {@code @Blob} field, or one shadowing the primary key or an
      * active system column — is not checked, since nothing binds or reads it.
@@ -253,6 +258,18 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     private static List<String> unpersistableFields(DomainMetadata metadata, List<DomainMetadata> build) {
+        List<String> refused = unstorableColumns(metadata, build);
+        // A field refused as a column is reported once, as a column.
+        for (String edgeField : KernelGraphSyncGenerator.unwritableEdgeFields(metadata, build)) {
+            String field = edgeField.substring(0, edgeField.indexOf(" : ") + 3);
+            if (refused.stream().noneMatch(entry -> entry.startsWith(field))) {
+                refused.add(edgeField);
+            }
+        }
+        return refused;
+    }
+
+    private static List<String> unstorableColumns(DomainMetadata metadata, List<DomainMetadata> build) {
         List<String> refused = new ArrayList<>();
         for (Column col : buildColumnLayout(metadata.fields(), metadata, resolveSystemFieldNames(metadata))) {
             if (col.kind() != ColumnKind.DOMAIN) {
@@ -277,7 +294,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      * its simple name when it shares {@code owner}'s package — the package an unqualified type is
      * resolved against on read.
      */
-    private static String referencedEntity(String type, DomainMetadata owner, List<DomainMetadata> build) {
+    static String referencedEntity(String type, DomainMetadata owner, List<DomainMetadata> build) {
         for (DomainMetadata domain : build) {
             String entity = domain.entityName();
             if (type.equals(domain.packageName() + "." + entity)
