@@ -53,7 +53,8 @@ public final class UnpersistableFieldTypeException extends RuntimeException {
                 + "\nDeclare each as a List<…> of a plain element type (stored as a JSON column) "
                 + "or as a supported scalar (String, UUID, Long, Integer, Short, Byte, Boolean, Float, "
                 + "Double, BigDecimal, Instant, LocalDateTime, OffsetDateTime, ZonedDateTime, LocalDate, "
-                + "or an enum); use BigDecimal in place of BigInteger, and a String or one of these for a "
-                + "time of day, a duration or any other value type.";
+                + "or an enum); use BigDecimal in place of BigInteger, a String or one of these for a "
+                + "time of day, a duration or any other value type, and the referenced entity's UUID key "
+                + "in place of a reference to another entity.";
     }
 }

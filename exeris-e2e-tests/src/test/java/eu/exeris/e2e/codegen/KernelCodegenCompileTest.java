@@ -20,6 +20,7 @@ import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.CodegenPipeline;
 import eu.exeris.tooling.codegen.java.kernel.KernelApplicationGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
+import eu.exeris.tooling.codegen.java.kernel.UnpersistableFieldTypeException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -38,6 +39,7 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Compile-test gate: feeds a representative {@link DomainMetadata} through the
@@ -557,6 +559,183 @@ class KernelCodegenCompileTest {
         assertThat(result.clean())
                 .as("javac output:%n%s", result.render())
                 .isTrue();
+    }
+
+    /**
+     * A field typed as another entity — a {@code @Relationship MANY_TO_ONE} to it, or a field that
+     * only a {@code @GraphEdge} describes — has no column the repository can bind and read back,
+     * so the run is refused with {@code EXT-GEN-3003} before anything is written, naming each such
+     * field and the key it should hold.
+     */
+    @Test
+    @DisplayName("EXT-GEN-3003: fields typed as another entity are refused through the real chain, "
+            + "nothing written")
+    void entityTypedReferenceCorpusIsRefused(@TempDir Path workspace) throws IOException {
+        Path entityClasses = workspace.resolve("target/classes");
+        Path generatedMain = workspace.resolve("src/main/generated/java");
+        ProcessorCompiler.compile(workspace.resolve("src/main/java"), entityClasses, null,
+                entityReferenceCorpus(false));
+
+        CodegenPipeline pipeline = CodegenPipeline.createDefault();
+        Path metadataDir = entityClasses.resolve("exeris-metadata");
+        assertThatThrownBy(() -> pipeline.run(metadataDir, generatedMain, "com.shop"))
+                .isInstanceOfSatisfying(UnpersistableFieldTypeException.class, e -> assertThat(e.fields())
+                        .containsExactly(
+                                "com.shop.domain.Invoice.customer : com.shop.domain.Customer (a reference to"
+                                        + " the entity Customer, which no column stores; hold its key instead:"
+                                        + " UUID customerId, with @Relationship(targetEntity = Customer.class)"
+                                        + " for a foreign key)",
+                                "com.shop.domain.InvoiceLine.invoice : com.shop.domain.Invoice (a reference to"
+                                        + " the entity Invoice, which no column stores; hold its key instead:"
+                                        + " UUID invoiceId, with @Relationship(targetEntity = Invoice.class)"
+                                        + " for a foreign key)",
+                                "com.shop.domain.Product.category : com.shop.domain.Category (a reference to"
+                                        + " the entity Category, which no column stores; hold its key instead:"
+                                        + " UUID categoryId, with @Relationship(targetEntity = Category.class)"
+                                        + " for a foreign key)"))
+                .hasMessageStartingWith("[Exeris] EXT-GEN-3003: ");
+        assertThat(generatedMain).doesNotExist();
+    }
+
+    /**
+     * The same corpus holding each reference as the referenced row's key compiles, main and test
+     * trees, with a foreign key for each {@code @Relationship MANY_TO_ONE}.
+     */
+    @Test
+    @DisplayName("the key-holding form of the refused entity references compiles, main and test trees")
+    void keyHoldingReferenceCorpusCompilesClean(@TempDir Path workspace) throws IOException {
+        Path entityClasses = workspace.resolve("target/classes");
+        Path generatedMain = workspace.resolve("src/main/generated/java");
+        Path generatedTests = workspace.resolve("src/test/generated/java");
+        ProcessorCompiler.compile(workspace.resolve("src/main/java"), entityClasses, null,
+                entityReferenceCorpus(true));
+
+        CodegenPipeline pipeline = CodegenPipeline.createDefault();
+        Path metadataDir = entityClasses.resolve("exeris-metadata");
+        pipeline.run(metadataDir, generatedMain, "com.shop");
+        pipeline.runTests(metadataDir, generatedTests, "com.shop");
+
+        assertThat(migration(generatedMain, "foreign_keys"))
+                .contains("FOREIGN KEY (customer_id) REFERENCES customers(id)")
+                .contains("FOREIGN KEY (invoice_id) REFERENCES invoices(id)");
+        assertThat(Files.readString(generatedMain.resolve("com/shop/repository/InvoiceRepository.java")))
+                .contains("entity.setCustomerId(")
+                .contains("entity.setLines(parseList(");
+        assertThat(Files.readString(generatedMain.resolve("com/shop/repository/ProductRepository.java")))
+                .contains("entity.setCategoryId(");
+
+        List<String> files = new ArrayList<>();
+        for (Path root : List.of(generatedMain, generatedTests)) {
+            try (Stream<Path> tree = Files.walk(root)) {
+                tree.filter(p -> p.toString().endsWith(".java")).map(Path::toString).sorted().forEach(files::add);
+            }
+        }
+        EmittedJavac.Result result = EmittedJavac.compile(files, workspace.resolve("target/app-classes"),
+                System.getProperty("java.class.path") + File.pathSeparator + entityClasses);
+        assertThat(result.clean())
+                .as("javac output:%n%s", result.render())
+                .isTrue();
+    }
+
+    /**
+     * The reference shapes of the SDK examples: {@code Invoice} and {@code InvoiceLine} each
+     * reference an entity through {@code @Relationship MANY_TO_ONE}, and {@code Product} its
+     * {@code Category} through {@code @GraphEdge}. With {@code keyed}, each reference is held as the
+     * referenced row's {@code UUID} key; without, as a field typed as the referenced entity. Either
+     * way {@code Invoice} holds its lines as a {@code List<InvoiceLine>}, a JSON column.
+     */
+    private static Map<String, String> entityReferenceCorpus(boolean keyed) {
+        Map<String, String> sources = new LinkedHashMap<>();
+        for (String entity : List.of("Customer", "Category")) {
+            sources.put("com/shop/domain/" + entity + ".java",
+                    """
+                    package com.shop.domain;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+
+                    import java.util.UUID;
+
+                    @ExerisDomain(module = "shop", path = "/%2$s")
+                    public class %1$s {
+
+                        private UUID id;
+
+                        @Field(label = "Name", required = true)
+                        private String name;
+
+                        public UUID getId() { return id; }
+                        public void setId(UUID id) { this.id = id; }
+                        public String getName() { return name; }
+                        public void setName(String name) { this.name = name; }
+                    }
+                    """.formatted(entity, entity.equals("Customer") ? "customers" : "categories"));
+        }
+        sources.put("com/shop/domain/Invoice.java", referencing("Invoice", "invoices", "number",
+                "@Relationship(targetEntity = Customer.class, displayField = \"name\",\n"
+                        + "            relationshipType = Relationship.RelationshipType.MANY_TO_ONE)",
+                "Customer", "customer", keyed)
+                .replace("    public UUID getId()", """
+                    @Relationship(targetEntity = InvoiceLine.class, displayField = "description",
+                            relationshipType = Relationship.RelationshipType.ONE_TO_MANY, mappedBy = "invoice")
+                    private java.util.List<InvoiceLine> lines;
+
+                    public java.util.List<InvoiceLine> getLines() { return lines; }
+                    public void setLines(java.util.List<InvoiceLine> lines) { this.lines = lines; }
+                    public UUID getId()"""));
+        sources.put("com/shop/domain/InvoiceLine.java", referencing("InvoiceLine", "invoice-lines",
+                "description",
+                "@Relationship(targetEntity = Invoice.class, displayField = \"number\",\n"
+                        + "            relationshipType = Relationship.RelationshipType.MANY_TO_ONE)",
+                "Invoice", "invoice", keyed));
+        sources.put("com/shop/domain/Product.java", referencing("Product", "products", "title",
+                "@GraphEdge(type = \"BELONGS_TO\", target = Category.class)", "Category", "category", keyed));
+        return sources;
+    }
+
+    /**
+     * An entity with one {@code String} field and one reference to {@code target}, held as a field
+     * named {@code reference} typed as {@code target}, or, when {@code keyed}, as
+     * {@code <reference>Id} typed {@code UUID}. An entity whose reference is a {@code @GraphEdge}
+     * is a {@code @Graph} node.
+     */
+    private static String referencing(String entity, String path, String text, String annotation,
+                                      String target, String reference, boolean keyed) {
+        String type = keyed ? "UUID" : target;
+        String field = keyed ? reference + "Id" : reference;
+        String accessor = Character.toUpperCase(field.charAt(0)) + field.substring(1);
+        String textAccessor = Character.toUpperCase(text.charAt(0)) + text.substring(1);
+        return """
+                package com.shop.domain;
+
+                import eu.exeris.sdk.annotation.ExerisDomain;
+                import eu.exeris.sdk.annotation.Field;
+                import eu.exeris.sdk.annotation.Graph;
+                import eu.exeris.sdk.annotation.GraphEdge;
+                import eu.exeris.sdk.annotation.Relationship;
+
+                import java.util.UUID;
+
+                @ExerisDomain(module = "shop", path = "/%2$s")%9$s
+                public class %1$s {
+
+                    private UUID id;
+
+                    @Field(label = "Text", required = true)
+                    private String %3$s;
+
+                    %4$s
+                    private %5$s %6$s;
+
+                    public UUID getId() { return id; }
+                    public void setId(UUID id) { this.id = id; }
+                    public String get%7$s() { return %3$s; }
+                    public void set%7$s(String %3$s) { this.%3$s = %3$s; }
+                    public %5$s get%8$s() { return %6$s; }
+                    public void set%8$s(%5$s %6$s) { this.%6$s = %6$s; }
+                }
+                """.formatted(entity, path, text, annotation, type, field, textAccessor, accessor,
+                        annotation.startsWith("@GraphEdge") ? "\n@Graph(nodeClass = \"" + entity + "\")" : "");
     }
 
     @Test
