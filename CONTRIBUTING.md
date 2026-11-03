@@ -69,11 +69,13 @@ the build pins. It covers:
 - the domain scenarios (`graph`, `invoicing`, `ordering`, `presentation`) produce one metadata file per
   entity and per view;
 - the corpus as written is refused by the Java pipeline, whose infrastructure packages are derived from
-  an entity package ending in `.domain`. The application is generated from a copy with each scenario
-  moved to `<scenario>.domain`, and nothing else changed;
-- the emitted main and test trees are compiled. They fail on two known gaps, pinned exactly: the example
-  entities declare no JavaBean accessors, and the emitted repositories read an entity-typed reference
-  back through `valueOf(String)`. Any other diagnostic fails the gate;
+  an entity package ending in `.domain`. The gate works on a copy with each scenario moved to
+  `<scenario>.domain`, and nothing else changed;
+- the Java pipeline refuses the fields typed as another entity (`Invoice.customer`,
+  `InvoiceLine.invoice`, `Product.category`) with EXT-GEN-3003, so the Java application is generated
+  from `ordering` and `presentation`, while the frontend half generates from every domain scenario;
+- the emitted main and test trees are compiled. They fail on one known gap, pinned exactly: the example
+  entities declare no JavaBean accessors. Any other diagnostic fails the gate;
 - `capability` is refused by the capability graph: `LedgerCap` requires `AuditTrail`, which no module
   of the scenario provides;
 - a second run in a fresh workspace writes the same metadata and emitted trees, file for file.
