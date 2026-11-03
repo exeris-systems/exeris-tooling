@@ -1,22 +1,21 @@
 package eu.exeris.e2e.codegen;
 
-import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
-import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
-import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
-import eu.exeris.tooling.codegen.java.kernel.KernelApplicationGenerator;
+import eu.exeris.e2e.codegen.RoutePolicyFixture.RegisteredRoute;
+import eu.exeris.kernel.spi.http.HttpRoutePolicy;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
-import java.util.TreeSet;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -24,30 +23,27 @@ import static org.assertj.core.api.Assertions.assertThat;
  * The route requirements the generated {@code GeneratedRoutePolicy} declares, held against the
  * contract in {@code contract/route-policy.json}.
  *
- * <p>The generated TypeScript guards read the same file; it is the one place the two builds meet.
- * The policy declares no row until the generator extracts access, so the contract's {@code routes}
- * is empty and the emitted policy must declare no requirement. The example fixture is parsed and
- * checked for shape, never held against emitted code.
+ * <p>The generated TypeScript reads the same file; it is the one place the two builds meet. The
+ * policy is generated from {@link RoutePolicyFixture}, compiled against the kernel SPI and asked,
+ * for every route {@code RuntimeLifecycle} registers, what that route requires: a contract row's
+ * route answers the row's requirement and every other generated route an abstention. The example
+ * fixture is parsed and checked for shape, never held against emitted code.
  */
 @Tag("e2e")
 @Tag("codegen")
 @DisplayName("Route policy contract: emitted GeneratedRoutePolicy == contract")
 class RoutePolicyContractE2ETest {
 
-    private static final String DOMAIN_PACKAGE = "eu.exeris.e2e.parity.domain";
-    private static final String POLICY_TYPE = "GeneratedRoutePolicy";
     private static final String PERMIT_ALL = "permitAll";
     private static final String AUTHENTICATED = "authenticated";
     private static final String ANY_SCOPE = "anyScope";
     private static final String ENTITY = "entity";
     private static final String ACTION = "action";
+    private static final String ABSTAIN = "abstain";
+    private static final String ID = "42";
     private static final Set<String> KINDS = Set.of(PERMIT_ALL, AUTHENTICATED, ANY_SCOPE);
     private static final Set<String> METHODS = Set.of("GET", "POST", "PUT", "DELETE", "PATCH");
     private static final Set<String> SOURCES = Set.of(ENTITY, ACTION);
-
-    /** A requirement built in the emitted policy; {@code abstain()} is the absence of a row. */
-    private static final Pattern DECLARED = Pattern.compile(
-            "RouteRequirement\\s*\\.\\s*(permitAll|authenticated|requiringAnyScope)\\(");
 
     record Requirement(String kind, List<String> scopes) {}
 
@@ -55,45 +51,49 @@ class RoutePolicyContractE2ETest {
 
     record Contract(String description, List<Row> routes) {}
 
-    private static String policy;
+    private static HttpRoutePolicy policy;
+    private static List<RegisteredRoute> registered;
 
     @BeforeAll
-    static void generate() {
-        DomainMetadata metadata = DomainMetadata.builder("Order", DOMAIN_PACKAGE)
-                .path("/orders")
-                .realTimeApi(true)
-                .actions(List.of(
-                        ActionMetadata.builder("cancel").methodName("cancel").build(),
-                        ActionMetadata.builder("trackShipment").methodName("trackShipment")
-                                .streaming(true).build()))
-                .build();
-        policy = new KernelApplicationGenerator()
-                .generateAll(List.of(metadata), DOMAIN_PACKAGE.replace(".domain", ""))
-                .stream()
-                .filter(file -> POLICY_TYPE.equals(file.className()))
-                .map(GeneratedFile::content)
-                .findFirst()
-                .orElseThrow(() -> new AssertionError(POLICY_TYPE + " is not emitted"));
+    static void generate(@TempDir Path workDir) throws Exception {
+        var files = RoutePolicyFixture.generate();
+        registered = RoutePolicyFixture.registeredRoutes(RoutePolicyFixture.content(files, "RuntimeLifecycle"));
+        policy = RoutePolicyFixture.compilePolicy(
+                RoutePolicyFixture.content(files, RoutePolicyFixture.POLICY_TYPE), workDir);
     }
 
     @Test
-    @DisplayName("the emitted policy declares exactly the contract's rows")
+    @DisplayName("every contract row is a generated route, and the policy answers each route as the contract says")
     void emittedPolicyMatchesTheContract() throws IOException {
         Contract contract = read("/contract/route-policy.json");
         assertWellFormed(contract);
+        assertThat(contract.routes()).isNotEmpty();
 
-        Set<String> emitted = new TreeSet<>();
-        Matcher m = DECLARED.matcher(policy);
-        while (m.find()) {
-            emitted.add("requiringAnyScope".equals(m.group(1)) ? ANY_SCOPE : m.group(1));
+        Map<String, String> expected = new LinkedHashMap<>();
+        for (Row row : contract.routes()) {
+            String template = RoutePolicyFixture.instantiate(row.path(), row.entity(), row.action());
+            assertThat(registered)
+                    .as("contract row %s is a route RuntimeLifecycle registers", row)
+                    .anyMatch(route -> route.method().equals(row.method()) && route.template().equals(template));
+            assertThat(expected.put(row.method() + " " + template, describe(row.requirement())))
+                    .as("one row per route: %s", row)
+                    .isNull();
         }
-        Set<String> expected = new TreeSet<>();
-        contract.routes().forEach(r -> expected.add(r.requirement().kind()));
 
-        assertThat(emitted).as("requirement kinds the emitted policy builds").isEqualTo(expected);
-        if (contract.routes().isEmpty()) {
-            assertThat(policy).as("a policy with no row only abstains").contains("ABSTAIN");
+        for (RegisteredRoute route : registered) {
+            String key = route.method() + " " + route.template();
+            String path = route.template().replace("{id}", ID);
+            assertThat(RoutePolicyFixture.describe(policy.requirementFor(RoutePolicyFixture.method(route.method()), path)))
+                    .as("requirement for %s", key)
+                    .isEqualTo(expected.getOrDefault(key, ABSTAIN));
         }
+    }
+
+    private static String describe(Requirement requirement) {
+        if (!ANY_SCOPE.equals(requirement.kind())) {
+            return requirement.kind();
+        }
+        return ANY_SCOPE + requirement.scopes().stream().sorted().toList();
     }
 
     @Test

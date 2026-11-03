@@ -575,6 +575,8 @@ describe('DomainMetadataSchema — top-level entity record', () => {
       eventSourced: { aggregateType: 'Order' },
       systemFields: { primaryKeyField: 'uuid' },
       internalApi: { internal: true },
+      permissions: ['order:read', 'order:write'],
+      routeAccess: 'AUTHENTICATED',
     });
     expect(result.uiMetadata?.icon).toBe('cart');
     expect(result.graphMetadata?.label).toBe('Order');
@@ -582,6 +584,8 @@ describe('DomainMetadataSchema — top-level entity record', () => {
     expect(result.eventSourced?.aggregateType).toBe('Order');
     expect(result.systemFields?.primaryKeyField).toBe('uuid');
     expect(result.internalApi?.internal).toBe(true);
+    expect(result.permissions).toEqual(['order:read', 'order:write']);
+    expect(result.routeAccess).toBe('AUTHENTICATED');
   });
 
   it('rejects when required entityName + packageName are missing', () => {

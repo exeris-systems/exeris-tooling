@@ -1,6 +1,7 @@
 package eu.exeris.tooling.codegen.core.driver;
 
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.tooling.codegen.core.access.RouteRequirements;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,6 +29,10 @@ import java.util.List;
  *   <li>{@code events} — {@link #usesEvents}: some entity declares a {@code @DomainEvent}, which is
  *       what makes the publisher, the subscriber and the EV1 stream producer exist, each built over
  *       {@code KernelProviders.eventEngine()}.</li>
+ *   <li>{@code security} — {@link #usesSecurity}: some generated route demands a verified identity
+ *       (ADR-105), which only the security subsystem establishes. Without a security provider the
+ *       subsystem does not run and such a route answers {@code 401}, which is the correct failure;
+ *       a route policy that demands nothing needs no subsystem.</li>
  *   <li>{@code crypto} — always. No emitted code reads the crypto provider, but the kernel's HTTP
  *       transport does: a server configured with TLS listener material serves TLS only when a
  *       crypto provider is bound, and serves plaintext otherwise, and an outbound {@code https}
@@ -36,7 +41,7 @@ import java.util.List;
  * </ul>
  *
  * <p>The order is fixed, whatever order the domains arrive in, so the emitted string is stable.
- * {@link RequiredDrivers} reads the same three predicates, so the SPIs the build requires and the
+ * {@link RequiredDrivers} reads the graph, flow and events predicates, so the SPIs the build requires and the
  * names the default list boots agree.
  *
  * @since 0.9
@@ -53,6 +58,8 @@ public final class RequiredSubsystems {
     public static final String FLOW = "flow";
     /** Subsystem name of the event bus; listed when {@link #usesEvents} holds. */
     public static final String EVENTS = "events";
+    /** Subsystem name of security; listed when {@link #usesSecurity} holds. */
+    public static final String SECURITY = "security";
     /** Subsystem name of crypto; always listed. */
     public static final String CRYPTO = "crypto";
 
@@ -64,11 +71,11 @@ public final class RequiredSubsystems {
      *
      * @param domains every entity this build emits code for
      * @return the subsystem names, in the fixed order {@code http, persistence, graph, flow,
-     *         events, crypto} with the conditional ones this build does not use left out
+     *         events, security, crypto} with the conditional ones this build does not use left out
      */
     public static List<String> forDomains(List<DomainMetadata> domains) {
         List<DomainMetadata> all = domains == null ? List.of() : domains;
-        List<String> names = new ArrayList<>(6);
+        List<String> names = new ArrayList<>(7);
         names.add(HTTP);
         names.add(PERSISTENCE);
         if (usesGraph(all)) {
@@ -79,6 +86,9 @@ public final class RequiredSubsystems {
         }
         if (usesEvents(all)) {
             names.add(EVENTS);
+        }
+        if (usesSecurity(all)) {
+            names.add(SECURITY);
         }
         names.add(CRYPTO);
         return List.copyOf(names);
@@ -125,5 +135,17 @@ public final class RequiredSubsystems {
      */
     public static boolean usesEvents(List<DomainMetadata> domains) {
         return domains.stream().anyMatch(DomainMetadata::hasEvents);
+    }
+
+    /**
+     * Reports whether some generated route demands a verified identity — the predicate under which
+     * the generated route policy declares an {@code authenticated()} or scoped requirement.
+     *
+     * @param domains every entity this build emits code for
+     * @return {@code true} when an entity or action route resolves to a requirement that needs an
+     *         identity
+     */
+    public static boolean usesSecurity(List<DomainMetadata> domains) {
+        return RouteRequirements.demandIdentity(domains);
     }
 }

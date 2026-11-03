@@ -22,20 +22,46 @@ const CONTRACT_URL = new URL(
 );
 const contract = JSON.parse(readFileSync(fileURLToPath(CONTRACT_URL), 'utf8')) as { routes: RouteRequirementRow[] };
 
-// The entity RoutePolicyContractE2ETest generates its application from.
-const order = DomainMetadataSchema.parse({
-  packageName: 'eu.exeris.e2e.parity.domain',
-  entityName: 'Order',
-  path: '/orders',
-  realTimeApi: true,
-  actions: [
-    { name: 'cancel', methodName: 'cancel' },
-    { name: 'trackShipment', methodName: 'trackShipment', streaming: true },
-  ],
-});
+// The domain model RoutePolicyFixture (exeris-e2e-tests) generates its application from.
+const pkg = 'eu.exeris.e2e.parity.domain';
+const domains = [
+  DomainMetadataSchema.parse({
+    packageName: pkg,
+    entityName: 'Order',
+    path: '/orders',
+    realTimeApi: true,
+    permissions: ['order:read', 'order:write'],
+    actions: [
+      { name: 'cancel', methodName: 'cancel' },
+      { name: 'approve', methodName: 'approve', permissions: ['order:approve'] },
+      { name: 'trackShipment', methodName: 'trackShipment', streaming: true },
+    ],
+  }),
+  DomainMetadataSchema.parse({
+    packageName: pkg,
+    entityName: 'Invoice',
+    path: '/invoices',
+    realTimeApi: true,
+    routeAccess: 'AUTHENTICATED',
+    actions: [{ name: 'export', methodName: 'export', routeAccess: 'PUBLIC' }],
+  }),
+  DomainMetadataSchema.parse({
+    packageName: pkg,
+    entityName: 'Catalog',
+    path: '/orders/catalog',
+    realTimeApi: true,
+    routeAccess: 'PUBLIC',
+  }),
+  DomainMetadataSchema.parse({
+    packageName: pkg,
+    entityName: 'Tag',
+    path: '/tags',
+    actions: [{ name: 'merge', methodName: 'merge' }],
+  }),
+];
 
 describe('route policy parity with the generated kernel application', () => {
   it('the rows derived from the fixture metadata are exactly the contract rows, in order', () => {
-    expect(deriveRouteRequirements([order])).toEqual(contract.routes);
+    expect(deriveRouteRequirements(domains)).toEqual(contract.routes);
   });
 });

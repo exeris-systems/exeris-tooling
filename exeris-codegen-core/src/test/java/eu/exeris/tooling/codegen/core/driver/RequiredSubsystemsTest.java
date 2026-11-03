@@ -1,8 +1,10 @@
 package eu.exeris.tooling.codegen.core.driver;
 
+import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
+import eu.exeris.sdk.sourcemodel.ast.RouteAccess;
 import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -81,5 +83,17 @@ class RequiredSubsystemsTest {
     void noDomainsNamesTheAlwaysOnThree() {
         assertThat(RequiredSubsystems.forDomains(List.of())).containsExactly("http", "persistence", "crypto");
         assertThat(RequiredSubsystems.forDomains(null)).containsExactly("http", "persistence", "crypto");
+    }
+
+    @Test
+    @DisplayName("a route demanding an identity adds security; a public one does not")
+    void identityDemandingRouteAddsSecurity() {
+        assertThat(RequiredSubsystems.selector(List.of(entity("Order").routeAccess(RouteAccess.AUTHENTICATED).build())))
+                .isEqualTo("http,persistence,security,crypto");
+        assertThat(RequiredSubsystems.selector(List.of(entity("Order").actions(List.of(
+                ActionMetadata.builder("approve").permissions(List.of("order:approve")).build())).build())))
+                .isEqualTo("http,persistence,security,crypto");
+        assertThat(RequiredSubsystems.selector(List.of(entity("Catalog").routeAccess(RouteAccess.PUBLIC).build())))
+                .isEqualTo("http,persistence,crypto");
     }
 }

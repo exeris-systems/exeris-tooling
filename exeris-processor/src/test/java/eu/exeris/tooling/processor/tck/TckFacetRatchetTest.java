@@ -17,7 +17,6 @@ import org.junit.jupiter.api.Test;
 class TckFacetRatchetTest {
 
     private static final Set<Facet> CEILING = EnumSet.of(
-            Facet.ROUTE_ACCESS,
             Facet.BLOBS);
 
     @Test

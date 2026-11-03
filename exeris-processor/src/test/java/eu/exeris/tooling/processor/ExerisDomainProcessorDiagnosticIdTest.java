@@ -51,11 +51,13 @@ class ExerisDomainProcessorDiagnosticIdTest {
                         package com.example;
 
                         import eu.exeris.sdk.annotation.Action;
+                        import eu.exeris.sdk.annotation.EventSourced;
                         import eu.exeris.sdk.annotation.ExerisDomain;
                         import eu.exeris.sdk.annotation.RouteAccess;
 
                         @ExerisDomain(module = "catalog", path = "/items", tenantScoped = true,
                                 apiVersion = "v2")
+                        @EventSourced
                         @RouteAccess(RouteAccess.Level.AUTHENTICATED)
                         public class Item { private java.util.UUID id;
                             private String name;

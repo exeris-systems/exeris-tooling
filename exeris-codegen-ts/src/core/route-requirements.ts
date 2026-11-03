@@ -40,15 +40,74 @@ export function demandsIdentity(rows: readonly RouteRequirementRow[]): boolean {
   return rows.some((row) => row.requirement.kind === 'authenticated' || row.requirement.kind === 'anyScope');
 }
 
+type AccessDeclaring = { readonly routeAccess?: 'PUBLIC' | 'AUTHENTICATED'; readonly permissions?: readonly string[] };
+
+/**
+ * One element's requirement from its own declarations: `PUBLIC` admits anyone, a non-empty
+ * `permissions` is any-of over them (repeats dropped, declaration order kept), `AUTHENTICATED`
+ * without permissions needs an identity, and nothing yields no requirement.
+ */
+function ownRequirement(element: AccessDeclaring): RouteRequirement | undefined {
+  if (element.routeAccess === 'PUBLIC') return { kind: 'permitAll' };
+  const scopes = [...new Set(element.permissions ?? [])];
+  if (scopes.length > 0) return { kind: 'anyScope', scopes };
+  if (element.routeAccess === 'AUTHENTICATED') return { kind: 'authenticated' };
+  return undefined;
+}
+
 /**
  * The rows of the application generated from `domains`.
  *
- * Rows come from declared route access only: an entity's or an action's `@RouteAccess` and
- * `permissions`. The processor writes none of them and the Java policy generator reads none,
- * so neither build declares a row and the result is empty for every input. Reading a declaration
- * here before the policy generator reads it would guard a route the kernel application serves to
- * anyone; the parity spec over `route-policy.json` holds the two to the same rows.
+ * Every route of an entity carries the entity's requirement, except an action route whose action
+ * declares its own: the nearest declaration wins and an action's list replaces the entity's
+ * (ADR-105 obligations 10 to 12). A route with no requirement has no row. Rows follow the router's
+ * registration order: each entity's respond-once routes (`GET {base}`, `GET {base}/{id}`,
+ * `POST {base}`, `PUT {base}/{id}`, `DELETE {base}/{id}`, then each respond-once action), entity
+ * by entity, then the stream routes (each streaming action, then the live view and the spectate
+ * route of a real-time entity), entity by entity.
  */
-export function deriveRouteRequirements(_domains: readonly DomainMetadata[]): RouteRequirementRow[] {
-  return [];
+export function deriveRouteRequirements(domains: readonly DomainMetadata[]): RouteRequirementRow[] {
+  const rows: RouteRequirementRow[] = [];
+  const push = (
+    entity: string,
+    method: RouteRequirementRow['method'],
+    path: string,
+    requirement: RouteRequirement | undefined,
+    source: RouteRequirementRow['source'],
+    action?: string,
+  ): void => {
+    if (!requirement) return;
+    rows.push(action === undefined
+      ? { entity, method, path, requirement, source }
+      : { entity, method, path, action, requirement, source });
+  };
+  const actionRow = (domain: DomainMetadata, action: DomainMetadata['actions'][number]): void => {
+    const own = ownRequirement(action);
+    push(domain.entityName, 'POST', ACTION_PATH, own ?? ownRequirement(domain), own ? 'action' : 'entity', action.name);
+  };
+
+  for (const domain of domains) {
+    const entity = ownRequirement(domain);
+    for (const [method, path] of CRUD_ROUTES) push(domain.entityName, method, path, entity, 'entity');
+    for (const action of domain.actions) if (!action.streaming) actionRow(domain, action);
+  }
+  for (const domain of domains) {
+    const entity = ownRequirement(domain);
+    for (const action of domain.actions) if (action.streaming) actionRow(domain, action);
+    if (domain.realTimeApi) {
+      push(domain.entityName, 'GET', '{base}/stream', entity, 'entity');
+      push(domain.entityName, 'GET', '{base}/{id}/stream', entity, 'entity');
+    }
+  }
+  return rows;
 }
+
+const ACTION_PATH = '{base}/{id}/actions/{action}';
+
+const CRUD_ROUTES: readonly (readonly [RouteRequirementRow['method'], string])[] = [
+  ['GET', '{base}'],
+  ['GET', '{base}/{id}'],
+  ['POST', '{base}'],
+  ['PUT', '{base}/{id}'],
+  ['DELETE', '{base}/{id}'],
+];
