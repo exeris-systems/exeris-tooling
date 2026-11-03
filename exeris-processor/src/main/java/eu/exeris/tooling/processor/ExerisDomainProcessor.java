@@ -983,6 +983,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     /** The one type a primary key may have (ADR-104), and one of the two a shared-scope key may. */
     private static final String UUID_FQN = "java.util.UUID";
 
+    /** The Lombok annotations that generate accessors, matched by name. */
+    private static final String LOMBOK_GETTER = "lombok.Getter";
+    private static final String LOMBOK_SETTER = "lombok.Setter";
+    private static final String LOMBOK_DATA = "lombok.Data";
+    private static final String LOMBOK_VALUE = "lombok.Value";
+
     /** The suffix the generated application strips from an entity's package to place its other types. */
     private static final String DOMAIN_PACKAGE_SUFFIX = ".domain";
 
@@ -2290,7 +2296,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             if (accessor.field().equals(key) && !keyDeclared) {
                 continue;
             }
-            if (!declaresAccessor(methods, accessor)) {
+            if (!declaresAccessor(methods, accessor)
+                    && !lombokGenerates(inheritedInstanceField(element, accessor.field()), accessor)) {
                 missing.computeIfAbsent(accessor.field(), name -> new ArrayList<>()).add(accessor);
             }
         }
@@ -2338,6 +2345,67 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             }
         }
         return false;
+    }
+
+    /**
+     * Whether Lombok generates {@code accessor} on {@code field}: a public {@code @Getter} or
+     * {@code @Setter} on the field, or one on the type declaring it, or {@code @Data} (getters, and
+     * setters for non-final fields) or {@code @Value} (getters) on that type. A field-level
+     * annotation overrides the type's, so {@code @Getter(AccessLevel.NONE)} on the field withholds
+     * the getter a type-level annotation would generate, and an access level other than
+     * {@code PUBLIC} generates nothing the generated code can call from its own packages. Lombok
+     * runs as an annotation processor of its own and may add the methods after this one reads the
+     * type, so its annotations stand for the methods. They are matched by name: the processor has
+     * no Lombok dependency. Lombok names a getter {@code is<Name>} for a primitive {@code boolean}
+     * and {@code get<Name>} otherwise, and its setter {@code set<Name>}, so it provides an accessor
+     * only when that name is the one the generated code calls.
+     */
+    private boolean lombokGenerates(VariableElement field, KernelAccessors.Accessor accessor) {
+        if (field == null || !accessor.method().equals(lombokAccessorName(field, accessor.setter()))) {
+            return false;
+        }
+        String annotation = accessor.setter() ? LOMBOK_SETTER : LOMBOK_GETTER;
+        AnnotationMirror onField = findAnnotation(field, annotation);
+        if (onField != null) {
+            return isPublicAccessLevel(onField) && !(accessor.setter() && isFinal(field));
+        }
+        Element type = field.getEnclosingElement();
+        AnnotationMirror onType = findAnnotation(type, annotation);
+        if (onType != null) {
+            return isPublicAccessLevel(onType) && !(accessor.setter() && isFinal(field));
+        }
+        if (findAnnotation(type, LOMBOK_DATA) != null) {
+            return !(accessor.setter() && isFinal(field));
+        }
+        return !accessor.setter() && findAnnotation(type, LOMBOK_VALUE) != null;
+    }
+
+    /** The accessor name Lombok gives {@code field}. */
+    private static String lombokAccessorName(VariableElement field, boolean setter) {
+        String name = field.getSimpleName().toString();
+        boolean primitiveBoolean = field.asType().getKind() == TypeKind.BOOLEAN;
+        if (primitiveBoolean && name.length() > 2 && name.startsWith("is")
+                && Character.isUpperCase(name.charAt(2))) {
+            return setter ? "set" + name.substring(2) : name;
+        }
+        String suffix = Character.toUpperCase(name.charAt(0)) + name.substring(1);
+        return (setter ? "set" : primitiveBoolean ? "is" : "get") + suffix;
+    }
+
+    /** Whether a Lombok {@code @Getter} or {@code @Setter} declares {@code AccessLevel.PUBLIC}, its default. */
+    private static boolean isPublicAccessLevel(AnnotationMirror annotation) {
+        for (Map.Entry<? extends ExecutableElement, ? extends AnnotationValue> entry
+                : annotation.getElementValues().entrySet()) {
+            if (entry.getKey().getSimpleName().contentEquals("value")) {
+                return entry.getValue().getValue() instanceof VariableElement level
+                        && level.getSimpleName().contentEquals("PUBLIC");
+            }
+        }
+        return true;
+    }
+
+    private static boolean isFinal(VariableElement field) {
+        return field.getModifiers().contains(Modifier.FINAL);
     }
 
     /** The declaration the fix names, typed by the declared field. */

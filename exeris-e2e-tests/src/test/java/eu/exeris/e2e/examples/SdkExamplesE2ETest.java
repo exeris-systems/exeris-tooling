@@ -4,6 +4,7 @@ import eu.exeris.e2e.codegen.compile.EmittedJavac;
 import eu.exeris.e2e.codegen.compile.ProcessorCompiler;
 import eu.exeris.tooling.codegen.core.capability.CapabilityGraphException;
 import eu.exeris.tooling.codegen.java.CodegenPipeline;
+import eu.exeris.tooling.codegen.java.kernel.EntityPackageLayoutException;
 import eu.exeris.tooling.codegen.java.kernel.UnpersistableFieldTypeException;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
@@ -56,12 +57,15 @@ import static org.assertj.core.api.Assertions.fail;
  * the generated application, and a scenario the pipeline refuses is asserted to be refused with
  * its exact reason. A scenario this class does not name fails {@link #everyScenarioIsClassified}.
  *
- * <p>The Java pipeline places an entity's handler, service and repository by replacing the
- * {@code .domain} suffix of the entity's package, and refuses an entity whose package has none.
- * The examples' packages ({@code eu.exeris.sdk.examples.<scenario>}) have none, so the corpus as
- * written is asserted to be refused, and the application is generated from a copy in which each
- * scenario's sources move to {@code eu.exeris.sdk.examples.<scenario>.domain} and nothing else
- * changes.
+ * <p>The processor refuses an entity whose package does not end in {@code .domain}
+ * ({@code EXT-PROC-1033}) and an entity without the accessors the generated application calls
+ * ({@code EXT-PROC-1034}). The examples' packages ({@code eu.exeris.sdk.examples.<scenario>})
+ * have no suffix and their entities declare no accessors, so the corpus as written is asserted to
+ * be refused with both, and a copy in which each scenario's sources move to
+ * {@code eu.exeris.sdk.examples.<scenario>.domain}, with nothing else changed, with
+ * {@code EXT-PROC-1034} alone, naming each missing accessor. The gate works on that copy, and its
+ * metadata is written by a processor run with {@code -Aexeris.metadataOnly=true}, which skips the
+ * two refusals and writes the metadata the refused run writes.
  *
  * <p>The processor reads every domain scenario, and the frontend half generates from all of that
  * metadata. The Java pipeline refuses a field typed as another entity (EXT-GEN-3003), which the
@@ -108,6 +112,43 @@ class SdkExamplesE2ETest {
             Pattern.compile("symbol:\\s+method (\\w+)\\(([^)]*)\\)\\s+location: (?:.* of type|class) ([\\w.]+)");
 
     private static final Pattern ACCESSOR = Pattern.compile("(get|set|is)[A-Z]\\w*");
+
+    /** The processor option the application's metadata is written under. */
+    private static final String METADATA_ONLY = "-Aexeris.metadataOnly=true";
+
+    /** A processor diagnostic: its identifier and the entity it names. */
+    private static final Pattern PROCESSOR_DIAGNOSTIC =
+            Pattern.compile("\\[Exeris] (EXT-PROC-\\d{4}): .*?@ExerisDomain entity '(\\w+)'");
+
+    /** The accessors an EXT-PROC-1034 message says the generated application calls. */
+    private static final Pattern CALLED = Pattern.compile("calls (.*?) on @ExerisDomain entity");
+
+    /**
+     * The accessors EXT-PROC-1034 names on each example entity, in the order the processor reports
+     * them: every entity declares private fields and no accessor.
+     */
+    private static final Map<String, List<String>> MISSING_ACCESSORS = Map.of(
+            "Category", List.of("getId()", "setId(…)", "getName()", "setName(…)"),
+            "Customer", List.of("getId()", "setId(…)", "getVersion()", "setVersion(…)", "getCreatedAt()",
+                    "setCreatedAt(…)", "getName()", "setName(…)", "getEmail()", "setEmail(…)", "getTaxId()",
+                    "setTaxId(…)", "getTenantId()", "setTenantId(…)"),
+            "Employee", List.of("getId()", "setId(…)", "getFirstName()", "setFirstName(…)", "getLastName()",
+                    "setLastName(…)", "getEmail()", "setEmail(…)", "getHiredOn()", "setHiredOn(…)",
+                    "getPosition()", "setPosition(…)"),
+            "Invoice", List.of("getId()", "setId(…)", "getVersion()", "setVersion(…)", "getNumber()",
+                    "setNumber(…)", "getCustomer()", "setCustomer(…)", "getLines()", "setLines(…)",
+                    "getTotalCents()", "setTotalCents(…)", "getTenantId()", "setTenantId(…)", "getCreatedAt()",
+                    "setCreatedAt(…)", "getUpdatedAt()", "setUpdatedAt(…)"),
+            "InvoiceLine", List.of("getId()", "setId(…)", "getVersion()", "setVersion(…)", "getInvoice()",
+                    "setInvoice(…)", "getDescription()", "setDescription(…)", "getQuantity()",
+                    "setQuantity(…)", "getUnitPriceCents()", "setUnitPriceCents(…)", "getTenantId()",
+                    "setTenantId(…)"),
+            "Order", List.of("getId()", "setId(…)", "getNumber()", "setNumber(…)", "getStatus()",
+                    "setStatus(…)", "getSubtotalCents()", "setSubtotalCents(…)", "getDiscountCents()",
+                    "setDiscountCents(…)", "getTotalCents()", "setTotalCents(…)"),
+            "Product", List.of("getId()", "setId(…)", "getName()", "setName(…)", "getPrice()", "setPrice(…)",
+                    "getNote()", "setNote(…)", "getCategory()", "setCategory(…)", "getRelated()",
+                    "setRelated(…)"));
 
     @TempDir
     static Path scratch;
@@ -161,17 +202,47 @@ class SdkExamplesE2ETest {
     }
 
     @Test
-    @DisplayName("the corpus as written is refused: its entity packages carry no .domain suffix")
+    @DisplayName("the corpus as written is refused by the processor: no entity package ends in .domain, "
+            + "and no entity declares an accessor")
     void corpusAsWrittenIsRefusedForItsPackageLayout() throws IOException {
         Path workspace = scratch.resolve("as-written");
         Path classes = workspace.resolve("target/classes");
-        ProcessorCompiler.compile(workspace.resolve("src/main/java"), classes, null, sourcesOf(JAVA_SCENARIOS));
+        ProcessorCompiler.Result result = ProcessorCompiler.run(workspace.resolve("src/main/java"), classes, null,
+                sourcesOf(DOMAIN_SCENARIOS), List.of());
+
+        assertThat(result.success()).isFalse();
+        Map<String, List<String>> refusals = processorRefusals(result);
+        assertThat(refusals.keySet()).containsExactlyInAnyOrder("EXT-PROC-1033", "EXT-PROC-1034");
+        assertThat(refusals.get("EXT-PROC-1033")).as("one EXT-PROC-1033 per entity")
+                .containsExactlyInAnyOrderElementsOf(allEntities());
+        assertThat(missingAccessors(result)).isEqualTo(MISSING_ACCESSORS);
 
         assertThatThrownBy(() -> CodegenPipeline.createDefault()
                 .run(classes.resolve("exeris-metadata"), workspace.resolve("src/main/generated/java"), BASE_PACKAGE))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageStartingWith("Domain package 'eu.exeris.sdk.examples.")
-                .hasMessageContaining(" does not end with '.domain'.");
+                .isInstanceOfSatisfying(EntityPackageLayoutException.class, e -> assertThat(e.entities())
+                        .containsExactly("eu.exeris.sdk.examples.graph.Category",
+                                "eu.exeris.sdk.examples.graph.Product",
+                                "eu.exeris.sdk.examples.invoicing.Customer",
+                                "eu.exeris.sdk.examples.invoicing.Invoice",
+                                "eu.exeris.sdk.examples.invoicing.InvoiceLine",
+                                "eu.exeris.sdk.examples.ordering.Order",
+                                "eu.exeris.sdk.examples.presentation.Employee"));
+        assertThat(workspace.resolve("src/main/generated/java")).doesNotExist();
+    }
+
+    @Test
+    @DisplayName("the .domain copy is refused by the processor on accessors alone, and the metadata the "
+            + "application is generated from is the metadata that run writes")
+    void domainCopyIsRefusedOnAccessorsAlone() throws IOException {
+        Path classes = scratch.resolve("domain-copy/target/classes");
+        ProcessorCompiler.Result result = ProcessorCompiler.run(scratch.resolve("domain-copy/src/main/java"),
+                classes, null, underDomainPackages(sourcesOf(DOMAIN_SCENARIOS)), List.of());
+
+        assertThat(result.success()).isFalse();
+        Map<String, List<String>> refusals = processorRefusals(result);
+        assertThat(refusals.keySet()).containsExactly("EXT-PROC-1034");
+        assertThat(missingAccessors(result)).isEqualTo(MISSING_ACCESSORS);
+        assertThat(contents(metadata)).isEqualTo(contents(classes.resolve("exeris-metadata")));
     }
 
     @Test
@@ -278,7 +349,8 @@ class SdkExamplesE2ETest {
     private static Path extract(Path workspace, Map<String, String> sources) throws IOException {
         deleteTree(workspace);
         Path entityClasses = workspace.resolve("target/classes");
-        ProcessorCompiler.compile(workspace.resolve("src/main/java"), entityClasses, null, sources);
+        ProcessorCompiler.compile(workspace.resolve("src/main/java"), entityClasses, null, sources,
+                List.of(METADATA_ONLY));
         return entityClasses.resolve("exeris-metadata");
     }
 
@@ -290,7 +362,8 @@ class SdkExamplesE2ETest {
         Path generatedTests = workspace.resolve("src/test/generated/java");
         Path compiled = workspace.resolve("target/app-classes");
 
-        ProcessorCompiler.compile(workspace.resolve("src/main/java"), entityClasses, null, sources);
+        ProcessorCompiler.compile(workspace.resolve("src/main/java"), entityClasses, null, sources,
+                List.of(METADATA_ONLY));
         CodegenPipeline pipeline = CodegenPipeline.createDefault();
         pipeline.run(metadata, generatedMain, BASE_PACKAGE);
         pipeline.runTests(metadata, generatedTests, BASE_PACKAGE);
@@ -301,6 +374,51 @@ class SdkExamplesE2ETest {
         EmittedJavac.Result javac = EmittedJavac.compile(files, compiled,
                 System.getProperty("java.class.path") + File.pathSeparator + entityClasses);
         return new Build(metadata, generatedMain, generatedTests, javac);
+    }
+
+    /** Every entity of the domain scenarios. */
+    private static List<String> allEntities() {
+        List<String> entities = new ArrayList<>();
+        ENTITIES.values().forEach(entities::addAll);
+        return entities;
+    }
+
+    /**
+     * The processor's errors, identifier → the entity each names, failing on any error that is not
+     * a processor diagnostic naming an entity.
+     */
+    private static Map<String, List<String>> processorRefusals(ProcessorCompiler.Result result) {
+        Map<String, List<String>> refusals = new TreeMap<>();
+        List<String> other = new ArrayList<>();
+        for (Diagnostic<? extends JavaFileObject> d : result.diagnostics()) {
+            if (d.getKind() != Diagnostic.Kind.ERROR) {
+                continue;
+            }
+            Matcher m = PROCESSOR_DIAGNOSTIC.matcher(d.getMessage(Locale.ROOT));
+            if (m.find()) {
+                refusals.computeIfAbsent(m.group(1), id -> new ArrayList<>()).add(m.group(2));
+            } else {
+                other.add(d.getMessage(Locale.ROOT));
+            }
+        }
+        assertThat(other).as("errors that are not a processor refusal").isEmpty();
+        return refusals;
+    }
+
+    /** Entity → the accessors its EXT-PROC-1034 errors say the generated application calls. */
+    private static Map<String, List<String>> missingAccessors(ProcessorCompiler.Result result) {
+        Map<String, List<String>> missing = new TreeMap<>();
+        for (Diagnostic<? extends JavaFileObject> d : result.diagnostics()) {
+            String message = d.getMessage(Locale.ROOT);
+            Matcher entity = PROCESSOR_DIAGNOSTIC.matcher(message);
+            Matcher called = CALLED.matcher(message);
+            if (d.getKind() == Diagnostic.Kind.ERROR && entity.find() && "EXT-PROC-1034".equals(entity.group(1))
+                    && called.find()) {
+                missing.computeIfAbsent(entity.group(2), e -> new ArrayList<>())
+                        .addAll(List.of(called.group(1).split(" and ")));
+            }
+        }
+        return missing;
     }
 
     /** The main sources of {@code scenarios}, relative path below the source root → text. */

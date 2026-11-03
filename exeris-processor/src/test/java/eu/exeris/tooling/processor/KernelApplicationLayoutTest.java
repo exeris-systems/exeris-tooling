@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import javax.annotation.processing.Processor;
 import javax.tools.Diagnostic;
 import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
@@ -298,6 +299,110 @@ class KernelApplicationLayoutTest {
 
             assertThat(compilation).hadErrorContaining("EXT-PROC-1015");
             assertThat(errors(compilation, ACCESSOR_REFUSED)).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("EXT-PROC-1034 — accessors Lombok generates, in either processor order")
+    class Lombok {
+
+        private static final String DATA_ENTITY = """
+                package com.example.notes.domain;
+
+                import eu.exeris.sdk.annotation.ExerisDomain;
+                import java.util.UUID;
+
+                @lombok.Data
+                @ExerisDomain(module = "notes", path = "/notes")
+                public class Note {
+                    private UUID id;
+                    private String title;
+                    private boolean active;
+                    private Boolean archived;
+                }
+                """;
+
+        @Test
+        @DisplayName("@Getter and @Setter on the type are accepted, whether Lombok runs after or before the "
+                + "Exeris processor")
+        void typeLevelGetterAndSetterAccepted() {
+            String source = DATA_ENTITY.replace("@lombok.Data", "@lombok.Getter\n@lombok.Setter");
+            assertThat(compile(List.of(new ExerisDomainProcessor(), lombok()), source)).succeeded();
+            assertThat(compile(List.of(lombok(), new ExerisDomainProcessor()), source)).succeeded();
+        }
+
+        @Test
+        @DisplayName("@Data is accepted, whether Lombok runs after or before the Exeris processor")
+        void dataAccepted() {
+            assertThat(compile(List.of(new ExerisDomainProcessor(), lombok()), DATA_ENTITY)).succeeded();
+            assertThat(compile(List.of(lombok(), new ExerisDomainProcessor()), DATA_ENTITY)).succeeded();
+        }
+
+        @Test
+        @DisplayName("@Getter and @Setter on each field are accepted when Lombok runs after the Exeris processor")
+        void fieldLevelGetterAndSetterAccepted() {
+            Compilation compilation = compile(List.of(new ExerisDomainProcessor(), lombok()), entity("", """
+                    @lombok.Getter @lombok.Setter private String title;
+                    @lombok.Getter @lombok.Setter private boolean active;
+                    """));
+            assertThat(compilation).succeeded();
+        }
+
+        @Test
+        @DisplayName("@Value generates getters only, so the setters the repository reads a row through are "
+                + "refused")
+        void valueProvidesGettersOnly() {
+            Compilation compilation = compile(List.of(new ExerisDomainProcessor(), lombok()),
+                    DATA_ENTITY.replace("@lombok.Data", "@lombok.Value"));
+            List<String> refusals = errors(compilation, ACCESSOR_REFUSED);
+            assertThat(refusals).hasSize(4).allSatisfy(message -> assertThat(message)
+                    .containsPattern("calls set\\w+\\(…\\) on")
+                    .doesNotContainPattern("calls (get|is)\\w+\\(\\)"));
+        }
+
+        @Test
+        @DisplayName("@Getter(AccessLevel.NONE) on a field withholds the type's getter, and is refused")
+        void accessLevelNoneRefused() {
+            Compilation compilation = compile(List.of(new ExerisDomainProcessor(), lombok()), """
+                    package com.example.notes.domain;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import java.util.UUID;
+                    import lombok.AccessLevel;
+
+                    @lombok.Getter
+                    @lombok.Setter
+                    @ExerisDomain(module = "notes", path = "/notes")
+                    public class Note {
+                        private UUID id;
+                        @lombok.Getter(AccessLevel.NONE)
+                        private String title;
+                    }
+                    """);
+            assertThat(errors(compilation, ACCESSOR_REFUSED)).singleElement().satisfies(message -> assertThat(message)
+                    .contains("calls getTitle() on").doesNotContain("setTitle"));
+        }
+
+        @Test
+        @DisplayName("a non-public access level generates nothing the generated code can call, and is refused")
+        void nonPublicAccessLevelRefused() {
+            Compilation compilation = compile(List.of(new ExerisDomainProcessor(), lombok()),
+                    DATA_ENTITY.replace("@lombok.Data", "@lombok.Getter\n@lombok.Setter(lombok.AccessLevel.PROTECTED)"));
+            assertThat(errors(compilation, ACCESSOR_REFUSED)).hasSize(4).allSatisfy(message -> assertThat(message)
+                    .doesNotContainPattern("calls (get|is)\\w+\\(\\)"));
+        }
+
+        private static Processor lombok() {
+            try {
+                return (Processor) Class.forName("lombok.launch.AnnotationProcessorHider$AnnotationProcessor")
+                        .getConstructor().newInstance();
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException(e);
+            }
+        }
+
+        private static Compilation compile(List<Processor> processors, String source) {
+            return javac().withProcessors(processors).compile(sourceFile(source));
         }
     }
 

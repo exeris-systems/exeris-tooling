@@ -68,9 +68,14 @@ the build pins. It covers:
 - every scenario package at the tag is classified, so a new scenario fails the gate until it is added;
 - the domain scenarios (`graph`, `invoicing`, `ordering`, `presentation`) produce one metadata file per
   entity and per view;
-- the corpus as written is refused by the Java pipeline, whose infrastructure packages are derived from
-  an entity package ending in `.domain`. The gate works on a copy with each scenario moved to
-  `<scenario>.domain`, and nothing else changed;
+- the corpus as written is refused by the processor with exactly one `EXT-PROC-1033` per entity (no
+  package ends in `.domain`) and `EXT-PROC-1034` naming each accessor the generated application calls
+  (the entities declare none), and its metadata by the pipeline with `EXT-PROC-1033`, before anything
+  is written;
+- a copy with each scenario moved to `<scenario>.domain`, and nothing else changed, is refused with the
+  same `EXT-PROC-1034` errors and no other. The gate works on that copy's metadata, written by a
+  processor run with `-Aexeris.metadataOnly=true`, and asserts it is the metadata the refused run
+  writes;
 - the Java pipeline refuses the fields typed as another entity (`Invoice.customer`,
   `InvoiceLine.invoice`, `Product.category`) with EXT-GEN-3003, so the Java application is generated
   from `ordering` and `presentation`, while the frontend half generates from every domain scenario;

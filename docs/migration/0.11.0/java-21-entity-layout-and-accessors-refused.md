@@ -37,7 +37,7 @@ same either way.
 **Where it applies.** To every `@ExerisDomain` entity. **What breaks.** A build whose entity sits
 outside a `.domain` package, which could not generate before, now fails at compile time with
 `EXT-PROC-1033`. A build whose entity lacks an accessor, whose generated sources did not compile
-before, now fails with `EXT-PROC-1034` on the entity instead. Accessors Lombok generates count
-only when Lombok runs before the Exeris processor: list `lombok` ahead of `exeris-processor` in
-`annotationProcessorPaths`, or write the accessors in the source. See
-[`docs/diagnostics.md`](../../diagnostics.md).
+before, now fails with `EXT-PROC-1034` on the entity instead. Lombok's `@Getter`, `@Setter`,
+`@Data` and `@Value`, on the entity or on the field, count as the accessors they generate whichever
+processor runs first; a non-`PUBLIC` access level, including `AccessLevel.NONE`, generates none the
+check accepts, and `@Value` generates no setter. See [`docs/diagnostics.md`](../../diagnostics.md).
