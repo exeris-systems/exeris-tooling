@@ -50,3 +50,5 @@ These pages describe the code on `main`. A page is only as current as its `last-
 ## Where this does not apply
 
 This index covers documentation in this repository. The SDK records the processor writes, the kernel the generated code runs on, and the ecosystem-wide ADR registry are documented in [exeris-sdk](https://github.com/exeris-systems/exeris-sdk/blob/main/docs/README.md), [exeris-kernel](https://github.com/exeris-systems/exeris-kernel/blob/main/docs/architecture.md) and [exeris-docs](https://github.com/exeris-systems/exeris-docs/blob/main/adr-index.md).
+
+The cost: the question-to-page table is a second index beside the pages it points at, so a new or renamed page must be added here too, or a reader following the table misses it.

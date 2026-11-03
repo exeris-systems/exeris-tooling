@@ -31,3 +31,5 @@ Of these modules, only the application POMs shape anything a deployed applicatio
 ## Where this does not apply
 
 This index covers the modules of `exeris-tooling`. The SDK records the processor writes, and the kernel the generated code runs on, are documented in [exeris-sdk](https://github.com/exeris-systems/exeris-sdk/blob/main/docs/modules/README.md) and [exeris-kernel](https://github.com/exeris-systems/exeris-kernel/tree/main/docs/modules).
+
+The cost: the module list repeats the reactor in the root `pom.xml` (and the npm package beside it), so adding, renaming or removing a module means editing this page in the same change.

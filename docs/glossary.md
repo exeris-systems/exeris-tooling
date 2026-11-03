@@ -68,3 +68,5 @@ Terms as `exeris-tooling` uses them, in alphabetical order. Each entry names the
 ## Where this does not apply
 
 This page defines tooling terms. It does not define SDK or kernel vocabulary, and it does not say which annotation reaches which output; the [generator catalogue](generators.md) and the strict audit say that.
+
+The cost: each definition restates, in one line, a term its owning page defines, so a change to that page can leave this one behind; every entry links its owner, which stays authoritative.
