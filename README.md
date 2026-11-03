@@ -8,6 +8,9 @@ Entity-First Java sources (`@ExerisDomain`, `@Action`, `@Field`, …) into clean
 kernel-target code: handlers, services, repositories, OpenAPI specs, Flyway
 migrations, sagas, and corresponding Angular/TypeScript frontend artifacts.
 
+The documentation starts at [`docs/README.md`](docs/README.md): architecture, one page per
+module, glossary and stability matrix.
+
 ## Requirements
 
 - **Maven on JDK 25 LTS or newer (a GA release).** The reactor compiles at `--release 25` and builds
@@ -18,10 +21,11 @@ migrations, sagas, and corresponding Angular/TypeScript frontend artifacts.
 - Maven 3.9+ (enforced alongside the JDK rule).
 - Node 18+ to build `exeris-codegen-ts`; the **generated** Angular v22 app targets
   Node 22+.
-- `eu.exeris:exeris-kernel-*:0.12.0` and `eu.exeris:exeris-sdk-*:0.12.0`, both final
-  releases on Maven Central. Every dependency resolves from Central with no settings
-  file, and nothing is built from source first. A local repository that holds a kernel
-  `0.12.0` fetched from GitHub Packages, or an SDK `0.12.0` installed from source, before
+- `eu.exeris:exeris-kernel-*:0.13.1` and `eu.exeris:exeris-sdk-*:0.13.2`, both final
+  releases on Maven Central (the pins in `exeris-tooling-bom/pom.xml`). Every dependency
+  resolves from Central with no settings file, and nothing is built from source first. A
+  local repository that holds a kernel or SDK of the pinned version fetched from GitHub
+  Packages, or installed from source, before
   the release keeps serving it, because Maven never re-fetches a release; delete
   `~/.m2/repository/eu/exeris/exeris-kernel*` and
   `~/.m2/repository/eu/exeris/exeris-sdk*` once. The POMs name no repository of their
