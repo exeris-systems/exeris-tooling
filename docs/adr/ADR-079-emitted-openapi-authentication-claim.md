@@ -9,7 +9,8 @@ slug: adr/ADR-079
 
 # ADR-079 — The emitted OpenAPI describes no authentication, because the emitted application performs none
 
-- **Status:** ACCEPTED (2026-08-28) · amended 2026-10-04 (Amendment 1 — the collection `GET` declares `400` and the page envelope, ADR-096)
+- **Status:** ACCEPTED (2026-08-28) · amended 2026-10-04 (Amendment 1 — the collection `GET` declares `400` and the page envelope, ADR-096) ·
+  amended 2026-11-03 (Amendment 2 — the security block returns per operation, from the generated route policy, ADR-105)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / codegen (emitted artefact contract)
 - **Visibility:** public
@@ -220,3 +221,50 @@ schemas; no security scheme is added. Verification:
 - `OpenApiPathsBuilderTest#listOperationDeclaresTheQuery` and `ListQueryContractE2ETest` — the
   parameters and the `200` content schema.
 
+## Amendment 2 — the security block returns per operation, from the generated route policy (2026-11-03)
+
+**Status:** Accepted *(adds a security scheme and per-operation requirements and responses where
+the generated route policy demands identity; the Decision's principle — declare exactly what the
+emitted application does — is unchanged, and the Decision's table is unchanged for every operation
+whose route demands no identity)*
+
+The Decision removed the security block because nothing authenticated a caller: no declaration was
+extracted and nothing bound a route policy. ADR-105 supplies both halves this ADR named as missing.
+The processor extracts `@RouteAccess` and `permissions`, and the generated application binds a
+`GeneratedRoutePolicy` whose requirement per route comes from `RouteRequirements`. The kernel then
+enforces that requirement at the edge (`RouteAuthorizationEnforcer`): a route that demands
+identity answers `401` to a caller with no valid bearer token, and a route that demands scopes
+answers `403` to a caller whose token carries none of them.
+
+The emitted document therefore states that enforcement, from the same requirement the policy
+binds, and only where the policy demands identity:
+
+1. **Scheme.** When at least one operation's route demands identity, `components.securitySchemes`
+   carries `bearerAuth: { type: http, scheme: bearer }`. With no such route there is no scheme, and
+   the document is byte-identical to the one the Decision describes.
+2. **No document-level requirement.** `security` is set per operation, never at the root, so an
+   operation whose route demands nothing carries no requirement.
+3. **Per operation.** The requirement is the one the route policy binds for the operation's route:
+   the entity's declaration for its collection, item and `@Blob` field routes, and an action's own
+   declaration for its action route, the nearest one winning (ADR-105 obligations 10 to 12).
+   - `authenticated` → `security: [{ bearerAuth: [] }]`, and the response set gains `401`.
+   - `anyScope(s1, …, sn)` → `security: [{ bearerAuth: [s1] }, …, { bearerAuth: [sn] }]`, one
+     requirement object per scope in declaration order, because OpenAPI reads alternatives across
+     objects and conjunction within one (OpenAPI 3.1, Security Requirement Object). The response set gains `401` and
+     `403`.
+   - `permitAll`, or no declaration → nothing is added.
+4. **Responses.** `401` and `403` are added to the sets the Decision's table and Amendment 1 name,
+   for exactly the operations in obligation 3. They carry no body, because the kernel answers both
+   without one. Every other row of the table is unchanged.
+
+The tenant-guard `500` the Decision records still stands. A tenant-partitioned entity whose routes
+demand no identity reaches the handler anonymously and answers `500` there, and its operations
+gain no `401`.
+
+**Assumes:** the kernel's edge enforcement answers `401` for a missing or invalid token on any route
+that demands identity, and `403` only for a verified identity without a required scope
+(`RouteAuthorizationEnforcer.decide`, kernel 0.13).
+
+Verification: an OpenAPI builder test holds, for each requirement kind, the operation's `security`
+and response set; and an e2e test asserts that the operations with a `security` requirement are
+exactly the contract rows of `route-policy.json` that demand identity, with matching scopes.

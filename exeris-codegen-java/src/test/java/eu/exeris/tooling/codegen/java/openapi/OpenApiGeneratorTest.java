@@ -177,7 +177,7 @@ class OpenApiGeneratorTest {
     }
 
     @Test
-    @DisplayName("ADR-079: neither emitted document declares a security requirement or scheme")
+    @DisplayName("ADR-079: with no access declared, neither document declares a security requirement or scheme")
     void emitsNoSecurityBlock() throws IOException {
         DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain")
                 .path("/orders").build();
@@ -187,9 +187,9 @@ class OpenApiGeneratorTest {
         OpenAPI aggregate = generator.generateAggregated(List.of(order, product), "catalog");
         OpenAPI single = generator.generate(order);
 
-        // Both documents, because the requirement was set on both: the per-entity spec and the
-        // aggregate. An emitted app binds no HttpRoutePolicy, so every route is permit-all and no
-        // token is ever read — a spec that says otherwise describes a check that does not run.
+        // Both documents: the per-entity spec and the aggregate. Neither entity declares access, so
+        // the generated route policy demands no identity on any route and no token is ever read — a
+        // spec that says otherwise describes a check that does not run.
         assertThat(aggregate.getSecurity()).isNull();
         assertThat(aggregate.getComponents().getSecuritySchemes()).isNull();
         assertThat(single.getSecurity()).isNull();

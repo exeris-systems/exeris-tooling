@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class OpenApiComponentsBuilderTest {
 
     @Test
-    @DisplayName("Builds entity / CreateDto / UpdateDto / Page schemas, and declares no security scheme")
+    @DisplayName("Builds entity / CreateDto / UpdateDto / Page schemas, and no security scheme with no access declared")
     void buildsFourSchemas() {
         DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
                 .description("Customer order entity")
@@ -29,7 +29,8 @@ class OpenApiComponentsBuilderTest {
 
         assertThat(components.getSchemas())
                 .containsOnlyKeys("Order", "OrderCreateDto", "OrderUpdateDto", "OrderPage");
-        // ADR-079: the emitted app performs no authentication, so the spec describes none.
+        // ADR-079: no route of an entity that declares no access demands an identity, so the spec
+        // describes no authentication.
         assertThat(components.getSecuritySchemes()).isNull();
     }
 

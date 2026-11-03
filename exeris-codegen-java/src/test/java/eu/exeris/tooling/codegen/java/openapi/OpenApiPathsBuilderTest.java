@@ -200,7 +200,7 @@ class OpenApiPathsBuilderTest {
     }
 
     @Test
-    @DisplayName("ADR-079: no operation declares 401, on any route shape")
+    @DisplayName("ADR-079: with no access declared, no operation declares 401, on any route shape")
     void noOperationDeclaresAnUnreachableUnauthorized() {
         DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
                 .path("/orders").versioned(true)
@@ -209,9 +209,9 @@ class OpenApiPathsBuilderTest {
 
         Paths paths = OpenApiPathsBuilder.buildPaths(meta);
 
-        // The emitted application binds no HttpRoutePolicy, so the kernel dispatcher resolves every
-        // route to permitAll(), never runs the SecurityInterceptor, and cannot reach the 401 it is
-        // otherwise able to write. A spec declaring it describes a check that does not run.
+        // The generated route policy abstains on every route of an entity that declares no access,
+        // so the kernel dispatcher admits it without running the SecurityInterceptor and cannot reach
+        // the 401 it is otherwise able to write. A spec declaring it describes a check that does not run.
         assertThat(paths.values().stream()
                 .flatMap(item -> item.readOperations().stream())
                 .flatMap(op -> op.getResponses().keySet().stream()))
@@ -219,7 +219,7 @@ class OpenApiPathsBuilderTest {
     }
 
     @Test
-    @DisplayName("ADR-079: each operation declares only the statuses its own handler can answer")
+    @DisplayName("ADR-079: with no access declared, each operation declares only what its own handler can answer")
     void responseSetsFollowTheRouteShape() {
         DomainMetadata plain = DomainMetadata.builder("Order", "com.example.domain")
                 .path("/orders")

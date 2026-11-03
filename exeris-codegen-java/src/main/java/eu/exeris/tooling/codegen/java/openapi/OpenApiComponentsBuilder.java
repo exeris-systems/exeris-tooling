@@ -34,8 +34,9 @@ public final class OpenApiComponentsBuilder {
     private OpenApiComponentsBuilder() {}
 
     /**
-     * Builds the schemas one entity contributes: the entity itself, its create and update DTOs,
-     * its list-page envelope, and the request body of each action that takes parameters.
+     * Builds the components one entity contributes: the schemas of the entity itself, its create
+     * and update DTOs, its list-page envelope, and the request body of each action that takes
+     * parameters; and the bearer security scheme when some route of the entity demands an identity.
      *
      * @param metadata the entity to describe
      * @return the components, with schemas in that order and the actions in declaration order
@@ -56,6 +57,9 @@ public final class OpenApiComponentsBuilder {
             }
         }
         components.setSchemas(schemas);
+        if (OpenApiSecurity.demandsIdentity(metadata)) {
+            components.setSecuritySchemes(OpenApiSecurity.schemes());
+        }
         return components;
     }
 
