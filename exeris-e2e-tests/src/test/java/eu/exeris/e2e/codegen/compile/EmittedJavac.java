@@ -110,8 +110,13 @@ public final class EmittedJavac {
         }
     }
 
-    /** The options shared by every gate; {@code outputDir} and {@code classpath} are per call. */
+    /**
+     * The options shared by every gate; {@code outputDir} and {@code classpath} are per call. javac
+     * reports every error and warning rather than its default first hundred, so a gate that
+     * classifies the diagnostics sees all of them.
+     */
     static List<String> options(Path outputDir, String classpath) {
-        return List.of("-d", outputDir.toString(), "-classpath", classpath, "--release", RELEASE, "-Xlint:all");
+        return List.of("-d", outputDir.toString(), "-classpath", classpath, "--release", RELEASE, "-Xlint:all",
+                "-Xmaxerrs", String.valueOf(Integer.MAX_VALUE), "-Xmaxwarns", String.valueOf(Integer.MAX_VALUE));
     }
 }

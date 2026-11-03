@@ -59,6 +59,45 @@ it afterwards. `SharedScopePostgresE2ETest` and `TenantIsolationPostgresBootE2ET
 `NOSUPERUSER NOBYPASSRLS` role to act as and drop it afterwards; `PostgresTypeMatrixE2ETest`
 creates no role.
 
+### SDK examples gate
+
+`SdkExamplesE2ETest` runs the processor and the Java pipeline over the SDK's example sources
+(`exeris-sdk-examples`, the corpus the SDK guides quote) at tag `v<exeris.sdk.version>`, the SDK version
+the build pins. It covers:
+
+- every scenario package at the tag is classified, so a new scenario fails the gate until it is added;
+- the domain scenarios (`graph`, `invoicing`, `ordering`, `presentation`) produce one metadata file per
+  entity and per view;
+- the corpus as written is refused by the Java pipeline, whose infrastructure packages are derived from
+  an entity package ending in `.domain`. The application is generated from a copy with each scenario
+  moved to `<scenario>.domain`, and nothing else changed;
+- the emitted main and test trees are compiled. They fail on two known gaps, pinned exactly: the example
+  entities declare no JavaBean accessors, and the emitted repositories read an entity-typed reference
+  back through `valueOf(String)`. Any other diagnostic fails the gate;
+- `capability` is refused by the capability graph: `LedgerCap` requires `AuditTrail`, which no module
+  of the scenario provides;
+- a second run in a fresh workspace writes the same metadata and emitted trees, file for file.
+
+The examples module is not published, so the test reads it from an `exeris-sdk` checkout:
+`-Dexeris.sdk.examples.dir` (or `EXERIS_SDK_EXAMPLES_DIR`) naming a checkout at the tag, else an
+`exeris-sdk` clone beside this repository that has the tag, exported with `git archive` whatever branch
+its working tree is on. With neither the class is skipped, except under `CI=true`, where it fails.
+
+```bash
+mvn -pl exeris-e2e-tests -am verify -Dexeris.sdk.examples.dir=/path/to/exeris-sdk
+```
+
+The Angular half reads the metadata the test leaves in `exeris-e2e-tests/target/sdk-examples/`, generates
+the app twice through the CLI and requires identical output, then builds it and runs its emitted specs.
+The `sdk-examples-app` CI job runs it.
+
+```bash
+cd exeris-codegen-ts && npm ci && npm run build
+node scripts/gen-sdk-examples-app.mjs \
+    ../exeris-e2e-tests/target/sdk-examples/app/target/classes/exeris-metadata /tmp/sdk-examples-app
+cd /tmp/sdk-examples-app && npm install && npx ng build --configuration development && npx ng test --watch=false
+```
+
 ### Javadoc gate
 
 A pull request that changes a Java file under `src/main/java` of `exeris-diagnostics`,
