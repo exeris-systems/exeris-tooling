@@ -13,7 +13,7 @@ last-verified: 2026-11-03
 
 ## Reading paths
 
-**Building an application with the tooling.** Start at the repository [README](../README.md) for the quick start on the starter, then [architecture](architecture.md) for what is generated and why. Look up a generated file in the [generator catalogue](generators.md), a build message in the [diagnostics reference](diagnostics.md), and what a tooling upgrade changes in [MIGRATION-0.x-to-1.0.md](MIGRATION-0.x-to-1.0.md). The [stability matrix](stability-matrix.md) says what each surface promises.
+**Building an application with the tooling.** Start at the repository [README](../README.md) for the quick start on the starter, then [architecture](architecture.md) for what is generated and why. The [developer guides](guides/README.md) walk the SDK's example corpus through the pipeline, one task per page, quoting what it generates. Look up a generated file in the [generator catalogue](generators.md), a build message in the [diagnostics reference](diagnostics.md), and what a tooling upgrade changes in [MIGRATION-0.x-to-1.0.md](MIGRATION-0.x-to-1.0.md). The [stability matrix](stability-matrix.md) says what each surface promises.
 
 **Contributing to the tooling.** Read [CONTRIBUTING](../CONTRIBUTING.md) for the build and the gates, [architecture](architecture.md) for the boundaries, then the [module page](modules/README.md) of the module you change. The decisions are in [`adr/`](adr), and the [review rules](repo-review-rules.md) are what review checks. A change a consumer sees after regenerating adds a fragment under [`migration/`](migration/README.md).
 
@@ -23,6 +23,7 @@ last-verified: 2026-11-03
 
 | Question | Page |
 |---|---|
+| What does the tooling generate from a given entity, step by step? | [guides/README.md](guides/README.md) |
 | How do the modules fit together, and what does the tooling never do? | [architecture.md](architecture.md) |
 | What does one module guarantee, and how does it fail? | [modules/README.md](modules/README.md) |
 | What does a term such as abstain, inert or L2 mean? | [glossary.md](glossary.md) |
