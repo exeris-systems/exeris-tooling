@@ -16,3 +16,5 @@ Its changes are in artefacts an application does not depend on. The `exeris-sdk-
 `@Blob` fields `BlobRef`. The `exeris-sdk-examples` entities sit in `<scenario>.domain` packages and
 declare JavaBean accessors, the layout EXT-PROC-1033 and EXT-PROC-1034 require of an entity a generated
 application is built from, and reference another entity by its `UUID` key, which EXT-GEN-3003 requires.
+The parity suite's `actionsAgree` compares each action's `displayName` as well; the processor writes it
+from `@Action.label`, as the reader does, so the processor's binding of the kit passes unchanged.
