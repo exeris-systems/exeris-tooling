@@ -86,6 +86,8 @@ entity.setUpdatedAt(now);
 
 The time comes from the server whatever the request body carries. The migration also declares `created_by` and `updated_by` columns, which no generated code writes.
 
+A marker switches no role on by itself. All three entities mark a `@Version` field without `versioned = true`, and `Customer` marks an `@AuditCreatedAt` field without `audited = true`. Each such field is an ordinary column: the migration declares it from the field's type (`version BIGINT`, and `Customer`'s `created_at TIMESTAMPTZ`), and the repository writes the entity's value into it, with no optimistic lock and no stamp. Declare the flag with the marker when you want the role.
+
 ### 5. Open one action to anonymous callers
 
 `Invoice.viewShared` declares `@RouteAccess(RouteAccess.Level.PUBLIC)`. The generated route policy answers that one route with `permitAll()` and abstains on every other.
@@ -114,7 +116,6 @@ The action's `@QueryParam("token")` parameter is read from the query string, and
 - **`@Action(httpMethod = "GET")`.** `viewShared` declares it, and the route is `POST /invoices/{id}/actions/view-shared`: every action is served on `POST`. Under `-Aexeris.strict=true` the processor reports the attribute as `EXT-PROC-1201`.
 - **`@ActionParam(defaultValue)` on a body parameter.** `issue` declares `defaultValue = "30"` for `dueInDays`, and the generated `IssueRequest(int dueInDays)` reads an absent member as `0`. The default is applied to a `@QueryParam` only.
 - **A `ONE_TO_MANY` collection.** `Invoice.lines` is a `List<InvoiceLine>` with `mappedBy = "invoiceId"`. The run writes it as a `lines VARCHAR(255)` column of `invoices`, holding the list as JSON, rather than reading the children from `invoice_lines`. Its `cascadeDelete = true` reaches no constraint: the foreign key is the child's, and it is `ON DELETE RESTRICT`.
-- **A system-field marker without its flag.** All three entities mark a `@Version` field without `versioned = true`, and `Customer` marks an `@AuditCreatedAt` field without `audited = true`. The create-table migration declares those columns only under the flag, and the run's repositories select and write `version`, and `Customer`'s `created_at`, all the same. Declare the flag with the marker.
 
 ## Where this does not apply
 

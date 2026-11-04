@@ -16,5 +16,11 @@
     "since": "0.11",
     "adr": "ADR-015",
     "justification": "The graph sync only upserted, so an updated or cleared edge field left the edge to the old target in place, and a collection edge emitted a single upsert that did not compile. Each edge is now synchronised against what the graph stores, a collection edge holds its targets' UUID keys as a scalar edge does, and a List of entities on a @GraphEdge is refused before any write with the List<UUID> to hold instead. docs/migration/0.11.0/java-24-graph-collection-edges.md carries the steps."
+  },
+  {
+    "signature": "V{tier}{nnnnnn}__create_{table}.sql (exeris-codegen-java): a field in a system role whose @ExerisDomain flag is off (tenant, audited, softDelete, versioned) is declared as a domain column from its type; the system columns of an active role are unchanged",
+    "since": "0.11",
+    "adr": "ADR-015",
+    "justification": "The create-table migration left out every field named or marked for a system role, whatever the entity's flags, while the repository read and wrote such a field as an ordinary column when the role's flag was off, so its first query named a column the table did not have. Both now take the active roles from one place. The regenerated migration of an affected entity differs from one a database has applied; docs/migration/0.11.0/java-25-system-marker-without-flag-is-a-column.md carries the steps."
   }
 ]
