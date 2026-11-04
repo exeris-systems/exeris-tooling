@@ -60,7 +60,7 @@ final class SdkExamplesSource {
     /**
      * The SDK version on the test classpath, which names the tag the examples are read from.
      *
-     * @return the version, for example {@code 0.13.2}
+     * @return the version, for example {@code 0.13.3}
      */
     static String pinnedVersion() {
         try (InputStream in = SdkExamplesSource.class.getClassLoader()

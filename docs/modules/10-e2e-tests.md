@@ -40,7 +40,7 @@ Unit tests of each module stay in that module. These modules test the seams betw
 | `RoutePolicyRouterConformanceE2ETest` | `GeneratedRoutePolicy` answers for the route the kernel's `HttpRouter` actually dispatches to |
 | `CapCompositionE2ETest` | Annotated `@CapabilityModule` sources through the processor, the capability checks and the pipeline to a booted kernel, where the SDK's `CompositionStampAssertion` must agree with the emitted stamp and `CompositionConductor` replays the emitted `initOrder` |
 | `ClassFileBaselineTest` | The class files this reactor ships: major version and no preview stamp, read off the bytes |
-| `SdkExamplesE2ETest` | The SDK's example corpus at the pinned SDK tag, through the processor and the pipeline, twice, compared file by file |
+| `SdkExamplesE2ETest` | The SDK's example corpus at the pinned SDK tag, through the processor, the pipeline, javac and the emitted tests, twice, compared file by file |
 
 ### Contract files
 
@@ -60,7 +60,7 @@ Unit tests of each module stay in that module. These modules test the seams betw
 
 The surefire run reads `e2e.groups` and `e2e.excludedGroups`. By default nothing is selected by group and `postgres` is excluded. `-Pe2e-postgres` selects only the `@Tag("postgres")` classes and refuses to start without `-Dexeris.e2e.postgres.url`, so a run that asked for PostgreSQL cannot pass by skipping. The `e2e-postgres` job in `.github/workflows/build.yml` runs it on PostgreSQL 16.
 
-`SdkExamplesE2ETest` reads `exeris-sdk-examples` at tag `v<sdk version>`, the version taken from the `exeris-sdk-annotations` jar on the classpath. It takes the checkout named by `exeris.sdk.examples.dir` or `EXERIS_SDK_EXAMPLES_DIR`, else an `exeris-sdk` clone beside this repository that carries the tag. Without either it is skipped, except under `CI=true`, where it fails. The corpus's packages have no `.domain` suffix and its entities declare no accessors, so the gate asserts that refusal, then works on a copy moved into `.domain` packages, with metadata written under `-Aexeris.metadataOnly=true`.
+`SdkExamplesE2ETest` reads `exeris-sdk-examples` at tag `v<sdk version>`, the version taken from the `exeris-sdk-annotations` jar on the classpath. It takes the checkout named by `exeris.sdk.examples.dir` or `EXERIS_SDK_EXAMPLES_DIR`, else an `exeris-sdk` clone beside this repository that carries the tag. Without either it is skipped, except under `CI=true`, where it fails. The processor reads every domain scenario as written, with no error or warning; the Java application generated from all of them compiles under `-Xlint:all` with no error or warning, and its emitted tests run and pass.
 
 ### `exeris-app-starter-it`
 
