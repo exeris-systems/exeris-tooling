@@ -26,7 +26,8 @@ import java.util.stream.Collectors;
  *
  * <p>Emits, per entity, the two types the list route {@code GET {base}} is built on:
  * <ul>
- *   <li>{@code <Entity>ListQuery} — the page, size, sort and filters a request asked for. It parses
+ *   <li>{@code <Entity>ListQuery} — the page, size, sort, filters and search term a request asked
+ *       for. It parses
  *       them from a query string ({@code parse}), refuses anything outside the entity's whitelist
  *       with {@link IllegalArgumentException}, and writes them back ({@code toQueryString}) for the
  *       generated client. Its nested {@code Filter} record has one nullable component per filter
@@ -44,9 +45,10 @@ import java.util.stream.Collectors;
  * entity is what lets {@code content} decode as entities rather than maps — and because a
  * per-domain emitter cannot resolve a project base package (see {@link KernelErrorGenerator}).
  *
- * <p>Which properties may be sorted and filtered, the parameter names, the default and maximum
- * page size and the envelope members come from {@link ListQuerySupport}, the one place the
- * handler, repository, client and OpenAPI document read them.
+ * <p>Which properties may be sorted, filtered and searched, the parameter names, the default and
+ * maximum page size, the longest search term and the envelope members come from
+ * {@link ListQuerySupport}, the one place the handler, repository, client and OpenAPI document
+ * read them.
  *
  * <p>Neither type is an ADR-070 component: nothing constructs it through a {@code create*} factory.
  *
@@ -68,6 +70,7 @@ public class KernelListQueryGenerator implements KernelArtifactGenerator {
     private static final ClassName ILLEGAL_ARGUMENT = ClassName.get(IllegalArgumentException.class);
 
     private static final String FILTER = "Filter";
+    private static final String CODE_LIST_ITEM = "{@code ";
 
     /**
      * Creates the generator. It keeps no per-domain state, so one instance serves every domain
@@ -216,6 +219,7 @@ public class KernelListQueryGenerator implements KernelArtifactGenerator {
         ClassName filter = filterType(metadata);
         List<Property> sortable = ListQuerySupport.sortable(metadata);
         List<Property> filters = ListQuerySupport.filters(metadata);
+        List<Property> searchable = ListQuerySupport.searchable(metadata);
 
         MethodSpec canonical = MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
@@ -224,18 +228,21 @@ public class KernelListQueryGenerator implements KernelArtifactGenerator {
                 .addParameter(String.class, ListQuerySupport.SORT)
                 .addParameter(TypeName.BOOLEAN, "descending")
                 .addParameter(filter, "filter")
+                .addParameter(String.class, ListQuerySupport.SEARCH)
                 .build();
 
         String sortableList = sortable.isEmpty()
                 ? "none: {@code sort} is refused"
-                : sortable.stream().map(p -> "{@code " + p.name() + "}").collect(Collectors.joining(", "));
-        String filterList = filters.isEmpty()
-                ? "none"
-                : filters.stream().map(p -> "{@code " + p.name() + "}").collect(Collectors.joining(", "));
+                : codeList(sortable);
+        String filterList = filters.isEmpty() ? "none" : codeList(filters);
+        String searchableList = searchable.isEmpty()
+                ? "none: a non-blank {@code search} is refused"
+                : codeList(searchable);
 
         TypeSpec.Builder type = TypeSpec.recordBuilder(self.simpleName())
                 .addModifiers(Modifier.PUBLIC)
-                .addJavadoc("The page, sort and filters a request to the list route {@code GET $L} asks for.\n",
+                .addJavadoc("The page, sort, filters and search term a request to the list route\n")
+                .addJavadoc("{@code GET $L} asks for.\n",
                         metadata.effectivePath())
                 .addJavadoc("\n")
                 .addJavadoc("<p>The query parameters, all optional:\n")
@@ -246,16 +253,20 @@ public class KernelListQueryGenerator implements KernelArtifactGenerator {
                 .addJavadoc("<li>{@code sort} — {@code <property>,asc} or {@code <property>,desc}, one\n")
                 .addJavadoc("property of {@link #SORTABLE}; unsorted, rows come in {@code id} order;</li>\n")
                 .addJavadoc("<li>one {@code <property>=<value>} per filter, matched by equality — a\n")
-                .addJavadoc("{@link Filter} component.</li>\n")
+                .addJavadoc("{@link Filter} component;</li>\n")
+                .addJavadoc("<li>{@code search} — one term, at most {@link #MAX_SEARCH_LENGTH} characters\n")
+                .addJavadoc("after stripping, that a row matches when any property of {@link #SEARCHABLE}\n")
+                .addJavadoc("contains it, compared case-insensitively; a blank term is no search.</li>\n")
                 .addJavadoc("</ul>\n")
-                .addJavadoc("Sortable: $L. Filters: $L.\n", sortableList, filterList)
+                .addJavadoc("Sortable: $L. Filters: $L. Searchable: $L.\n",
+                        sortableList, filterList, searchableList)
                 .addJavadoc("\n")
                 .addJavadoc("<p>Anything else — an unknown or repeated parameter, a property outside the\n")
                 .addJavadoc("whitelist, a value that does not parse, a negative page, a size out of range —\n")
                 .addJavadoc("is refused with {@link IllegalArgumentException}, which the generated handler\n")
                 .addJavadoc("answers {@code 400}. No parameter value ever reaches SQL as text: the\n")
                 .addJavadoc("repository maps {@code sort} to a column through a fixed table and binds\n")
-                .addJavadoc("every filter value.\n")
+                .addJavadoc("every filter value and the search term.\n")
                 .addJavadoc("\n<p>Generated by Exeris Codegen. DO NOT EDIT.\n")
                 .addJavadoc("\n")
                 .addJavadoc("@param page       the zero-based page index\n")
@@ -263,6 +274,7 @@ public class KernelListQueryGenerator implements KernelArtifactGenerator {
                 .addJavadoc("@param sort       the property to sort on, or {@code null} for {@code id} order\n")
                 .addJavadoc("@param descending whether {@code sort} runs descending; ignored without one\n")
                 .addJavadoc("@param filter     the equality filters; {@code null} means none\n")
+                .addJavadoc("@param search     the search term; {@code null} or blank means none\n")
                 .recordConstructor(canonical)
                 .addField(FieldSpec.builder(TypeName.INT, "DEFAULT_SIZE",
                                 Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
@@ -277,12 +289,37 @@ public class KernelListQueryGenerator implements KernelArtifactGenerator {
                 .addField(FieldSpec.builder(ParameterizedTypeName.get(LIST, ClassName.get(String.class)),
                                 "SORTABLE", Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
                         .addJavadoc("The properties {@code sort} accepts.\n")
-                        .initializer(sortable.isEmpty() ? CodeBlock.of("$T.of()", LIST)
-                                : CodeBlock.of("$T.of($L)", LIST, sortable.stream()
-                                        .map(p -> CodeBlock.of("$S", p.name()).toString())
-                                        .collect(Collectors.joining(", "))))
+                        .initializer(nameList(sortable))
+                        .build())
+                .addField(FieldSpec.builder(TypeName.INT, "MAX_SEARCH_LENGTH",
+                                Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+                        .addJavadoc("The longest search term the route serves, after stripping; a longer one is\n")
+                        .addJavadoc("refused.\n")
+                        .initializer("$L", ListQuerySupport.MAX_SEARCH_LENGTH)
+                        .build())
+                .addField(FieldSpec.builder(ParameterizedTypeName.get(LIST, ClassName.get(String.class)),
+                                "SEARCHABLE", Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+                        .addJavadoc("The properties {@code search} is matched against; empty when a non-blank\n")
+                        .addJavadoc("term is refused.\n")
+                        .initializer(nameList(searchable))
                         .build())
                 .addMethod(compactConstructor(metadata))
+                .addMethod(MethodSpec.constructorBuilder()
+                        .addModifiers(Modifier.PUBLIC)
+                        .addJavadoc("A query without a search term.\n")
+                        .addJavadoc("\n")
+                        .addJavadoc("@param page       the zero-based page index\n")
+                        .addJavadoc("@param size       the page size\n")
+                        .addJavadoc("@param sort       the property to sort on, or {@code null} for {@code id} order\n")
+                        .addJavadoc("@param descending whether {@code sort} runs descending; ignored without one\n")
+                        .addJavadoc("@param filter     the equality filters; {@code null} means none\n")
+                        .addParameter(TypeName.INT, ListQuerySupport.PAGE)
+                        .addParameter(TypeName.INT, ListQuerySupport.SIZE)
+                        .addParameter(String.class, ListQuerySupport.SORT)
+                        .addParameter(TypeName.BOOLEAN, "descending")
+                        .addParameter(filter, "filter")
+                        .addStatement("this(page, size, sort, descending, filter, null)")
+                        .build())
                 .addMethod(MethodSpec.methodBuilder("of")
                         .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
                         .returns(self)
@@ -294,7 +331,7 @@ public class KernelListQueryGenerator implements KernelArtifactGenerator {
                         .addJavadoc("@throws IllegalArgumentException if either is out of range\n")
                         .addParameter(TypeName.INT, "page")
                         .addParameter(TypeName.INT, "size")
-                        .addStatement("return new $T(page, size, null, false, null)", self)
+                        .addStatement("return new $T(page, size, null, false, null, null)", self)
                         .build())
                 .addMethod(parse(metadata, self, filter, filters))
                 .addMethod(toQueryString(filters))
@@ -358,6 +395,19 @@ public class KernelListQueryGenerator implements KernelArtifactGenerator {
                 .beginControlFlow("if (filter == null)")
                 .addStatement("filter = $L", emptyFilter(metadata))
                 .endControlFlow()
+                .beginControlFlow("if (search != null)")
+                .addStatement("search = search.strip()")
+                .endControlFlow()
+                .beginControlFlow("if (search != null && search.isEmpty())")
+                .addStatement("search = null")
+                .endControlFlow()
+                .beginControlFlow("if (search != null && SEARCHABLE.isEmpty())")
+                .addStatement("throw new $T($S)", ILLEGAL_ARGUMENT, "no property of this entity is searchable")
+                .endControlFlow()
+                .beginControlFlow("if (search != null && search.length() > MAX_SEARCH_LENGTH)")
+                .addStatement("throw new $T($S + MAX_SEARCH_LENGTH + $S + search.length())", ILLEGAL_ARGUMENT,
+                        "search must be at most ", " characters: ")
+                .endControlFlow()
                 .build();
     }
 
@@ -382,7 +432,8 @@ public class KernelListQueryGenerator implements KernelArtifactGenerator {
                 .addStatement("int page = 0")
                 .addStatement("int size = DEFAULT_SIZE")
                 .addStatement("String sort = null")
-                .addStatement("boolean descending = false");
+                .addStatement("boolean descending = false")
+                .addStatement("String search = null");
         for (Property property : filters) {
             parse.addStatement("$T $L = null", filterValueType(property, metadata), local(property));
         }
@@ -412,7 +463,8 @@ public class KernelListQueryGenerator implements KernelArtifactGenerator {
                 .addStatement("throw new $T($S + direction)", ILLEGAL_ARGUMENT,
                         "sort direction must be asc or desc: ")
                 .endControlFlow()
-                .endControlFlow();
+                .endControlFlow()
+                .addStatement("case $S -> search = value", ListQuerySupport.SEARCH);
         for (Property property : filters) {
             parse.addStatement("case $S -> $L = $L", property.name(), local(property),
                     parseValue(property, metadata));
@@ -421,7 +473,8 @@ public class KernelListQueryGenerator implements KernelArtifactGenerator {
                 .endControlFlow()
                 .endControlFlow();
         String args = filters.stream().map(KernelListQueryGenerator::local).collect(Collectors.joining(", "));
-        return parse.addStatement("return new $T(page, size, sort, descending, new $T($L))", self, filter, args)
+        return parse.addStatement("return new $T(page, size, sort, descending, new $T($L), search)",
+                        self, filter, args)
                 .build();
     }
 
@@ -451,7 +504,7 @@ public class KernelListQueryGenerator implements KernelArtifactGenerator {
                 .addJavadoc("This query as a query string {@link #parse} reads back to an equal query —\n")
                 .addJavadoc("what the generated client sends. An enum filter is written as its constant's\n")
                 .addJavadoc("{@code name()}, which {@link #parse} reads with {@code valueOf}; any other filter\n")
-                .addJavadoc("value is written with {@code String.valueOf}.\n")
+                .addJavadoc("value is written with {@code String.valueOf}. The search term follows the filters.\n")
                 .addJavadoc("\n")
                 .addJavadoc("@return the query string, without a leading {@code ?}\n")
                 .addStatement("StringBuilder query = new StringBuilder()")
@@ -469,7 +522,10 @@ public class KernelListQueryGenerator implements KernelArtifactGenerator {
                             "&" + property.name() + "=", property.name())
                     .endControlFlow();
         }
-        return method.addStatement("return query.toString()").build();
+        return method.beginControlFlow("if (search != null)")
+                .addStatement("query.append($S).append(encode(search))", "&" + ListQuerySupport.SEARCH + "=")
+                .endControlFlow()
+                .addStatement("return query.toString()").build();
     }
 
     private TypeSpec filterRecord(DomainMetadata metadata, List<Property> filters) {
@@ -487,6 +543,19 @@ public class KernelListQueryGenerator implements KernelArtifactGenerator {
             record.addJavadoc("@param $L rows whose {@code $L} column equals it\n", property.name(), property.column());
         }
         return record.recordConstructor(canonical.build()).build();
+    }
+
+    /** The properties' names as Javadoc code spans, comma-separated. */
+    private static String codeList(List<Property> properties) {
+        return properties.stream().map(p -> CODE_LIST_ITEM + p.name() + "}").collect(Collectors.joining(", "));
+    }
+
+    /** {@code List.of("a", "b")}, or {@code List.of()} — the properties' names as a constant. */
+    private static CodeBlock nameList(List<Property> properties) {
+        return properties.isEmpty() ? CodeBlock.of("$T.of()", LIST)
+                : CodeBlock.of("$T.of($L)", LIST, properties.stream()
+                        .map(p -> CodeBlock.of("$S", p.name()).toString())
+                        .collect(Collectors.joining(", ")));
     }
 
     /** The {@code parse} local a filter value is read into — prefixed, so it cannot shadow another. */

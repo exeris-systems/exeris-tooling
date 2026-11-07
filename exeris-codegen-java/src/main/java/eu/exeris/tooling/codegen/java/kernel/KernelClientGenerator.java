@@ -212,17 +212,17 @@ public class KernelClientGenerator implements KernelArtifactGenerator {
     }
 
     /**
-     * {@code findAll(query)} — the list route with the query's page, sort and filters, decoded into
-     * the per-entity page record. The query string is the one {@code <Entity>ListQuery.parse} reads
-     * on the server, written by the same type.
+     * {@code findAll(query)} — the list route with the query's page, sort, filters and search term,
+     * decoded into the per-entity page record. The query string is the one
+     * {@code <Entity>ListQuery.parse} reads on the server, written by the same type.
      */
     private MethodSpec buildFindAll(String entity, DomainMetadata metadata) {
         ClassName queryType = KernelListQueryGenerator.listQueryType(metadata);
         ClassName pageType = KernelListQueryGenerator.pageType(metadata);
         return MethodSpec.methodBuilder("findAll")
-                .addJavadoc("Finds one page of $L entities: the query's page, sort and filters.\n", entity)
+                .addJavadoc("Finds one page of $L entities: the query's page, sort, filters and search term.\n", entity)
                 .addJavadoc("\n")
-                .addJavadoc("@param query the page, sort and filters\n")
+                .addJavadoc("@param query the page, sort, filters and search term\n")
                 .addJavadoc("@return the page\n")
                 .addModifiers(Modifier.PUBLIC)
                 .returns(pageType)

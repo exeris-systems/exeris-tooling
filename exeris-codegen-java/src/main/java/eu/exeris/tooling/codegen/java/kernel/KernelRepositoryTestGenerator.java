@@ -253,6 +253,9 @@ public final class KernelRepositoryTestGenerator {
                 newEntity(entityType), statement -> write(statement, tenantScoped)));
         type.addMethod(countTest(repositoryType, persistenceType));
         type.addMethod(findPageTest(metadata, repositoryType, persistenceType));
+        if (!ListQuerySupport.searchable(metadata).isEmpty()) {
+            type.addMethod(findPageSearchTest(metadata, repositoryType, persistenceType));
+        }
         if (tenantScoped) {
             type.addMethod(asTenantHelper());
         }
@@ -551,6 +554,33 @@ public final class KernelRepositoryTestGenerator {
                 .addStatement("$T.assertThat(page.size()).isEqualTo(5)", ASSERTIONS)
                 .addStatement("$T.assertThat(page.content()).isEmpty()", ASSERTIONS)
                 .addStatement("$T.assertThat(page.totalElements()).isZero()", ASSERTIONS)
+                .build();
+    }
+
+    /**
+     * The search term's alignment: one bind per searchable column, each the term wrapped in
+     * {@code %} with its {@code LIKE} metacharacters escaped, and the limit and offset after them.
+     */
+    private MethodSpec findPageSearchTest(DomainMetadata metadata, ClassName repositoryType,
+                                          ClassName persistenceType) {
+        ClassName queryType = KernelListQueryGenerator.listQueryType(metadata);
+        ClassName pageType = KernelListQueryGenerator.pageType(metadata);
+        int columns = ListQuerySupport.searchable(metadata).size();
+        MethodSpec.Builder test = test("findPageBindsTheEscapedSearchPatternOncePerSearchableColumn")
+                .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
+                .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
+                .addStatement("$T page = repository.findPage(new $T(0, 5, null, false, null, $S))",
+                        pageType, queryType, "50%_off\\")
+                .addStatement("$T.assertThat(persistence.sql.chars().filter(c -> c == '?').count())"
+                        + ".isEqualTo((long) persistence.binds.size())", ASSERTIONS);
+        for (int i = 0; i < columns; i++) {
+            test.addStatement("$T.assertThat(persistence.binds).containsEntry($L, $S)",
+                    ASSERTIONS, i, "%50\\%\\_off\\\\%");
+        }
+        return test
+                .addStatement("$T.assertThat(persistence.binds).containsEntry($L, 5).containsEntry($L, 0L)",
+                        ASSERTIONS, columns, columns + 1)
+                .addStatement("$T.assertThat(page.content()).isEmpty()", ASSERTIONS)
                 .build();
     }
 

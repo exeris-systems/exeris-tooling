@@ -11,8 +11,8 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * {@link ListQuerySupport}: which properties the list route sorts and filters on. Every Java artefact
- * of the route reads these two lists, so their rules are pinned here once.
+ * {@link ListQuerySupport}: which properties the list route sorts, filters and searches on. Every
+ * Java artefact of the route reads these lists, so their rules are pinned here once.
  */
 @DisplayName("ListQuerySupport")
 class ListQuerySupportTest {
@@ -70,6 +70,41 @@ class ListQuerySupportTest {
     }
 
     @Test
+    @DisplayName("searchable: flagged String fields and String fields without @Field, by name, never "
+            + "another kind, a system field or a blob; a field named search is no filter")
+    void searchable() {
+        DomainMetadata metadata = DomainMetadata.builder("Customer", "com.example.domain")
+                .path("/customers")
+                .softDelete(true)
+                .fields(List.of(
+                        FieldMetadata.simple("id", "java.util.UUID"),
+                        FieldMetadata.builder("name", "String").searchable(true).build(),
+                        // Without @Field: the processor records it searchable.
+                        FieldMetadata.simple("email", "java.lang.String"),
+                        FieldMetadata.builder("note", "String").searchable(false).filterable(true).build(),
+                        FieldMetadata.builder("status", "com.example.domain.Status")
+                                .enumType("com.example.domain.Status").searchable(true).build(),
+                        FieldMetadata.simple("externalId", "java.util.UUID"),
+                        FieldMetadata.simple("visits", "int"),
+                        FieldMetadata.simple("aliases", "java.util.List<String>"),
+                        FieldMetadata.simple("deletedBy", "String"),
+                        FieldMetadata.simple("search", "String")))
+                .build();
+
+        assertThat(ListQuerySupport.searchable(metadata))
+                .extracting(ListQuerySupport.Property::name, ListQuerySupport.Property::column)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("email", "email"),
+                        org.assertj.core.groups.Tuple.tuple("name", "name"),
+                        org.assertj.core.groups.Tuple.tuple("search", "search"));
+        assertThat(ListQuerySupport.filters(metadata)).extracting(ListQuerySupport.Property::name)
+                .doesNotContain("search")
+                .contains("note");
+        assertThat(ListQuerySupport.searchable(entity(List.of(
+                FieldMetadata.builder("code", "String").sortable(true).build()), List.of()))).isEmpty();
+    }
+
+    @Test
     @DisplayName("a type nothing recognises is neither a sort key nor a filter; an enum is both; "
             + "an offset or zoned date-time is a sort key only")
     void unrecognisedTypesAreNeitherSortKeysNorFilters() {
@@ -100,9 +135,12 @@ class ListQuerySupportTest {
     @Test
     @DisplayName("the published constants: reserved names, sizes, envelope, filterable types sorted")
     void constants() {
-        assertThat(ListQuerySupport.RESERVED).containsExactly("page", "size", "sort");
+        assertThat(ListQuerySupport.RESERVED).containsExactly("page", "search", "size", "sort").isSorted();
         assertThat(ListQuerySupport.DEFAULT_SIZE).isEqualTo(20);
         assertThat(ListQuerySupport.MAX_SIZE).isEqualTo(100);
+        assertThat(ListQuerySupport.MAX_SEARCH_LENGTH).isEqualTo(100);
+        assertThat(ListQuerySupport.searchableScalarTypes()).isSorted()
+                .containsExactly("String", "java.lang.String");
         assertThat(ListQuerySupport.ENVELOPE)
                 .containsExactly("content", "totalElements", "totalPages", "size", "number", "first", "last");
         assertThat(ListQuerySupport.filterableScalarTypes()).isSorted()

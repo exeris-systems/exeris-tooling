@@ -1,5 +1,5 @@
 {
-  "description": "The query the list route GET {base} reads and the envelope it answers with. ListQueryContractE2ETest (exeris-e2e-tests) proves the generated list query, handler, page record, client and OpenAPI document state exactly this; list-query-contract.spec.ts (exeris-codegen-ts) holds the TypeScript service, store and list to the same file. The two builds never run together, so this file is the one place they meet: change it only together with the generated list query.",
+  "description": "The query the list route GET {base} reads and the envelope it answers with. ListQueryContractE2ETest (exeris-e2e-tests) proves the generated list query, handler, page record, client and OpenAPI document state exactly this; list-query-contract.spec.ts (exeris-codegen-ts) holds the TypeScript service, store, list and picker to the same file. The two builds never run together, so this file is the one place they meet: change it only together with the generated list query.",
   "route": { "operation": "list", "method": "GET", "path": "{base}" },
   "parameters": {
     "page": { "meaning": "zero-based page index", "default": 0, "minimum": 0 },
@@ -14,12 +14,19 @@
       "format": "<property>=<value>",
       "booleanValues": ["true", "false"],
       "foreignKey": "<relationship>Id=<uuid>, for every MANY_TO_ONE relationship"
+    },
+    "search": {
+      "meaning": "one term matched case-insensitively as a substring against any searchable property; a blank value is no search",
+      "maxLength": 100,
+      "match": "LOWER(column) LIKE LOWER('%' || escaped term || '%') ESCAPE '\\'",
+      "escaped": ["\\", "%", "_"]
     }
   },
-  "reserved": ["page", "size", "sort"],
+  "reserved": ["page", "search", "size", "sort"],
   "properties": {
     "sortable": "@Field(sortable = true), and every field without @Field, of a type in sortableScalarTypes or an enum; never a List field",
     "filterable": "@Field(filterable = true) and every field without @Field, of a type in filterableScalarTypes or an enum; and <relationship>Id for every MANY_TO_ONE",
+    "searchable": "@Field(searchable = true), and every field without @Field, of a type in searchableScalarTypes; never a system field or blob",
     "enum": "a field is an enum when its enumType, else its type, names an enum the processor emitted beside the entities (enum_*.json): by qualified name, else by simple name. A type merely named like an enum is not one",
     "unrecognised": "a field whose type is in neither list and names no emitted enum (a record, a value type of the application's own) is neither a sort key nor a filter; a type the repository cannot store (a Map, a Set, BigInteger, LocalTime, Duration, char, an array) fails generation and reaches no list",
     "neverOffered": "the primary key (it is the ORDER BY tiebreak only), the owning tenant, the shared-scope field, the audit fields (created and updated at and by), the version and the soft-delete fields, under their declared or canonical names"
@@ -40,13 +47,17 @@
     "java.time.LocalDate", "java.time.LocalDateTime", "java.time.OffsetDateTime",
     "java.time.ZonedDateTime", "java.util.UUID", "long", "short"
   ],
+  "searchableScalarTypes": ["String", "java.lang.String"],
   "filterableEnums": "an enum field is filterable by its constant's name",
   "refusedWith400": [
     "an unknown parameter name",
     "a repeated parameter",
     "a sort property that is not sortable, or a direction other than asc or desc",
     "a filter value that does not parse as its property's type",
-    "a negative page, or a size outside 1..maximum"
+    "a negative page, or a size outside 1..maximum",
+    "a search longer than 100 characters",
+    "a non-blank search on an entity with no searchable property",
+    "a repeated search"
   ],
   "envelope": ["content", "totalElements", "totalPages", "size", "number", "first", "last"]
 }

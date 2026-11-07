@@ -209,7 +209,43 @@ class KernelListQueryGeneratorTest {
         assertThat(query)
                 .contains("public static final List<String> SORTABLE = List.of();")
                 .contains("record Filter()")
-                .contains("return new TagListQuery(page, size, sort, descending, new Filter());");
+                .contains("return new TagListQuery(page, size, sort, descending, new Filter(), search);")
+                .contains("public static final List<String> SEARCHABLE = List.of();")
+                .contains("if (search != null && SEARCHABLE.isEmpty()) { throw new IllegalArgumentException("
+                        + "\"no property of this entity is searchable\"); }");
+    }
+
+    @Test
+    @DisplayName("search: the last component, parsed once, stripped, blank as none, bounded, written back; "
+            + "the five-component constructor is kept")
+    void search() {
+        DomainMetadata metadata = DomainMetadata.builder("Customer", "com.example.domain")
+                .path("/customers")
+                .fields(List.of(
+                        FieldMetadata.builder("name", "String").searchable(true).build(),
+                        FieldMetadata.simple("email", "java.lang.String"),
+                        FieldMetadata.builder("note", "String").build()))
+                .build();
+
+        String query = flat(generator.generateMultiple(metadata).get(0));
+
+        assertThat(query)
+                .contains("public record CustomerListQuery(int page, int size, String sort, boolean descending, "
+                        + "CustomerListQuery.Filter filter, String search)")
+                .contains("public static final int MAX_SEARCH_LENGTH = " + ListQuerySupport.MAX_SEARCH_LENGTH + ";")
+                .contains("public static final List<String> SEARCHABLE = List.of(\"email\", \"name\");")
+                .contains("public CustomerListQuery(int page, int size, String sort, boolean descending, "
+                        + "Filter filter) { this(page, size, sort, descending, filter, null); }")
+                .contains("if (search != null) { search = search.strip(); }")
+                .contains("if (search != null && search.isEmpty()) { search = null; }")
+                .contains("if (search != null && search.length() > MAX_SEARCH_LENGTH)")
+                .contains("case \"search\" -> search = value;")
+                .containsOnlyOnce("case \"search\"")
+                .contains("if (search != null) { query.append(\"&search=\").append(encode(search)); }")
+                .contains("return new CustomerListQuery(page, size, null, false, null, null);")
+                .contains("Searchable: {@code email}, {@code name}.");
+        assertThat(query.indexOf("search = search.strip()"))
+                .isLessThan(query.indexOf("SEARCHABLE.isEmpty()"));
     }
 
     @Test
