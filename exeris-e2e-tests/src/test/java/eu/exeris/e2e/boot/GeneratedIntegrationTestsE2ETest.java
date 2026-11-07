@@ -147,8 +147,8 @@ class GeneratedIntegrationTestsE2ETest {
                 "GeneratedRoutePolicyIT.noteRoutesRefuseACallerWithoutTheScope",
                 "GeneratedRoutePolicyIT.noteRoutesAdmitEachDeclaredScope",
                 "GeneratedRoutePolicyIT.noteArchiveActionRefusesAnAnonymousCaller",
-                "GeneratedRoutePolicyIT.noteArchiveActionRefuseACallerWithoutTheScope",
-                "GeneratedRoutePolicyIT.noteArchiveActionAdmitEachDeclaredScope",
+                "GeneratedRoutePolicyIT.noteArchiveActionRefusesACallerWithoutTheScope",
+                "GeneratedRoutePolicyIT.noteArchiveActionAdmitsEachDeclaredScope",
                 "GeneratedRoutePolicyIT.draftRoutesRefuseAnAnonymousCaller",
                 "GeneratedRoutePolicyIT.draftRoutesAdmitAnyVerifiedCaller",
                 "GeneratedRoutePolicyIT.noticeRoutesAdmitAnAnonymousCaller");

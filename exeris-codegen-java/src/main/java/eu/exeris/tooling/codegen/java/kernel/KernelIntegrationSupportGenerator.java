@@ -216,6 +216,10 @@ public final class KernelIntegrationSupportGenerator {
         type.addField(privateConstant(ParameterizedTypeName.get(ATOMIC_REFERENCE, ClassName.get(Throwable.class)),
                 "FAILURE", CodeBlock.of("new $T<>()", ATOMIC_REFERENCE)));
         type.addField(FieldSpec.builder(STRING, "baseUri", Modifier.PRIVATE, Modifier.STATIC).build());
+        type.addField(FieldSpec.builder(Throwable.class, "bootFailure", Modifier.PRIVATE, Modifier.STATIC)
+                .addJavadoc("Why the boot failed; every later {@link #baseUri()} rethrows it instead of booting\n")
+                .addJavadoc("again, so a failed boot costs the run one boot timeout, not one per test.\n")
+                .build());
         type.addField(FieldSpec.builder(THREAD, "application", Modifier.PRIVATE, Modifier.STATIC).build());
         if (security) {
             type.addField(FieldSpec.builder(HTTP_SERVER, "keys", Modifier.PRIVATE, Modifier.STATIC).build());
@@ -225,6 +229,7 @@ public final class KernelIntegrationSupportGenerator {
         type.addMethod(baseUriMethod());
         type.addMethod(stopMethod(security));
         type.addMethod(bootMethod(self, security));
+        type.addMethod(discardMethod(security));
         type.addMethod(runMethod());
         type.addMethod(awaitComposedMethod());
         type.addMethod(applyMigrationsMethod());
@@ -259,10 +264,20 @@ public final class KernelIntegrationSupportGenerator {
                 .returns(STRING)
                 .addJavadoc("Returns the application's base URI, booting it on the first call.\n")
                 .addJavadoc("@return {@code http://127.0.0.1:<port>}\n")
+                .addJavadoc("@throws AssertionError if this or an earlier call failed to boot the application\n")
                 .addCode("""
                         synchronized (LOCK) {
+                            if (bootFailure != null) {
+                                throw new AssertionError("the application failed to boot earlier in this run",
+                                        bootFailure);
+                            }
                             if (baseUri == null) {
-                                baseUri = boot();
+                                try {
+                                    baseUri = boot();
+                                } catch (RuntimeException | Error e) {
+                                    bootFailure = e;
+                                    throw e;
+                                }
                             }
                             return baseUri;
                         }
@@ -290,12 +305,15 @@ public final class KernelIntegrationSupportGenerator {
                     .endControlFlow();
         }
         return method.addStatement("baseUri = null")
+                .addStatement("bootFailure = null")
+                .addStatement("FAILURE.set(null)")
                 .endControlFlow()
                 .build();
     }
 
     private static MethodSpec bootMethod(ClassName self, boolean security) {
         CodeBlock.Builder body = CodeBlock.builder()
+                .addStatement("FAILURE.set(null)")
                 .addStatement("int port = reserveLoopbackPort()")
                 .addStatement("$T jdbcUrl = $S + $T.toUnsignedString($T.nanoTime(), 36) + $S", STRING,
                         "jdbc:h2:mem:exeris_it_", Long.class, SYSTEM, ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1")
@@ -330,6 +348,9 @@ public final class KernelIntegrationSupportGenerator {
                 .addStatement("thread.start()")
                 .addStatement("application = thread")
                 .addStatement("awaitComposed(thread, port)")
+                .nextControlFlow("catch ($T | $T e)", RuntimeException.class, Error.class)
+                .addStatement("discard()")
+                .addStatement("throw e")
                 .nextControlFlow("finally")
                 .addStatement("restore(previous)")
                 .endControlFlow()
@@ -339,6 +360,28 @@ public final class KernelIntegrationSupportGenerator {
                 .returns(STRING)
                 .addCode(body.build())
                 .build();
+    }
+
+    private static MethodSpec discardMethod(boolean security) {
+        MethodSpec.Builder method = MethodSpec.methodBuilder("discard")
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .addJavadoc("Releases what a failed boot started: the application thread and the key server.\n")
+                .beginControlFlow("if (application != null)")
+                .addStatement("application.interrupt()")
+                .beginControlFlow("try")
+                .addStatement("application.join(STOP_TIMEOUT.toMillis())")
+                .nextControlFlow("catch (InterruptedException e)")
+                .addStatement("$T.currentThread().interrupt()", THREAD)
+                .endControlFlow()
+                .addStatement("application = null")
+                .endControlFlow();
+        if (security) {
+            method.beginControlFlow("if (keys != null)")
+                    .addStatement("keys.stop(0)")
+                    .addStatement("keys = null")
+                    .endControlFlow();
+        }
+        return method.build();
     }
 
     private static MethodSpec runMethod() {

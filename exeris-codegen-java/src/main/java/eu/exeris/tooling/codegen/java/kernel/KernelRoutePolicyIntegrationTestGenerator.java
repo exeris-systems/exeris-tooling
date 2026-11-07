@@ -173,7 +173,7 @@ public final class KernelRoutePolicyIntegrationTestGenerator {
                 .addStatement(STATUS_CALL, STATUS, PUT, byId, EMPTY_BODY, NO_BODY, UNAUTHORIZED)
                 .addStatement(STATUS_CALL, STATUS, DELETE, byId, NO_BODY, NO_BODY, UNAUTHORIZED)
                 .build());
-        addVerifiedCases(type, types, prefix, base, new Probe(GET, byId, NO_BODY), requirement, List.of());
+        addVerifiedCases(type, types, prefix, "", base, new Probe(GET, byId, NO_BODY), requirement, List.of());
     }
 
     private static void addActionCases(TypeSpec.Builder type, Support types, DomainMetadata domain,
@@ -196,7 +196,7 @@ public final class KernelRoutePolicyIntegrationTestGenerator {
         type.addMethod(test(prefix + "RefusesAnAnonymousCaller", route + " is 401 without a token")
                 .addStatement(STATUS_CALL, STATUS, probe.method(), probe.path(), probe.body(), NO_BODY, UNAUTHORIZED)
                 .build());
-        addVerifiedCases(type, types, prefix, route, probe, requirement, replacedScopes(domain, requirement));
+        addVerifiedCases(type, types, prefix, "s", route, probe, requirement, replacedScopes(domain, requirement));
     }
 
     /**
@@ -214,18 +214,22 @@ public final class KernelRoutePolicyIntegrationTestGenerator {
 
     /**
      * The cases of a verified caller: refused or passed by the scopes it holds. A caller holding only
-     * {@code refusedScopes} is refused as one holding none.
+     * {@code refusedScopes} is refused as one holding none. {@code verbSuffix} agrees each method
+     * name's verb with its prefix: empty after a plural subject ({@code noteRoutes}), {@code "s"} after
+     * a singular one ({@code noteArchiveAction}).
      */
-    private static void addVerifiedCases(TypeSpec.Builder type, Support types, String prefix, String what,
-                                         Probe probe, Requirement requirement, List<String> refusedScopes) {
+    private static void addVerifiedCases(TypeSpec.Builder type, Support types, String prefix, String verbSuffix,
+                                         String what, Probe probe, Requirement requirement,
+                                         List<String> refusedScopes) {
         if (requirement.kind() == Kind.AUTHENTICATED) {
-            type.addMethod(test(prefix + "AdmitAnyVerifiedCaller", what + " passes for a verified caller with no scope")
+            type.addMethod(test(prefix + "Admit" + verbSuffix + "AnyVerifiedCaller",
+                    what + " passes for a verified caller with no scope")
                     .addStatement(ADMITTED_CALL, ADMITTED, probe.method(), probe.path(),
                             CodeBlock.of("$T.bearer()", types.tokens()))
                     .build());
             return;
         }
-        MethodSpec.Builder refused = test(prefix + "RefuseACallerWithoutTheScope",
+        MethodSpec.Builder refused = test(prefix + "Refuse" + verbSuffix + "ACallerWithoutTheScope",
                 what + " is 403 for a verified caller holding none of " + requirement.scopes())
                 .addStatement(STATUS_CALL, STATUS, probe.method(), probe.path(), probe.body(),
                         CodeBlock.of("$T.bearer()", types.tokens()), FORBIDDEN);
@@ -236,7 +240,7 @@ public final class KernelRoutePolicyIntegrationTestGenerator {
                     FORBIDDEN);
         }
         type.addMethod(refused.build());
-        MethodSpec.Builder admitted = test(prefix + "AdmitEachDeclaredScope",
+        MethodSpec.Builder admitted = test(prefix + "Admit" + verbSuffix + "EachDeclaredScope",
                 what + " passes for a caller holding any one of " + requirement.scopes());
         for (String scope : requirement.scopes()) {
             admitted.addStatement(ADMITTED_CALL, ADMITTED, probe.method(), probe.path(),
