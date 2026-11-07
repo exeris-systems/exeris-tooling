@@ -14,6 +14,7 @@ import static eu.exeris.tooling.codegen.java.support.DataScopeSupport.isTenantPa
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.java.support.DomainPackages;
 import eu.exeris.tooling.codegen.java.support.KernelEventSupport;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
@@ -148,7 +149,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
      * @return the handler
      */
     GeneratedFile generate(DomainMetadata metadata, List<DomainMetadata> build) {
-        String basePackage = metadata.packageName().replace(".domain", "");
+        String basePackage = DomainPackages.basePackage(metadata);
         String packageName = basePackage + ".handler";
         String entity = metadata.entityName();
         String className = entity + "Handler";
@@ -580,7 +581,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         if (!publishesFromHandler(metadata)) {
             return null;
         }
-        return ClassName.get(metadata.packageName().replace(".domain", ".event"),
+        return ClassName.get(DomainPackages.sibling(metadata, DomainPackages.EVENT),
                 metadata.entityName() + "EventPublisher");
     }
 

@@ -12,6 +12,7 @@ import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.java.support.BlobFields;
 import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
+import eu.exeris.tooling.codegen.java.support.DomainPackages;
 import eu.exeris.tooling.codegen.java.support.ForeignKeys;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
@@ -162,7 +163,7 @@ public final class KernelHandlerTestGenerator {
         String entity = metadata.entityName();
         String domainPackage = metadata.packageName();
         KernelApplicationGenerator.requireDomainPackages(List.of(metadata));
-        String infrastructureBase = domainPackage.substring(0, domainPackage.lastIndexOf(".domain"));
+        String infrastructureBase = DomainPackages.basePackage(domainPackage);
         String packageName = infrastructureBase + ".handler";
         String className = entity + "HandlerTest";
 
@@ -330,7 +331,7 @@ public final class KernelHandlerTestGenerator {
         }
 
         ClassName publisherType = ClassName.get(
-                metadata.packageName().replace(".domain", ".event"),
+                DomainPackages.sibling(metadata, DomainPackages.EVENT),
                 metadata.entityName() + "EventPublisher");
         ClassName engineType = ClassName.get(
                 KernelTestSupportGenerator.supportPackage(basePackage),

@@ -31,6 +31,7 @@ import eu.exeris.tooling.codegen.java.kernel.KernelSagaTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelServiceTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.RequiredCompileArtifacts;
 import eu.exeris.tooling.codegen.java.kernel.KernelTestSupportGenerator;
+import eu.exeris.tooling.codegen.java.support.DomainPackages;
 import eu.exeris.tooling.codegen.java.support.EnumTypes;
 import eu.exeris.tooling.diagnostics.DiagnosticId;
 
@@ -424,9 +425,10 @@ public final class CodegenPipeline {
      * The package {@code Application}, {@code RuntimeComponents}, {@code RuntimeLifecycle} and
      * the generated {@code testsupport} package are emitted in when the caller names none.
      *
-     * <p>It is the package of the first domain in {@link #DOMAIN_ORDER}, with {@code .domain}
-     * removed (ADR-076). When every entity shares one package, that package is the answer; when
-     * they span several, it is the package of the entity whose fully-qualified name sorts first.
+     * <p>It is the package of the first domain in {@link #DOMAIN_ORDER}, with its trailing
+     * {@code .domain} removed (ADR-076). When every entity shares one package, that package is the
+     * answer; when they span several, it is the package of the entity whose fully-qualified name
+     * sorts first.
      * The answer never depends on the order of {@code domains} or of the directory listing.
      *
      * @param domains the loaded domains; must not be empty
@@ -435,21 +437,16 @@ public final class CodegenPipeline {
     static String autoDetectBasePackage(List<DomainMetadata> domains) {
         DomainMetadata first = domains.stream().min(DOMAIN_ORDER)
                 .orElseThrow(() -> new IllegalArgumentException("no domains to detect a base package from"));
-        return basePackageOf(first);
+        return DomainPackages.basePackage(first);
     }
 
-    /** Each domain's package with {@code .domain} removed, sorted and without duplicates. */
+    /** Each domain's package without its trailing {@code .domain}, sorted, without duplicates. */
     private static SortedSet<String> entityBasePackages(List<DomainMetadata> domains) {
         SortedSet<String> packages = new TreeSet<>();
         for (DomainMetadata domain : domains) {
-            packages.add(basePackageOf(domain));
+            packages.add(DomainPackages.basePackage(domain));
         }
         return packages;
-    }
-
-    private static String basePackageOf(DomainMetadata domain) {
-        String packageName = domain.packageName() == null ? "" : domain.packageName();
-        return packageName.replace(".domain", "");
     }
 
     private static String qualifiedName(DomainMetadata domain) {

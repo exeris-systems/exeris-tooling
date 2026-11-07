@@ -12,6 +12,7 @@ import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.java.kernel.KernelRepositoryGenerator.Column;
 import eu.exeris.tooling.codegen.java.kernel.KernelRepositoryGenerator.ColumnKind;
+import eu.exeris.tooling.codegen.java.support.DomainPackages;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.tooling.codegen.java.support.NameCasing;
 import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
@@ -152,7 +153,7 @@ public final class KernelRepositoryTestGenerator {
         String entity = metadata.entityName();
         String domainPackage = metadata.packageName();
         KernelApplicationGenerator.requireDomainPackages(List.of(metadata));
-        String infrastructureBase = domainPackage.substring(0, domainPackage.lastIndexOf(".domain"));
+        String infrastructureBase = DomainPackages.basePackage(domainPackage);
         String packageName = infrastructureBase + ".repository";
         String className = entity + "RepositoryTest";
 

@@ -8,6 +8,7 @@ import com.palantir.javapoet.TypeSpec;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.java.support.DomainPackages;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
@@ -238,7 +239,7 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
             return null;
         }
         String sagaName = definitionName(metadata);
-        return ClassName.get(metadata.packageName().replace(".domain", ".saga"),
+        return ClassName.get(DomainPackages.sibling(metadata, DomainPackages.SAGA),
                 sagaName.endsWith("Flow") ? sagaName : sagaName + "Flow");
     }
 

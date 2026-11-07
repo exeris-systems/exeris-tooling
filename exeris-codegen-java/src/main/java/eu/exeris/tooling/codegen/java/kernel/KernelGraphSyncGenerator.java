@@ -11,6 +11,7 @@ import com.palantir.javapoet.TypeSpec;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.java.support.DomainPackages;
 import eu.exeris.tooling.codegen.java.support.DomainTypeKind;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
@@ -146,7 +147,7 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
         }
         boolean hasProperties = graph.properties() != null && !graph.properties().isEmpty();
 
-        String packageName = metadata.packageName().replace(".domain", ".graph");
+        String packageName = DomainPackages.sibling(metadata, DomainPackages.GRAPH);
         String className = entity + "GraphSync";
         ClassName entityType = ClassName.get(metadata.packageName(), entity);
         ClassName selfType = ClassName.get(packageName, className);
