@@ -305,10 +305,11 @@ describe('resolveFieldRender — the list facet', () => {
 });
 
 describe('resolveFieldRender — placement', () => {
-  it('audit stamps and the version of an audited, versioned entity are system fields', () => {
+  it('audit stamps, the version and the owner of an audited, versioned, tenant-partitioned entity are system fields', () => {
     const d = domain({
       audited: true,
       versioned: true,
+      dataScope: 'TENANT',
       fields: [
         { name: 'id', type: 'java.util.UUID' },
         { name: 'createdAt', type: 'java.time.Instant' },
@@ -323,6 +324,24 @@ describe('resolveFieldRender — placement', () => {
       expect(byName.get(name)).toMatchObject({ system: true, displayed: false, form: { placement: 'none' } });
     }
     expect(byName.get('name')).toMatchObject({ system: false, displayed: true, form: { placement: 'control' } });
+  });
+
+  it('a field named for a role whose flag is off is an ordinary field: displayed, with a control', () => {
+    const d = domain({
+      fields: [
+        { name: 'id', type: 'java.util.UUID' },
+        { name: 'createdAt', type: 'java.time.Instant' },
+        { name: 'rev', type: 'java.lang.Long' },
+        { name: 'tenantId', type: 'java.util.UUID' },
+        { name: 'deleted', type: 'boolean' },
+      ],
+      systemFields: { versionField: 'rev', tenantIdField: 'tenantId' },
+    });
+    const byName = new Map(resolveFieldRenders(d, fieldRenderContext(d, [d], true)).map((r) => [r.name, r]));
+    expect(byName.get('id')).toMatchObject({ system: true, displayed: false, form: { placement: 'none' } });
+    for (const name of ['createdAt', 'rev', 'tenantId', 'deleted']) {
+      expect(byName.get(name)).toMatchObject({ system: false, displayed: true, form: { placement: 'control' } });
+    }
   });
 
   it('a readOnly field is displayed but has no control', () => {

@@ -141,9 +141,12 @@ describe('DetailGenerator emitted content — structural markers', () => {
 describe('DetailGenerator system-field filtering', () => {
   const gen = new DetailGenerator();
 
-  it('default system-field set hides id / version / createdAt / updatedAt / createdBy / updatedBy / tenantId / deletedAt / deleted from the displayed DISPLAY_FIELDS table', () => {
+  it('the system fields of an audited, versioned, tenant-partitioned entity leave the displayed DISPLAY_FIELDS table', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
+      audited: true,
+      versioned: true,
+      dataScope: 'TENANT',
       fields: [
         field({ name: 'id', type: 'UUID' }),
         field({ name: 'version', type: 'Long' }),
@@ -161,6 +164,29 @@ describe('DetailGenerator system-field filtering', () => {
     expect(content).not.toContain("name: 'version' as keyof Order");
     expect(content).not.toContain("name: 'createdAt' as keyof Order");
     expect(content).not.toContain("name: 'updatedAt' as keyof Order");
+    expect(content).not.toContain("name: 'createdBy' as keyof Order");
+    expect(content).not.toContain("name: 'tenantId' as keyof Order");
+  });
+
+  it('a field named for a role whose flag is off stays in the DISPLAY_FIELDS table', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      systemFields: { primaryKeyField: 'id', versionField: 'revision' },
+      fields: [
+        field({ name: 'id', type: 'UUID' }),
+        field({ name: 'revision', type: 'Long' }),
+        field({ name: 'createdAt', type: 'Instant' }),
+        field({ name: 'tenantId', type: 'UUID' }),
+        field({ name: 'deleted', type: 'boolean' }),
+      ],
+    }), CTX)!.content;
+
+    expect(content).not.toContain("name: 'id' as keyof Order");
+    for (const name of ['revision', 'createdAt', 'tenantId', 'deleted']) {
+      expect(content).toContain(`name: '${name}' as keyof Order`);
+    }
+    expect(content).not.toContain('>Created</dt>');
+    expect(content).not.toContain('>Version</dt>');
   });
 
   it('the key primaryKeyField names leaves the field table for the system panel', () => {
@@ -489,12 +515,12 @@ describe('DetailGenerator — defects exposed by wiring', () => {
   });
 
   // TS2339 before: emitted unconditionally against entities that declare neither field.
-  it('renders the audit stamps only for an entity that declares them', () => {
+  it('renders the audit stamps of an audited entity that declares them off the entity', () => {
     const bare = generateDetail(idOnly, DEFAULT_CONFIG).content;
     expect(bare).not.toContain('createdAt');
     expect(bare).not.toContain('updatedAt');
 
-    const withStamps = generateDetail(stamped, DEFAULT_CONFIG).content;
+    const withStamps = generateDetail({ ...stamped, audited: true }, DEFAULT_CONFIG).content;
     expect(withStamps).toContain("entity()?.createdAt | date:'medium'");
     expect(withStamps).toContain("entity()?.updatedAt | date:'medium'");
   });
@@ -522,6 +548,7 @@ describe('DetailGenerator — defects exposed by wiring', () => {
     const renamed = DomainMetadataSchema.parse({
       packageName: 'com.shop', entityName: 'Order',
       fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'insertedOn', type: 'java.time.Instant' }],
+      audited: true,
       systemFields: { createdAtField: 'insertedOn' },
     });
     const content = generateDetail(renamed, DEFAULT_CONFIG).content;
@@ -626,11 +653,12 @@ describe('DetailGenerator — system panel', () => {
     expect(content).toContain('{ createdAt?: string; updatedAt?: string; version?: number }');
   });
 
-  it('shows a declared stamp an unaudited entity carries, as before', () => {
+  it('leaves a declared stamp of an unaudited entity in the field table, with no panel row', () => {
     const content = generateDetail(parse({
       fields: [id, title, { name: 'createdAt', type: 'java.time.Instant' }],
     }), DEFAULT_CONFIG).content;
-    expect(content).toContain("@if (entity()?.createdAt) { <div><dt class=\"text-gray-400\">Created</dt><dd>{{ entity()?.createdAt | date:'medium' }}</dd></div> }");
+    expect(content).toContain("name: 'createdAt' as keyof Ticket");
+    expect(content).not.toContain('Created</dt>');
     expect(content).not.toContain('Updated</dt>');
     expect(content).not.toContain('systemInfo');
   });

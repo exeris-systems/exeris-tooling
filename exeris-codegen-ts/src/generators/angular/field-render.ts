@@ -188,11 +188,12 @@ export interface FieldRenderModel {
 
 /**
  * Fields the form never offers: lifecycle and tenancy state the server owns, whatever the entity's
- * system-field block says.
+ * system-field block says. The system roles (audit stamps, soft delete, version) are not listed:
+ * they are system fields only while the entity's flag switches the role on (`viewSystemFieldNames`).
  */
 const LIFECYCLE_FIELDS = new Set([
   'active', 'onboardingStatus', 'onboardingStartedAt', 'onboardingCompletedAt', 'hierarchyLevel',
-  'parentTenantId', 'createdAt', 'updatedAt', 'deleted', 'version',
+  'parentTenantId',
 ]);
 
 const DATA_TYPE_FACETS = new Set<string>(['currency', 'percent', 'url']);

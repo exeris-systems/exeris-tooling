@@ -334,5 +334,11 @@
     "since": "0.11",
     "adr": "ADR-105",
     "justification": "The kernel application refuses a route that demands an identity to a caller without the bearer token, and reads identity from the Authorization header only. A page is guarded by the requirement of the backend route it calls first, so the frontend admits a navigation exactly where the backend admits the request. A live view whose stream routes demand an identity is opened with fetch, because a native EventSource cannot send the header, and a per-action stream client whose action route demands one adds the header to its POST; neither passes through the HttpClient interceptor. The stream clients keep their classes, members and types. app.routes.ts is a seed, so an existing app adds the guards by hand. An app whose entities and actions declare no access, or only PUBLIC, regenerates byte-identically. docs/migration/0.11.0/ts-13-route-guards-and-identity-live-views.md carries the step."
+  },
+  {
+    "signature": "<Entity>Create, <Entity>Update, <Entity>SortField, <Entity>Filter, <entity>-form.component.ts, <entity>-detail.component.ts, <entity>-list.component.ts: a field in a system role whose @ExerisDomain flag is off (tenant, audited, softDelete, versioned) is an ordinary field: carried by both request types, sortable and filterable, a form control, a field-table row and a candidate default column; the fields of an active role are system fields whether or not a systemFields block names them",
+    "since": "0.11",
+    "adr": "ADR-092",
+    "justification": "The kernel application treats a role whose flag is off as an ordinary column, and the request types follow it, so the views must offer the field the request types carry: a form that rendered no control for a flagless @Version or @AuditCreatedAt field sent a body without it, and the server stored null. The views now classify system fields by the same rule as the request types (src/core/system-columns.ts, the twin of the Java SystemColumns), and no longer leave out tenantId, createdAt, updatedAt, version or deleted by name. An entity whose flags are all on regenerates byte-identically apart from deletedAt and deletedBy on a softDelete entity, which leave the form and the views. docs/migration/0.11.0/ts-15-system-marker-without-flag-in-request-types.md carries the step."
   }
 ]

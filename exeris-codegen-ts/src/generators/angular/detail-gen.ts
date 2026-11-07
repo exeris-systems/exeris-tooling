@@ -20,7 +20,7 @@ import type { BackendType } from '../../core/backend-strategy.js';
 import { declaresPrimaryKey, primaryKeyField } from '../../core/primary-key.js';
 import { outPath } from '../../core/paths.js';
 import { testIdSegment, tsSingleQuoted, tsTemplateText } from './ts-literal.js';
-import { auditFieldNames, updateVersionField, viewSystemFieldNames } from '../api/type-gen.js';
+import { auditFieldNames, updateVersionField } from '../api/type-gen.js';
 import { fieldRenderContext, isEnumField, resolveFieldRenders, toTitleCase, type FieldRenderModel } from './field-render.js';
 import { filterProperties, foreignKeyBase, foreignKeyParam } from './list-query.js';
 import type { FieldMetadata, RelationshipMetadata } from '../../models/domain-model.js';
@@ -929,21 +929,18 @@ interface SystemPanelRow {
 /**
  * The audit stamps and the version the system panel shows, in that order.
  *
- * An `audited` entity always shows both stamps under the names `auditFieldNames` resolves: the
- * generated repository writes them on every row whether or not the entity declares them. On any
- * other entity a stamp shows only when the entity declares it and it is a system field, so a field
- * the field table leaves out appears here instead of nowhere. A `versioned` entity shows its version.
+ * An `audited` entity shows both stamps under the names `auditFieldNames` resolves: the generated
+ * repository writes them on every row whether or not the entity declares them. On any other entity
+ * a field named for a stamp is an ordinary field, shown in the field table. A `versioned` entity
+ * shows its version.
  */
 function systemPanelRows(metadata: DomainMetadata): SystemPanelRow[] {
   const declared = new Set(metadata.fields.map((f) => f.name));
-  const system = viewSystemFieldNames(metadata);
   const audit = auditFieldNames(metadata);
   const rows: SystemPanelRow[] = [];
   const stamps: Array<[string, string]> = [[audit.createdAt, 'Created'], [audit.updatedAt, 'Updated']];
   for (const [name, label] of stamps) {
-    if (metadata.audited || (declared.has(name) && system.includes(name))) {
-      rows.push({ name, label, kind: 'date', declared: declared.has(name) });
-    }
+    if (metadata.audited) rows.push({ name, label, kind: 'date', declared: declared.has(name) });
   }
   const version = updateVersionField(metadata);
   if (version) rows.push({ name: version.name, label: 'Version', kind: 'number', declared: version.declared });

@@ -5,7 +5,8 @@
 
 import { outPath } from '../../core/paths.js';
 import { primaryKeyField } from '../../core/primary-key.js';
-import { omittedFromCreate, omittedFromUpdate } from '../../core/server-owned-fields.js';
+import { omittedFromCreate, omittedFromUpdate, systemRoleFieldNames } from '../../core/server-owned-fields.js';
+import { systemRoleField } from '../../core/system-columns.js';
 import { ownerFieldName, type DomainMetadata, type FieldMetadata } from '../../models/domain-model.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import { modelTypeName } from '../../models/model-naming.js';
@@ -303,55 +304,15 @@ export function buildZodType(field: FieldMetadata, scope?: TypeScope): string {
 }
 
 /**
- * The fields the server owns: the id, plus whatever the entity's `systemFields` block
- * declares (or the `version`/`createdAt`/`updatedAt` default when it declares none), plus the
- * owner of a tenant-partitioned entity.
- *
- * The owner is `ownerFieldName`: the generated repository stamps the bound tenant, answers 400 to
- * another one and never updates it, and the emitted OpenAPI marks it read-only and leaves it out of
- * both DTOs (ADR-090). A GLOBAL entity has no owner, so a field it declares as `tenantId` is
- * writable even when its block names `tenantIdField`, as it is in the OpenAPI.
- *
- * A UNIVERSE entity's `sharedScopeField` is server-owned exactly like its `tenantIdField`: the
- * generated repository stamps it from the bound storage context, and the emitted OpenAPI marks it
- * read-only, so the create/update DTOs never carry it.
- */
-export function systemFieldNames(metadata: DomainMetadata): string[] {
-  const fields = [primaryKeyField(metadata)];
-  const sf = metadata.systemFields;
-  const owner = ownerFieldName(metadata);
-
-  if (sf) {
-    if (sf.versionField) fields.push(sf.versionField);
-    if (sf.createdAtField) fields.push(sf.createdAtField);
-    if (sf.updatedAtField) fields.push(sf.updatedAtField);
-    if (sf.createdByField) fields.push(sf.createdByField);
-    if (sf.updatedByField) fields.push(sf.updatedByField);
-    if (owner) fields.push(owner);
-    if (sf.softDeleteField) fields.push(sf.softDeleteField);
-    if (sf.softDeleteTimestampField) fields.push(sf.softDeleteTimestampField);
-    if (sf.softDeletedByField) fields.push(sf.softDeletedByField);
-    if (sf.sharedScopeField) fields.push(sf.sharedScopeField);
-  } else {
-    // Default system fields
-    fields.push('version', 'createdAt', 'updatedAt');
-    if (owner) fields.push(owner);
-  }
-
-  return [...new Set(fields)];
-}
-
-/**
- * The audit stamp names: `systemFields.createdAtField` / `updatedAtField`, or `createdAt` /
- * `updatedAt` when the entity names none (a blank name falls back too). These are the properties
- * the generated repository stamps on every row of an `audited` entity, whether or not the entity
+ * The audit stamp names: the `systemFields` block's `createdAtField` / `updatedAtField`, or
+ * `createdAt` / `updatedAt` when it names none (`systemRoleField`). These are the properties the
+ * generated repository stamps on every row of an `audited` entity, whether or not the entity
  * declares them as fields.
  */
 export function auditFieldNames(metadata: DomainMetadata): { createdAt: string; updatedAt: string } {
-  const sf = metadata.systemFields;
   return {
-    createdAt: sf?.createdAtField || 'createdAt',
-    updatedAt: sf?.updatedAtField || 'updatedAt',
+    createdAt: systemRoleField(metadata, 'CREATED_AT'),
+    updatedAt: systemRoleField(metadata, 'UPDATED_AT'),
   };
 }
 
@@ -360,30 +321,17 @@ export function auditFieldNames(metadata: DomainMetadata): { createdAt: string; 
  * view's field table, no default list column. The detail view's system panel shows the id, the
  * audit stamps and the version instead.
  *
- * It is `systemFieldNames` plus what the flags make server-owned (the audit stamps on `audited`,
- * the version on `versioned`, the soft-delete flag on `softDelete`), plus `tenantId`, which the
- * views never render whatever the block says. An entity without a `systemFields` block also keeps
- * the conventional names (`createdBy`, `updatedBy`, `deleted`, `deletedAt`), since without a block
- * nothing names its system fields otherwise. The order is stable: `systemFieldNames` first, then
- * the additions in the order listed.
+ * They are the fields the request types leave to the server (`systemRoleFieldNames`): the key, the
+ * fields of the roles the entity's flags switch on and a UNIVERSE entity's shared scope. A field
+ * named for a role whose flag is off is an ordinary field and renders like one. Sorted.
  */
 export function viewSystemFieldNames(metadata: DomainMetadata): string[] {
-  const names = systemFieldNames(metadata);
-  if (metadata.audited) {
-    const audit = auditFieldNames(metadata);
-    names.push(audit.createdAt, audit.updatedAt);
-  }
-  const version = updateVersionField(metadata);
-  if (version) names.push(version.name);
-  if (metadata.softDelete) names.push(metadata.systemFields?.softDeleteField || 'deleted');
-  names.push('tenantId');
-  if (!metadata.systemFields) names.push('createdBy', 'updatedBy', 'deleted', 'deletedAt');
-  return [...new Set(names)];
+  return systemRoleFieldNames(metadata);
 }
 
 /** The optimistic-lock field a versioned entity's update carries. */
 export interface UpdateVersionField {
-  /** The property name: `systemFields.versionField`, or `version` when the entity names none. */
+  /** The property name: `systemFields.versionField`, or `version` when the entity names none (`systemRoleField`). */
   name: string;
   /** The TS type, mirroring the entity interface's type for the field (`number` when undeclared). */
   tsType: string;
@@ -403,7 +351,7 @@ export interface UpdateVersionField {
  */
 export function updateVersionField(metadata: DomainMetadata): UpdateVersionField | undefined {
   if (!metadata.versioned) return undefined;
-  const name = metadata.systemFields?.versionField || 'version';
+  const name = systemRoleField(metadata, 'VERSION');
   const field = metadata.fields.find((f) => f.name === name);
   if (!field) return { name, tsType: 'number', zodType: 'z.number()', declared: false };
   const mapping = DslMapper.mapType(field.type);

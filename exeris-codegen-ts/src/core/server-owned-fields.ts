@@ -8,22 +8,17 @@
  * matches on the value the client loaded.
  *
  * A role counts under its declared name, else its default one, and only when the entity's flag for
- * it is on: the audit roles on an `audited` entity, the soft-delete roles on a `softDelete` one, the
- * version on a `versioned` one, as on the Java side (`SystemColumns`). A field named for a role
- * whose flag is off is an ordinary domain field: both bodies carry it.
+ * it is on (`system-columns.ts`, the twin of the Java side's `SystemColumns`). A field named for a
+ * role whose flag is off is an ordinary domain field: both bodies carry it.
  */
 
 import { primaryKeyField } from './primary-key.js';
-import { effectiveDataScope, ownerFieldName, type DomainMetadata } from '../models/domain-model.js';
-
-/** A role's name: the declared one, or the default when none or a blank one is declared. */
-function role(declared: string | undefined, fallback: string): string {
-  return declared === undefined || declared.trim() === '' ? fallback : declared;
-}
+import { activeSystemRoleFields, systemRoleField } from './system-columns.js';
+import { effectiveDataScope, type DomainMetadata } from '../models/domain-model.js';
 
 /** The version field's name, whether or not the entity is versioned. */
 function versionFieldName(metadata: DomainMetadata): string {
-  return role(metadata.systemFields?.versionField, 'version');
+  return systemRoleField(metadata, 'VERSION');
 }
 
 /** The `@SharedScope` field of a UNIVERSE entity, which the update still writes from the body. */
@@ -34,26 +29,12 @@ function sharedScopeFieldName(metadata: DomainMetadata): string | undefined {
 }
 
 /**
- * Every system-role field of the entity, the version included: the TS twin of
+ * Every system field of the entity, the version included: the key, the fields of the roles the
+ * flags switch on (`activeSystemRoleFields`) and a UNIVERSE entity's shared scope. The TS twin of
  * `ListQuerySupport#systemFieldNames`. Sorted.
  */
 export function systemRoleFieldNames(metadata: DomainMetadata): string[] {
-  const sf = metadata.systemFields;
-  const names = new Set<string>([primaryKeyField(metadata)]);
-  const owner = ownerFieldName(metadata);
-  if (owner) names.add(owner);
-  if (metadata.audited) {
-    names.add(role(sf?.createdAtField, 'createdAt'));
-    names.add(role(sf?.createdByField, 'createdBy'));
-    names.add(role(sf?.updatedAtField, 'updatedAt'));
-    names.add(role(sf?.updatedByField, 'updatedBy'));
-  }
-  if (metadata.versioned) names.add(versionFieldName(metadata));
-  if (metadata.softDelete) {
-    names.add(role(sf?.softDeleteField, 'deleted'));
-    names.add(role(sf?.softDeleteTimestampField, 'deletedAt'));
-    names.add(role(sf?.softDeletedByField, 'deletedBy'));
-  }
+  const names = new Set<string>([primaryKeyField(metadata), ...activeSystemRoleFields(metadata)]);
   const shared = sharedScopeFieldName(metadata);
   if (shared) names.add(shared);
   return [...names].sort();
