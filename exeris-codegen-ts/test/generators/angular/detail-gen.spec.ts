@@ -1115,7 +1115,7 @@ describe('DetailGenerator — @Tab layout and navigation', () => {
         tabs: [
           { name: 'thirdTab', order: 30, icon: '📦', fields: ['f3'] },
           { name: 'firstTab', order: 10, label: 'First Tab', icon: '👤', fields: ['f1'] },
-          { name: 'secondTab', order: 20, fields: ['f2'] },
+          { name: 'secondTab', order: 20, icon: 'history', fields: ['f2'] },
         ],
       },
     }), CTX)!.content;
@@ -1131,7 +1131,8 @@ describe('DetailGenerator — @Tab layout and navigation', () => {
     // Label fallback: thirdTab has no label so uses name; secondTab has no label so uses name
     expect(content).toContain('<span class="mr-2">👤</span>First Tab');
     expect(content).toContain('<span class="mr-2">📦</span>thirdTab');
-    expect(content).toContain('secondTab');
+    // A Material icon name renders through the font, hidden from assistive technology
+    expect(content).toContain('<span class="material-symbols-outlined mr-2" aria-hidden="true">history</span>secondTab');
   });
 
   it('groups inside a tab are restricted to that tab\'s member fields', () => {

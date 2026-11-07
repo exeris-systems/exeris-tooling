@@ -89,3 +89,23 @@ describe('deriveScaffoldNeeds — typography', () => {
     expect(BACKEND_SCAFFOLD_NEEDS.typography).toBe(false);
   });
 });
+
+describe('deriveScaffoldNeeds — Material Symbols', () => {
+  it('a class attribute naming the Material Symbols class needs the font', () => {
+    const content = '<span class="material-symbols-outlined mr-2" aria-hidden="true">badge</span>';
+    expect(deriveScaffoldNeeds([], [file(content)]).materialSymbols).toBe(true);
+  });
+
+  it('the class outside a class attribute, or inside a longer class name, does not', () => {
+    const content = [
+      '<span class="material-symbols-outlined-fill">badge</span>',
+      "const cls = 'material-symbols-outlined';",
+      '<span class="mr-2">📋</span>',
+    ].join('\n');
+    expect(deriveScaffoldNeeds([], [file(content)]).materialSymbols).toBe(false);
+  });
+
+  it('the default needs carry no icon font', () => {
+    expect(BACKEND_SCAFFOLD_NEEDS.materialSymbols).toBeUndefined();
+  });
+});
