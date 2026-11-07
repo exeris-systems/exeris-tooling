@@ -4,7 +4,7 @@ type: howto
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-11-04
+last-verified: 2026-11-07
 ---
 
 # Project into a graph
@@ -13,7 +13,7 @@ last-verified: 2026-11-04
 
 **Goal:** generate the `graph` scenario's `Product`, read its `ProductGraphSync`, and see where the generated application calls it.
 
-> **Verified against** exeris-tooling `main` at commit `dc4564a2` (`0.11.0-SNAPSHOT`) and `exeris-sdk-examples` at tag `v0.13.3`, 2026-11-04. Generated snippets are quoted from the `SdkExamplesE2ETest` workspace, `exeris-e2e-tests/target/sdk-examples/app/`. If a snippet and its source disagree, **the source wins and this guide is the defect**.
+> **Verified against** exeris-tooling `main` at commit `5528cd59` with the change that wires the graph sync into the generated application applied (`0.11.0-SNAPSHOT`), and `exeris-sdk-examples` at tag `v0.13.3`, 2026-11-07. Every step was re-checked. Generated snippets are quoted from the `SdkExamplesE2ETest` workspace, `exeris-e2e-tests/target/sdk-examples/app/`. If a snippet and its source disagree, **the source wins and this guide is the defect**.
 
 ## Prerequisites
 
@@ -105,7 +105,7 @@ public void delete(UUID id) {
 }
 ```
 
-The sync runs after the repository returns, so after the row has committed: the graph SPI offers no transaction that spans the relational store. A write the repository refuses, a missing row or a conflict, throws before the graph is touched. A graph failure propagates, so the route answers `500` for a row that is stored. To let the write stand instead, return a graph sync that catches from an override of `createProductGraphSync()`:
+The sync runs after the repository returns, so after the row has committed: the graph SPI offers no transaction that spans the relational store. A write the repository refuses, a missing row or a conflict, throws before the graph is touched. A graph failure propagates, so the route answers `500` for a row that is stored, and a failed delete publishes none of its `DELETE` events: a retried `DELETE` answers `404`. For an entity with `@Blob` fields that is hard-deleted, the delete route still deletes the row's stored objects on that failure when the row is gone. To let the write stand instead, return a graph sync that catches from an override of `createProductGraphSync()`:
 
 ```java
 @Override
@@ -117,6 +117,15 @@ protected ProductGraphSync createProductGraphSync() {
                 super.syncToGraph(entity);
             } catch (RuntimeException e) {
                 // logged by the graph sync; the node catches up on the entity's next write
+            }
+        }
+
+        @Override
+        public void deleteFromGraph(UUID entityId) {
+            try {
+                super.deleteFromGraph(entityId);
+            } catch (RuntimeException e) {
+                // logged by the graph sync; the node stays until it is deleted again
             }
         }
     };

@@ -876,7 +876,12 @@ class KernelApplicationGeneratorTest {
                         + "{@link #createProductGraphSync()}, {@link #createCategoryGraphSync()}, "
                         + "{@link #createLedgerGraphSync()}")
                 .contains("{@link KernelProviders#MEMORY_ALLOCATOR} — read by {@link #createProductGraphSync()}, "
-                        + "{@link #createProductHandler()}");
+                        + "{@link #createProductHandler()}")
+                .contains("service, graph sync, handler, publisher, subscriber and saga flow it");
+        DomainMetadata invoice = DomainMetadata.builder("Invoice", "com.example.domain").path("/invoices").build();
+        assertThat(components(gen.generateAll(List.of(invoice), "com.example.foundation")))
+                .contains("service, handler, publisher, subscriber and saga flow it wires or")
+                .doesNotContain("graph sync");
     }
 
     @Test

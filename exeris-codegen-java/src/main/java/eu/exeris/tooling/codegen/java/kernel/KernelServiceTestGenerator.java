@@ -142,7 +142,7 @@ public final class KernelServiceTestGenerator {
         type.addMethod(deleteTest(wiring, stubType));
         type.addMethod(countTest(wiring, stubType));
         if (wiring.synced()) {
-            type.addMethod(refusedWriteTest(entityType, wiring, stubType));
+            type.addMethod(refusedWriteTest(entityType, wiring, stubType, requestUpdate));
         }
         type.addType(stubRepository(metadata, entityType, repositoryType, stubType, finders, wiring.synced()));
         if (wiring.synced()) {
@@ -298,8 +298,9 @@ public final class KernelServiceTestGenerator {
      * A write the repository refuses throws before the graph is touched: nothing is projected for a
      * row that did not land.
      */
-    private MethodSpec refusedWriteTest(ClassName entityType, Wiring wiring, ClassName stubType) {
-        return test("aWriteTheRepositoryRefusesIsNotProjectedIntoTheGraph")
+    private MethodSpec refusedWriteTest(ClassName entityType, Wiring wiring, ClassName stubType,
+                                        boolean requestUpdate) {
+        MethodSpec.Builder test = test("aWriteTheRepositoryRefusesIsNotProjectedIntoTheGraph")
                 .addStatement("$T repository = new $T()", stubType, stubType)
                 .addStatement("repository.refusal = new $T($S)", IllegalStateException.class, "refused")
                 .addCode(wiring.newService())
@@ -308,8 +309,13 @@ public final class KernelServiceTestGenerator {
                 .addStatement("$T.assertThatThrownBy(() -> service.update($T.fromString($S), new $T()))"
                         + ".isSameAs(repository.refusal)", ASSERTIONS, UUID, FIXED_ID, entityType)
                 .addStatement("$T.assertThatThrownBy(() -> service.delete($T.fromString($S)))"
-                        + ".isSameAs(repository.refusal)", ASSERTIONS, UUID, FIXED_ID)
-                .addStatement("$T.assertThat(graphSync.calls).isZero()", ASSERTIONS)
+                        + ".isSameAs(repository.refusal)", ASSERTIONS, UUID, FIXED_ID);
+        if (requestUpdate) {
+            test.addStatement("$T.assertThatThrownBy(() -> service.$L($T.fromString($S), new $T()))"
+                            + ".isSameAs(repository.refusal)", ASSERTIONS,
+                    KernelRepositoryGenerator.UPDATE_FROM_REQUEST_METHOD, UUID, FIXED_ID, entityType);
+        }
+        return test.addStatement("$T.assertThat(graphSync.calls).isZero()", ASSERTIONS)
                 .build();
     }
 
