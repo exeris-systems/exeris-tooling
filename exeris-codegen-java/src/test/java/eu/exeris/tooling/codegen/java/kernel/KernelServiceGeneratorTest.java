@@ -3,7 +3,10 @@ package eu.exeris.tooling.codegen.java.kernel;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.DataScope;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.GraphEdgeMetadata;
+import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -126,5 +129,73 @@ class KernelServiceGeneratorTest {
                 .contains("public Order updateFromRequest(UUID id, Order entity) { "
                         + "Order updated = repository.updateFromRequest(id, entity);");
         assertThat(plain).doesNotContain("updateFromRequest");
+    }
+
+    private static DomainMetadata.Builder graphProduct() {
+        return DomainMetadata.builder("Product", "com.example.domain").path("/products")
+                .fields(List.of(FieldMetadata.builder("categoryId", "UUID").build()))
+                .graphMetadata(new GraphMetadata("Product", List.of(),
+                        List.of(new GraphEdgeMetadata("categoryId", "Category", "BELONGS_TO")), List.of()));
+    }
+
+    private static String flat(DomainMetadata metadata) {
+        return new KernelServiceGenerator().generate(metadata).content().replaceAll("\\s+", " ");
+    }
+
+    @Test
+    @DisplayName("a graph entity's service takes its graph sync and projects each write after the repository returns")
+    void graphEntityProjectsEveryWrite() {
+        String service = flat(graphProduct()
+                .fields(List.of(FieldMetadata.builder("categoryId", "UUID").build(),
+                        FieldMetadata.builder("sku", "String").readOnly(true).build()))
+                .build());
+
+        assertThat(service)
+                .contains("import com.example.graph.ProductGraphSync;")
+                .contains("private final ProductGraphSync graphSync;")
+                .contains("public ProductService(ProductRepository repository, ProductGraphSync graphSync) { "
+                        + "this.repository = repository; this.graphSync = graphSync; }")
+                .contains("Product saved = repository.save(entity); graphSync.syncToGraph(saved); return saved;")
+                .contains("Product updated = repository.update(id, entity); graphSync.syncToGraph(updated); "
+                        + "return updated;")
+                .contains("Product updated = repository.updateFromRequest(id, entity); "
+                        + "graphSync.syncToGraph(updated); return updated;")
+                .contains("repository.deleteById(id); graphSync.deleteFromGraph(id);")
+                .doesNotContain("public ProductService(ProductRepository repository) {");
+    }
+
+    @Test
+    @DisplayName("a soft-delete graph entity's delete removes the node as well")
+    void softDeleteRemovesTheNode() {
+        assertThat(flat(graphProduct().softDelete(true).build()))
+                .contains("public void delete(UUID id) { repository.deleteById(id); graphSync.deleteFromGraph(id); }");
+    }
+
+    @Test
+    @DisplayName("a tenant-partitioned graph entity's service is a non-graph service plus a sentence saying why")
+    void tenantGraphEntityIsNotProjected() {
+        String tenantGraph = new KernelServiceGenerator().generate(
+                graphProduct().dataScope(DataScope.TENANT).build()).content();
+        String tenantPlain = new KernelServiceGenerator().generate(
+                DomainMetadata.builder("Product", "com.example.domain").path("/products")
+                        .fields(List.of(FieldMetadata.builder("categoryId", "UUID").build()))
+                        .dataScope(DataScope.TENANT).build()).content();
+
+        assertThat(tenantGraph)
+                .doesNotContain("GraphSync graphSync")
+                .doesNotContain("syncToGraph")
+                .contains("Writes are not projected into the graph: the entity is tenant-partitioned");
+        int from = tenantGraph.indexOf(" * <p>Writes are not projected");
+        int to = tenantGraph.indexOf("that calls it.\n", from) + "that calls it.\n".length();
+        assertThat(tenantGraph.substring(0, from) + tenantGraph.substring(to)).isEqualTo(tenantPlain);
+    }
+
+    @Test
+    @DisplayName("a service without graph metadata carries no graph member and no graph sentence")
+    void nonGraphServiceUnchanged() {
+        String service = new KernelServiceGenerator().generate(
+                DomainMetadata.builder("Order", "com.example.domain").path("/orders").build()).content();
+
+        assertThat(service).doesNotContain("raph");
     }
 }

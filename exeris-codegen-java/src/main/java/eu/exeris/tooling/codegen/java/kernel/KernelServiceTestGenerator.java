@@ -34,6 +34,11 @@ import java.util.List;
  *   <li>Each T8 finder reaches the same-named repository finder, with the argument passed through.
  *       That the method <em>exists</em> is a compile-time fact; that the call is wired to the right
  *       one is not.</li>
+ *   <li>For an entity whose service projects into the graph, each write projects the entity the
+ *       repository <em>returned</em>, and a delete removes the deleted id, once each; a write the
+ *       repository refuses projects nothing. A nested {@code RecordingGraphSync} subclasses the
+ *       generated graph sync, whose constructor only assigns the engine, so no graph engine is
+ *       involved either.</li>
  * </ul>
  *
  * <p>Both surfaces are emitted from {@link KernelRepositoryGenerator#finderSpecs}, so a double that
@@ -78,6 +83,8 @@ public final class KernelServiceTestGenerator {
     private static final ClassName UUID = ClassName.get("java.util", "UUID");
     private static final ClassName LIST = ClassName.get("java.util", "List");
     private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
+    private static final String RECORDING_GRAPH_SYNC = "RecordingGraphSync";
+    private static final String PERSISTED = "persisted";
 
     /**
      * Creates the generator. It keeps no per-domain state, so one instance serves every domain
@@ -109,6 +116,8 @@ public final class KernelServiceTestGenerator {
                 ClassName.get(infrastructureBase + ".repository", entity + "Repository");
         ClassName stubType = ClassName.bestGuess("Stub" + entity + "Repository");
         List<FinderSpec> finders = KernelRepositoryGenerator.finderSpecs(metadata);
+        Wiring wiring = new Wiring(serviceType, KernelGraphSyncGenerator.syncedByService(metadata)
+                ? ClassName.bestGuess(RECORDING_GRAPH_SYNC) : null);
 
         TypeSpec.Builder type = KernelScaffold.publicClass(className)
                 .addJavadoc("Generated tests for {@link $T}.\n", serviceType)
@@ -118,32 +127,38 @@ public final class KernelServiceTestGenerator {
                 .addJavadoc("<p>Requires JUnit 5 and AssertJ on the test classpath, and nothing else.\n")
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n");
 
-        type.addMethod(findByIdTest(entityType, serviceType, stubType));
-        type.addMethod(findAllTest(entityType, serviceType, stubType));
-        type.addMethod(findPageTest(metadata, entityType, serviceType, stubType));
+        type.addMethod(findByIdTest(entityType, wiring, stubType));
+        type.addMethod(findAllTest(entityType, wiring, stubType));
+        type.addMethod(findPageTest(metadata, entityType, wiring, stubType));
         for (FinderSpec finder : finders) {
-            type.addMethod(finderTest(entityType, serviceType, stubType, finder));
+            type.addMethod(finderTest(entityType, wiring, stubType, finder));
         }
-        type.addMethod(saveTest(entityType, serviceType, stubType));
-        type.addMethod(updateTest(entityType, serviceType, stubType));
+        type.addMethod(saveTest(entityType, wiring, stubType));
+        type.addMethod(updateTest(entityType, wiring, stubType));
         boolean requestUpdate = KernelRepositoryGenerator.hasRequestUpdate(metadata);
         if (requestUpdate) {
-            type.addMethod(updateFromRequestTest(entityType, serviceType, stubType));
+            type.addMethod(updateFromRequestTest(entityType, wiring, stubType));
         }
-        type.addMethod(deleteTest(serviceType, stubType));
-        type.addMethod(countTest(serviceType, stubType));
-        type.addType(stubRepository(metadata, entityType, repositoryType, stubType, finders));
+        type.addMethod(deleteTest(wiring, stubType));
+        type.addMethod(countTest(wiring, stubType));
+        if (wiring.synced()) {
+            type.addMethod(refusedWriteTest(entityType, wiring, stubType, requestUpdate));
+        }
+        type.addType(stubRepository(metadata, entityType, repositoryType, stubType, finders, wiring.synced()));
+        if (wiring.synced()) {
+            type.addType(recordingGraphSync(metadata, entityType));
+        }
 
         return new GeneratedFile(packageName, className,
                 KernelScaffold.render(packageName, type.build()), ArtifactType.TEST);
     }
 
-    private MethodSpec findByIdTest(ClassName entityType, ClassName serviceType, ClassName stubType) {
+    private MethodSpec findByIdTest(ClassName entityType, Wiring wiring, ClassName stubType) {
         return test("findByIdDelegatesTheIdAndReturnsTheRepositoryResult")
                 .addStatement("$T found = new $T()", entityType, entityType)
                 .addStatement("$T repository = new $T()", stubType, stubType)
                 .addStatement("repository.byId = $T.of(found)", OPTIONAL)
-                .addStatement("$T service = new $T(repository)", serviceType, serviceType)
+                .addCode(wiring.newService())
                 .addStatement("$T.assertThat(service.findById($T.fromString($S))).containsSame(found)",
                         ASSERTIONS, UUID, FIXED_ID)
                 .addStatement("$T.assertThat(repository.lookedUp).isEqualTo($T.fromString($S))",
@@ -151,11 +166,11 @@ public final class KernelServiceTestGenerator {
                 .build();
     }
 
-    private MethodSpec findAllTest(ClassName entityType, ClassName serviceType, ClassName stubType) {
+    private MethodSpec findAllTest(ClassName entityType, Wiring wiring, ClassName stubType) {
         return test("findAllReturnsTheRepositoryResult")
                 .addStatement("$T repository = new $T()", stubType, stubType)
                 .addStatement("repository.all = $T.of(new $T())", LIST, entityType)
-                .addStatement("$T service = new $T(repository)", serviceType, serviceType)
+                .addCode(wiring.newService())
                 .addStatement("$T.assertThat(service.findAll()).isSameAs(repository.all)", ASSERTIONS)
                 .build();
     }
@@ -164,14 +179,14 @@ public final class KernelServiceTestGenerator {
      * The list route's read: the query arrives at the repository unchanged, and the repository's page
      * is what comes back.
      */
-    private MethodSpec findPageTest(DomainMetadata metadata, ClassName entityType, ClassName serviceType,
+    private MethodSpec findPageTest(DomainMetadata metadata, ClassName entityType, Wiring wiring,
                                     ClassName stubType) {
         ClassName queryType = KernelListQueryGenerator.listQueryType(metadata);
         ClassName pageType = KernelListQueryGenerator.pageType(metadata);
         return test("findPageDelegatesTheQueryAndReturnsTheRepositoryPage")
                 .addStatement("$T repository = new $T()", stubType, stubType)
                 .addStatement("repository.page = $T.of($T.of(new $T()), 1L, 0, 1)", pageType, LIST, entityType)
-                .addStatement("$T service = new $T(repository)", serviceType, serviceType)
+                .addCode(wiring.newService())
                 .addStatement("$T query = $T.of(0, 1)", queryType, queryType)
                 .addStatement("$T.assertThat(service.findPage(query)).isSameAs(repository.page)", ASSERTIONS)
                 .addStatement("$T.assertThat(repository.listQuery).isSameAs(query)", ASSERTIONS)
@@ -183,13 +198,13 @@ public final class KernelServiceTestGenerator {
      * arrives unchanged. The recorded finder name is what makes this non-vacuous — that the method
      * compiles proves it exists, not that the delegation is wired to the right one.
      */
-    private MethodSpec finderTest(ClassName entityType, ClassName serviceType, ClassName stubType,
+    private MethodSpec finderTest(ClassName entityType, Wiring wiring, ClassName stubType,
                                   FinderSpec finder) {
         CodeBlock sample = KernelTestSamples.of(finder.paramTypeName());
         MethodSpec.Builder test = test(finder.methodName() + "DelegatesToTheRepository")
                 .addStatement("$T repository = new $T()", stubType, stubType)
                 .addStatement("repository.byFinder = $T.of(new $T())", LIST, entityType)
-                .addStatement("$T service = new $T(repository)", serviceType, serviceType)
+                .addCode(wiring.newService())
                 .addStatement("$T.assertThat(service.$L($L)).isSameAs(repository.byFinder)",
                         ASSERTIONS, finder.methodName(), sample)
                 .addStatement("$T.assertThat(repository.lastFinder).isEqualTo($S)",
@@ -201,7 +216,7 @@ public final class KernelServiceTestGenerator {
         return test.build();
     }
 
-    private MethodSpec saveTest(ClassName entityType, ClassName serviceType, ClassName stubType) {
+    private MethodSpec saveTest(ClassName entityType, Wiring wiring, ClassName stubType) {
         return test("saveReturnsWhatTheRepositoryReturnedNotItsArgument")
                 .addJavadoc("The repository's {@code save} fills in a generated id before returning,\n")
                 .addJavadoc("so a service that handed back its own argument would give callers an\n")
@@ -211,24 +226,26 @@ public final class KernelServiceTestGenerator {
                 .addStatement("$T persisted = new $T()", entityType, entityType)
                 .addStatement("$T repository = new $T()", stubType, stubType)
                 .addStatement("repository.saveResult = persisted")
-                .addStatement("$T service = new $T(repository)", serviceType, serviceType)
+                .addCode(wiring.newService())
                 .addStatement("$T.assertThat(service.save(argument)).isSameAs(persisted)", ASSERTIONS)
                 .addStatement("$T.assertThat(repository.saved).isSameAs(argument)", ASSERTIONS)
+                .addCode(wiring.projected(PERSISTED))
                 .build();
     }
 
-    private MethodSpec updateTest(ClassName entityType, ClassName serviceType, ClassName stubType) {
+    private MethodSpec updateTest(ClassName entityType, Wiring wiring, ClassName stubType) {
         return test("updateDelegatesBothArgumentsAndReturnsTheRepositoryResult")
                 .addStatement("$T argument = new $T()", entityType, entityType)
                 .addStatement("$T persisted = new $T()", entityType, entityType)
                 .addStatement("$T repository = new $T()", stubType, stubType)
                 .addStatement("repository.updateResult = persisted")
-                .addStatement("$T service = new $T(repository)", serviceType, serviceType)
+                .addCode(wiring.newService())
                 .addStatement("$T.assertThat(service.update($T.fromString($S), argument))"
                         + ".isSameAs(persisted)", ASSERTIONS, UUID, FIXED_ID)
                 .addStatement("$T.assertThat(repository.updatedId).isEqualTo($T.fromString($S))",
                         ASSERTIONS, UUID, FIXED_ID)
                 .addStatement("$T.assertThat(repository.updated).isSameAs(argument)", ASSERTIONS)
+                .addCode(wiring.projected(PERSISTED))
                 .build();
     }
 
@@ -237,7 +254,7 @@ public final class KernelServiceTestGenerator {
      * has a request-body update that keeps them and an action update that writes them, and
      * crossing the two would write a read-only field from a request or drop an action's change.
      */
-    private MethodSpec updateFromRequestTest(ClassName entityType, ClassName serviceType,
+    private MethodSpec updateFromRequestTest(ClassName entityType, Wiring wiring,
                                              ClassName stubType) {
         String method = KernelRepositoryGenerator.UPDATE_FROM_REQUEST_METHOD;
         return test("updateFromRequestReachesTheRepositorysRequestUpdate")
@@ -245,34 +262,142 @@ public final class KernelServiceTestGenerator {
                 .addStatement("$T persisted = new $T()", entityType, entityType)
                 .addStatement("$T repository = new $T()", stubType, stubType)
                 .addStatement("repository.updateResult = persisted")
-                .addStatement("$T service = new $T(repository)", serviceType, serviceType)
+                .addCode(wiring.newService())
                 .addStatement("$T.assertThat(service.$L($T.fromString($S), argument))"
                         + ".isSameAs(persisted)", ASSERTIONS, method, UUID, FIXED_ID)
                 .addStatement("$T.assertThat(repository.updated).isSameAs(argument)", ASSERTIONS)
                 .addStatement("$T.assertThat(repository.fromRequest).isTrue()", ASSERTIONS)
+                .addCode(wiring.projected(PERSISTED))
                 .addStatement("service.update($T.fromString($S), argument)", UUID, FIXED_ID)
                 .addStatement("$T.assertThat(repository.fromRequest).isFalse()", ASSERTIONS)
                 .build();
     }
 
-    private MethodSpec deleteTest(ClassName serviceType, ClassName stubType) {
+    private MethodSpec deleteTest(Wiring wiring, ClassName stubType) {
         return test("deleteDelegatesToDeleteById")
                 .addJavadoc("The one method whose name changes across the boundary.\n")
                 .addStatement("$T repository = new $T()", stubType, stubType)
-                .addStatement("$T service = new $T(repository)", serviceType, serviceType)
+                .addCode(wiring.newService())
                 .addStatement("service.delete($T.fromString($S))", UUID, FIXED_ID)
                 .addStatement("$T.assertThat(repository.deleted).isEqualTo($T.fromString($S))",
                         ASSERTIONS, UUID, FIXED_ID)
+                .addCode(wiring.removed())
                 .build();
     }
 
-    private MethodSpec countTest(ClassName serviceType, ClassName stubType) {
+    private MethodSpec countTest(Wiring wiring, ClassName stubType) {
         return test("countReturnsTheRepositoryCount")
                 .addStatement("$T repository = new $T()", stubType, stubType)
                 .addStatement("repository.count = $LL", STAGED_COUNT)
-                .addStatement("$T service = new $T(repository)", serviceType, serviceType)
+                .addCode(wiring.newService())
                 .addStatement("$T.assertThat(service.count()).isEqualTo($LL)", ASSERTIONS, STAGED_COUNT)
                 .build();
+    }
+
+    /**
+     * A write the repository refuses throws before the graph is touched: nothing is projected for a
+     * row that did not land.
+     */
+    private MethodSpec refusedWriteTest(ClassName entityType, Wiring wiring, ClassName stubType,
+                                        boolean requestUpdate) {
+        MethodSpec.Builder test = test("aWriteTheRepositoryRefusesIsNotProjectedIntoTheGraph")
+                .addStatement("$T repository = new $T()", stubType, stubType)
+                .addStatement("repository.refusal = new $T($S)", IllegalStateException.class, "refused")
+                .addCode(wiring.newService())
+                .addStatement("$T.assertThatThrownBy(() -> service.save(new $T())).isSameAs(repository.refusal)",
+                        ASSERTIONS, entityType)
+                .addStatement("$T.assertThatThrownBy(() -> service.update($T.fromString($S), new $T()))"
+                        + ".isSameAs(repository.refusal)", ASSERTIONS, UUID, FIXED_ID, entityType)
+                .addStatement("$T.assertThatThrownBy(() -> service.delete($T.fromString($S)))"
+                        + ".isSameAs(repository.refusal)", ASSERTIONS, UUID, FIXED_ID);
+        if (requestUpdate) {
+            test.addStatement("$T.assertThatThrownBy(() -> service.$L($T.fromString($S), new $T()))"
+                            + ".isSameAs(repository.refusal)", ASSERTIONS,
+                    KernelRepositoryGenerator.UPDATE_FROM_REQUEST_METHOD, UUID, FIXED_ID, entityType);
+        }
+        return test.addStatement("$T.assertThat(graphSync.calls).isZero()", ASSERTIONS)
+                .build();
+    }
+
+    /**
+     * The nested graph-sync double: records what the service projected. The generated graph sync's
+     * constructor only assigns the engine (and the allocator), and both projecting methods are
+     * overridden, so {@code super(null)} reaches no graph engine.
+     */
+    private TypeSpec recordingGraphSync(DomainMetadata metadata, ClassName entityType) {
+        return TypeSpec.classBuilder(RECORDING_GRAPH_SYNC)
+                .addModifiers(Modifier.STATIC, Modifier.FINAL)
+                .superclass(KernelGraphSyncGenerator.graphSyncType(metadata))
+                .addJavadoc("Records what the service projected into the graph, and how many times.\n")
+                .addField(FieldSpec.builder(entityType, "synced").build())
+                .addField(FieldSpec.builder(UUID, "removed").build())
+                .addField(FieldSpec.builder(TypeName.INT, "calls").build())
+                .addMethod(MethodSpec.constructorBuilder()
+                        .addStatement(KernelGraphSyncGenerator.takesAllocator(metadata)
+                                ? "super(null, null)" : "super(null)")
+                        .build())
+                .addMethod(MethodSpec.methodBuilder("syncToGraph")
+                        .addAnnotation(Override.class)
+                        .addModifiers(Modifier.PUBLIC)
+                        .addParameter(entityType, "entity")
+                        .addStatement("this.synced = entity")
+                        .addStatement("this.calls++")
+                        .build())
+                .addMethod(MethodSpec.methodBuilder("deleteFromGraph")
+                        .addAnnotation(Override.class)
+                        .addModifiers(Modifier.PUBLIC)
+                        .addParameter(UUID, "entityId")
+                        .addStatement("this.removed = entityId")
+                        .addStatement("this.calls++")
+                        .build())
+                .build();
+    }
+
+    /**
+     * How a test builds the service: with the repository double, and, for an entity whose service
+     * projects into the graph, the graph-sync double beside it.
+     *
+     * @param serviceType  the generated service
+     * @param recorderType the nested graph-sync double, or {@code null} when the service takes none
+     */
+    private record Wiring(ClassName serviceType, ClassName recorderType) {
+
+        boolean synced() {
+            return recorderType != null;
+        }
+
+        CodeBlock newService() {
+            if (!synced()) {
+                return CodeBlock.of("$T service = new $T(repository);\n", serviceType, serviceType);
+            }
+            return CodeBlock.builder()
+                    .addStatement("$T graphSync = new $T()", recorderType, recorderType)
+                    .addStatement("$T service = new $T(repository, graphSync)", serviceType, serviceType)
+                    .build();
+        }
+
+        /** The written entity the repository returned is the one projected, once. */
+        CodeBlock projected(String local) {
+            if (!synced()) {
+                return CodeBlock.of("");
+            }
+            return CodeBlock.builder()
+                    .addStatement("$T.assertThat(graphSync.synced).isSameAs($L)", ASSERTIONS, local)
+                    .addStatement("$T.assertThat(graphSync.calls).isEqualTo(1)", ASSERTIONS)
+                    .build();
+        }
+
+        /** The deleted id is the one removed from the graph, once. */
+        CodeBlock removed() {
+            if (!synced()) {
+                return CodeBlock.of("");
+            }
+            return CodeBlock.builder()
+                    .addStatement("$T.assertThat(graphSync.removed).isEqualTo($T.fromString($S))",
+                            ASSERTIONS, UUID, FIXED_ID)
+                    .addStatement("$T.assertThat(graphSync.calls).isEqualTo(1)", ASSERTIONS)
+                    .build();
+        }
     }
 
     /**
@@ -280,7 +405,7 @@ public final class KernelServiceTestGenerator {
      * generated double has no callers to protect, and accessors would be noise.
      */
     private TypeSpec stubRepository(DomainMetadata metadata, ClassName entityType, ClassName repositoryType,
-                                    ClassName stubType, List<FinderSpec> finders) {
+                                    ClassName stubType, List<FinderSpec> finders, boolean refuses) {
         ClassName pageType = KernelListQueryGenerator.pageType(metadata);
         ClassName queryType = KernelListQueryGenerator.listQueryType(metadata);
         TypeName listOfEntity = ParameterizedTypeName.get(LIST, entityType);
@@ -355,6 +480,7 @@ public final class KernelServiceTestGenerator {
                         .addModifiers(Modifier.PUBLIC)
                         .returns(entityType)
                         .addParameter(entityType, "entity")
+                        .addCode(refusalCheck(refuses))
                         .addStatement("this.saved = entity")
                         .addStatement("return saveResult")
                         .build())
@@ -364,6 +490,7 @@ public final class KernelServiceTestGenerator {
                         .returns(entityType)
                         .addParameter(UUID, "id")
                         .addParameter(entityType, "entity")
+                        .addCode(refusalCheck(refuses))
                         .addStatement("this.updatedId = id")
                         .addStatement("this.updated = entity")
                         .addCode(requestUpdate ? CodeBlock.of("this.fromRequest = false;\n") : CodeBlock.of(""))
@@ -373,6 +500,7 @@ public final class KernelServiceTestGenerator {
                         .addAnnotation(Override.class)
                         .addModifiers(Modifier.PUBLIC)
                         .addParameter(UUID, "id")
+                        .addCode(refusalCheck(refuses))
                         .addStatement("this.deleted = id")
                         .build())
                 .addMethod(MethodSpec.methodBuilder("count")
@@ -389,13 +517,31 @@ public final class KernelServiceTestGenerator {
                             .returns(entityType)
                             .addParameter(UUID, "id")
                             .addParameter(entityType, "entity")
+                            .addCode(refusalCheck(refuses))
                             .addStatement("this.updatedId = id")
                             .addStatement("this.updated = entity")
                             .addStatement("this.fromRequest = true")
                             .addStatement("return updateResult")
                             .build());
         }
+        if (refuses) {
+            stub.addField(FieldSpec.builder(RuntimeException.class, "refusal")
+                    .addJavadoc("A refusal every write raises instead of writing; {@code null}, the default, writes.\n")
+                    .build());
+        }
         return stub.build();
+    }
+
+    /** The double's "refuse instead of writing" branch, or nothing when it cannot refuse. */
+    private static CodeBlock refusalCheck(boolean refuses) {
+        if (!refuses) {
+            return CodeBlock.of("");
+        }
+        return CodeBlock.builder()
+                .beginControlFlow("if (refusal != null)")
+                .addStatement("throw refusal")
+                .endControlFlow()
+                .build();
     }
 
     private static MethodSpec.Builder test(String name) {

@@ -4,16 +4,16 @@ type: howto
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-11-04
+last-verified: 2026-11-07
 ---
 
 # Project into a graph
 
 **Audience:** you declare `@Graph`, `@GraphProperty` and `@GraphEdge` on an entity and want to know what the generated graph sync writes to the kernel graph SPI, and when.
 
-**Goal:** generate the `graph` scenario's `Product`, read its `ProductGraphSync`, and call it from your own code.
+**Goal:** generate the `graph` scenario's `Product`, read its `ProductGraphSync`, and see where the generated application calls it.
 
-> **Verified against** exeris-tooling `main` at commit `dc4564a2` (`0.11.0-SNAPSHOT`) and `exeris-sdk-examples` at tag `v0.13.3`, 2026-11-04. Generated snippets are quoted from the `SdkExamplesE2ETest` workspace, `exeris-e2e-tests/target/sdk-examples/app/`. If a snippet and its source disagree, **the source wins and this guide is the defect**.
+> **Verified against** exeris-tooling `main` at commit `5528cd59` with the change that wires the graph sync into the generated application applied (`0.11.0-SNAPSHOT`), and `exeris-sdk-examples` at tag `v0.13.3`, 2026-11-07. Every step was re-checked. Generated snippets are quoted from the `SdkExamplesE2ETest` workspace, `exeris-e2e-tests/target/sdk-examples/app/`. If a snippet and its source disagree, **the source wins and this guide is the defect**.
 
 ## Prerequisites
 
@@ -80,19 +80,70 @@ This example declares no direction, `bidirectional` or weight on its edges, so e
 
 `deleteFromGraph(UUID)` deletes the node, and the graph SPI's `deleteNode` contract deletes its incident edges with it.
 
-### 4. Call the sync from your code
+### 4. Know who calls the sync, and when
 
-The run generates `ProductGraphSync` and wires it nowhere: no handler, service or `RuntimeComponents` factory constructs or calls it. `Application.subsystems()` lists `graph`, so the kernel boots a graph engine, and your code projects a row by calling `syncToGraph` after it is stored and `deleteFromGraph` after it is deleted. One place to do that is an override of `RuntimeComponents.createProductService()` returning a service subclass ([guide 02](02-generate-an-application.md), step 5).
+The generated application wires the graph sync itself ([ADR-070](../adr/ADR-070-generated-composition-root-seam.md), Amendment 4):
 
-The constructor takes the kernel's `GraphEngine` and a `MemoryAllocator`; the node's properties are encoded as one UTF-8 JSON object in a buffer loaned from that allocator.
+- `RuntimeComponents` builds it in `createProductGraphSync()` from the kernel's `GraphEngine` and `MemoryAllocator`, read inside the boot callback where both are bound. The node's properties are encoded as one UTF-8 JSON object in a buffer loaned from that allocator.
+- `RuntimeLifecycle.run()` calls `registerDescriptors()` on it before anything else. Registration is what makes the Community SQL graph create `graph_nodes` and one table per edge type, and what lets a node delete cascade through those edge tables.
+- `ProductService` takes it as a constructor argument and calls it after each repository write: `syncToGraph` on the entity `save`, `update` or `updateFromRequest` returned, which is the row as stored, and `deleteFromGraph` after `delete`, whether the delete is hard or soft. Every generated write route, each action included, goes through the service, and so does your code when it calls the service.
+
+Generated: `src/main/generated/java/eu/exeris/sdk/examples/graph/service/ProductService.java`, methods `save` and `delete` (quoted).
+
+```java
+public Product save(Product entity) {
+    Product saved = repository.save(entity);
+    graphSync.syncToGraph(saved);
+    return saved;
+}
+```
+
+```java
+public void delete(UUID id) {
+    repository.deleteById(id);
+    graphSync.deleteFromGraph(id);
+}
+```
+
+The sync runs after the repository returns, so after the row has committed: the graph SPI offers no transaction that spans the relational store. A write the repository refuses, a missing row or a conflict, throws before the graph is touched. A graph failure propagates, so the route answers `500` for a row that is stored, and a failed delete publishes none of its `DELETE` events: a retried `DELETE` answers `404`. For an entity with `@Blob` fields that is hard-deleted, the delete route still deletes the row's stored objects on that failure when the row is gone. To let the write stand instead, return a graph sync that catches from an override of `createProductGraphSync()`:
+
+```java
+@Override
+protected ProductGraphSync createProductGraphSync() {
+    return new ProductGraphSync(GraphKernelProviders.GRAPH_ENGINE.get(), KernelProviders.MEMORY_ALLOCATOR.get()) {
+        @Override
+        public void syncToGraph(Product entity) {
+            try {
+                super.syncToGraph(entity);
+            } catch (RuntimeException e) {
+                // logged by the graph sync; the node catches up on the entity's next write
+            }
+        }
+
+        @Override
+        public void deleteFromGraph(UUID entityId) {
+            try {
+                super.deleteFromGraph(entityId);
+            } catch (RuntimeException e) {
+                // logged by the graph sync; the node stays until it is deleted again
+            }
+        }
+    };
+}
+```
+
+An entity whose `dataScope` is `TENANT` or `UNIVERSE` is not synced by its service. The Community graph engine cannot scope a traversal to the acting tenant on a request thread, where no `PersistenceEngine` is bound, and it keeps every node in one `graph_nodes` table that carries no tenant. `RuntimeComponents` still builds that entity's graph sync, and the service's Javadoc says why it does not call it.
 
 ## Verify
 
-`SdkExamplesE2ETest.emittedTreesCompileClean` compiles `ProductGraphSync` against the kernel graph SPI under `-Xlint:all` with no warning. No emitted test exercises the graph sync, so its behavior against a graph store is checked only by a test you write against a graph driver.
+`SdkExamplesE2ETest.emittedTreesCompileClean` compiles `ProductGraphSync` and the service that calls it against the kernel graph SPI under `-Xlint:all` with no warning. The emitted `ProductServiceTest` asserts that each write projects the entity the repository returned, that a delete removes the node, and that a refused write projects nothing.
+
+`GraphSyncPostgresBootE2ETest` boots a generated application on a real kernel against PostgreSQL and reads the graph tables back: a create writes the node and its edge, an update that changes `categoryId` deletes the stale edge, and a delete removes the node and its edges. Without the boot registration the same create answers `500` with its row committed. It runs in the `e2e-postgres` profile, because the Community SQL graph writes `jsonb` and `ON CONFLICT`, which H2 does not run.
 
 ## Not available today
 
-- **A graph sync the application calls for you.** See step 4.
+- **A graph sync for a tenant-partitioned entity.** See step 4.
+- **Repair after a crash between the commit and the sync.** The row is stored and the node is not, until the entity's next write syncs it.
 - **`@GraphQuery`.** `Product` declares a `neighbours` query, and nothing is generated from it.
 - **A wide `List<UUID>` column.** The relational table stores `relatedIds` as JSON text in a `related_ids VARCHAR(255)` column of `products`, so the column's width bounds how many keys one row can hold.
 

@@ -4,6 +4,7 @@ import eu.exeris.sdk.sourcemodel.ast.BlobMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DataScope;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RouteAccess;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.openapi.OpenApiGenerator;
@@ -150,6 +151,28 @@ class BlobFieldEmissionTest {
                 .contains("service.delete(id);\ndeleteBlobObjects(id);\nexchange.respond(HttpStatus.NO_CONTENT);")
                 .contains("try {\nblobStore.delete(new BlobRef(RECEIPT_CONTAINER, id + \"/receipt\"));\n"
                         + "} catch (RuntimeException e) {\nLOG.log(System.Logger.Level.WARNING,");
+    }
+
+    @Test
+    @DisplayName("a graph-synced hard delete deletes the objects of a gone row when service.delete fails")
+    void graphSyncedHardDeleteCleansUpAfterAFailedDelete() {
+        String flat = noIndent(file(perEntity(order().dataScope(DataScope.GLOBAL)
+                .graphMetadata(new GraphMetadata("Order", List.of(), List.of(), List.of())).build()),
+                "OrderHandler"));
+
+        assertThat(flat)
+                .contains("try {\nservice.delete(id);\n} catch (RuntimeException e) {\n"
+                        + "deleteBlobObjectsIfRowGone(id, e);\nthrow e;\n}\ndeleteBlobObjects(id);\n")
+                .contains("private void deleteBlobObjectsIfRowGone(UUID id, RuntimeException failure) {\n"
+                        + "try {\nif (service.findById(id).isEmpty()) {\ndeleteBlobObjects(id);\n}\n"
+                        + "} catch (RuntimeException e) {\nfailure.addSuppressed(e);\n}\n}");
+        assertThat(file(perEntity(order()
+                .graphMetadata(new GraphMetadata("Order", List.of(), List.of(), List.of())).build()), "OrderHandler"))
+                .as("a tenant-partitioned graph entity is not synced by its service")
+                .doesNotContain("deleteBlobObjectsIfRowGone");
+        assertThat(file(perEntity(order().dataScope(DataScope.GLOBAL).softDelete(true)
+                .graphMetadata(new GraphMetadata("Order", List.of(), List.of(), List.of())).build()),
+                "OrderHandler")).doesNotContain("deleteBlobObjectsIfRowGone");
     }
 
     @Test
