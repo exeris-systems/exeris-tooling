@@ -254,4 +254,56 @@ class CliArgsTest {
             assertThat(args.basePackage()).isNull();
         }
     }
+
+    @Nested
+    @DisplayName("integration tests (ADR-058 Amendment 1)")
+    class IntegrationTests {
+
+        @Test
+        @DisplayName("--integration-tests with its root parses, and is off without it")
+        void pairParses() {
+            CliArgs on = CliArgs.parse(new String[]{"--metadata-dir=m", "--output-dir=o",
+                    "--integration-tests", "--integration-test-output-dir=it"});
+            CliArgs off = CliArgs.parse(new String[]{"--metadata-dir=m", "--output-dir=o"});
+
+            assertThat(on.integrationTests()).isTrue();
+            assertThat(on.integrationTestOutputDir()).isEqualTo(Path.of("it"));
+            assertThat(on.tests()).isFalse();
+            assertThat(off.integrationTests()).isFalse();
+            assertThat(off.integrationTestOutputDir()).isNull();
+        }
+
+        @Test
+        @DisplayName("each switch of the pair is refused without the other")
+        void eachIsRefusedAlone() {
+            assertThatThrownBy(() -> CliArgs.parse(new String[]{"--metadata-dir=m", "--output-dir=o",
+                    "--integration-tests"}))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("--integration-tests requires --integration-test-output-dir=<path>");
+            assertThatThrownBy(() -> CliArgs.parse(new String[]{"--metadata-dir=m", "--output-dir=o",
+                    "--integration-test-output-dir=it"}))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("--integration-test-output-dir is read only with --integration-tests");
+            assertThatThrownBy(() -> CliArgs.parse(new String[]{"--metadata-dir=m", "--output-dir=o",
+                    "--integration-tests=yes", "--integration-test-output-dir=it"}))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("--integration-tests takes no value");
+        }
+
+        @Test
+        @DisplayName("the record refuses a root without its flag and a flag without its root")
+        void recordContract() {
+            assertThatThrownBy(() -> new CliArgs(Path.of("m"), Path.of("o"), null, false, null, false, false,
+                    true, null))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessage("integrationTestOutputDir");
+            assertThatThrownBy(() -> new CliArgs(Path.of("m"), Path.of("o"), null, false, null, false, false,
+                    false, Path.of("it")))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("integrationTestOutputDir is set without integrationTests");
+            assertThat(new CliArgs(Path.of("m"), Path.of("o"), null, true, Path.of("t"), false, false))
+                    .returns(false, CliArgs::integrationTests)
+                    .returns(null, CliArgs::integrationTestOutputDir);
+        }
+    }
 }

@@ -163,6 +163,26 @@ public class GenerateMojo extends AbstractMojo {
             defaultValue = "${project.basedir}/src/test/generated/java")
     File testOutputDir;
 
+    /**
+     * Emit the generated integration tests (ADR-058 Amendment 1), which boot the generated
+     * application on an in-memory H2 database and call it over HTTP. Opt-in, for the reason
+     * {@link #generateTests} is, and because it costs more: {@code com.h2database:h2} at test scope,
+     * a kernel driver on the test runtime classpath and a {@code maven-failsafe-plugin} binding,
+     * which {@code exeris-app-parent} supplies. A build whose entities are not all {@code GLOBAL},
+     * or that boots the graph or storage subsystem or a capability composition, gets none and a
+     * warning ({@code EXT-GEN-3105}).
+     */
+    @Parameter(property = "exeris.integrationTests", defaultValue = "false")
+    boolean generateIntegrationTests;
+
+    /**
+     * Target root for the generated integration tests. Separate from {@link #testOutputDir}: each
+     * tree owns its own manifest, so turning either channel on or off never prunes the other.
+     */
+    @Parameter(property = "exeris.integrationTestOutputDir",
+            defaultValue = "${project.basedir}/src/test/generated-it/java")
+    File integrationTestOutputDir;
+
     /** Register {@link #outputDir} as a compile source root so generated code
      *  compiles in the same build. Disable when the output is consumed elsewhere. */
     @Parameter(property = "exeris.addCompileSourceRoot", defaultValue = "true")
@@ -198,12 +218,22 @@ public class GenerateMojo extends AbstractMojo {
     }
 
     /**
+     * Integration-test emission seam, mirroring {@link TestRunner}.
+     */
+    @FunctionalInterface
+    interface IntegrationTestRunner {
+        CodegenPipeline.IntegrationTestRun runIntegrationTests(Path metadataDir, Path itOutputDir,
+                                                               String basePackage) throws IOException;
+    }
+
+    /**
      * Import-requirement seam, mirroring {@link PipelineRunner}: the classpath check's control
      * flow stays unit-testable without processor output on disk.
      */
     @FunctionalInterface
     interface ImportRequirements {
-        List<Requirement> required(Path metadataDir, boolean generatedTests) throws IOException;
+        List<Requirement> required(Path metadataDir, boolean generatedTests, boolean integrationTests)
+                throws IOException;
     }
 
     /** One pipeline behind every seam — no entry point carries state across calls. */
@@ -212,6 +242,8 @@ public class GenerateMojo extends AbstractMojo {
     PipelineRunner pipeline = defaultPipeline::run;
 
     TestRunner testPipeline = defaultPipeline::runTests;
+
+    IntegrationTestRunner integrationTestPipeline = defaultPipeline::runIntegrationTests;
 
     ImportRequirements importRequirements = defaultPipeline::requiredCompileArtifacts;
 
@@ -237,6 +269,9 @@ public class GenerateMojo extends AbstractMojo {
             registerSourceRoots();
             if (generateTests) {
                 registerTestSourceRoot();
+            }
+            if (generateIntegrationTests) {
+                registerIntegrationTestSourceRoot();
             }
             return;
         }
@@ -280,6 +315,8 @@ public class GenerateMojo extends AbstractMojo {
         registerSourceRoots();
 
         generateTests();
+
+        generateIntegrationTests();
 
         checkCompileClasspath();
     }
@@ -337,8 +374,46 @@ public class GenerateMojo extends AbstractMojo {
     }
 
     /**
-     * Warns, with {@code EXT-PLUG-2004}, for each artefact the emitted code imports that this
-     * module's collected dependencies do not put on the classpath that compiles it.
+     * Puts the generated integration-test tree on the test-compile path, for the reason
+     * {@link #registerSourceRoots()} gives. Maven has one test compilation, so the integration
+     * tests compile beside the unit tests; Failsafe tells them apart by name.
+     */
+    private void registerIntegrationTestSourceRoot() {
+        if (addCompileSourceRoot && project != null) {
+            project.addTestCompileSourceRoot(integrationTestOutputDir.getAbsolutePath());
+            getLog().debug("Registered test compile source root: " + integrationTestOutputDir);
+        }
+    }
+
+    /**
+     * ADR-058 Amendment 1. Runs after the unit-test channel and registers its own test compile
+     * source root, unconditionally for the reason {@link #generateTests()} gives — including when
+     * the build is outside the channel's scope, which leaves a committed tree as it was. The pipeline
+     * itself warns {@code EXT-GEN-3105} for such a build, so the warning reads the same from the CLI.
+     */
+    private void generateIntegrationTests() throws MojoExecutionException, MojoFailureException {
+        if (!generateIntegrationTests) {
+            return;
+        }
+        try {
+            getLog().info("Generating integration tests for the generated application: metadata="
+                    + metadataDir + " → output=" + integrationTestOutputDir);
+            integrationTestPipeline.runIntegrationTests(
+                    metadataDir.toPath(), integrationTestOutputDir.toPath(), basePackage);
+        } catch (EntityPackageLayoutException e) {
+            throw new MojoFailureException(e.getMessage(), e);
+        } catch (IOException e) {
+            throw new MojoExecutionException(DiagnosticId.INTEGRATION_TEST_GENERATION_FAILED.format(
+                    "Integration-test generation failed (integrationTestOutputDir=" + integrationTestOutputDir
+                            + "): " + e), e);
+        }
+        registerIntegrationTestSourceRoot();
+    }
+
+    /**
+     * Warns, with {@code EXT-PLUG-2004}, for each artefact the emitted code needs that this
+     * module's collected dependencies do not put on its classpath: what it imports, on the classpath
+     * that compiles it, and H2, which the generated integration tests load at test runtime.
      *
      * <p>Runs only where this module compiles the generated tree, which is what registering it as
      * a source root means: with {@code exeris.addCompileSourceRoot=false} another module compiles
@@ -350,7 +425,7 @@ public class GenerateMojo extends AbstractMojo {
         }
         List<Requirement> required;
         try {
-            required = importRequirements.required(metadataDir.toPath(), generateTests);
+            required = importRequirements.required(metadataDir.toPath(), generateTests, generateIntegrationTests);
         } catch (IOException e) {
             throw new MojoExecutionException(DiagnosticId.GENERATION_FAILED.format(
                     "Could not read metadata to check the compile classpath (metadataDir="
@@ -383,7 +458,7 @@ public class GenerateMojo extends AbstractMojo {
         }
         if (!missingMain.isEmpty()) {
             getLog().warn(DiagnosticId.GENERATED_IMPORT_NOT_ON_CLASSPATH.format(describe(missingMain,
-                    "main sources", "compile",
+                    "main sources import", "compile", "javac will fail on a missing package", "imported by",
                     "Declare each at compile scope, or depend on " + STARTER + " (type pom), which "
                             + "declares every artefact the generated main sources import. A "
                             + "dependency at runtime or test scope does not reach the compile "
@@ -391,9 +466,11 @@ public class GenerateMojo extends AbstractMojo {
         }
         if (!missingTest.isEmpty()) {
             getLog().warn(DiagnosticId.GENERATED_IMPORT_NOT_ON_CLASSPATH.format(describe(missingTest,
-                    "tests", "test",
+                    "tests need", "test",
+                    "javac will fail on a missing package, or the integration tests on a missing driver",
+                    "needed by",
                     "Declare each at test scope; " + STARTER + " declares no test library "
-                            + "(ADR-058).")));
+                            + "(ADR-058), and exeris-app-bom manages the H2 version.")));
         }
         if (missingMain.isEmpty() && missingTest.isEmpty()) {
             getLog().info("Classpath carries all " + required.size()
@@ -402,15 +479,15 @@ public class GenerateMojo extends AbstractMojo {
     }
 
     /** Names the jar, not the package: the package is what {@code javac} will say next. */
-    private static String describe(List<Requirement> missing, String tree, String classpath,
-                                   String remedy) {
+    private static String describe(List<Requirement> missing, String treeAndVerb, String classpath,
+                                   String consequence, String itemVerb, String remedy) {
         StringBuilder message = new StringBuilder()
-                .append("The generated ").append(tree).append(" import ").append(missing.size())
+                .append("The generated ").append(treeAndVerb).append(' ').append(missing.size())
                 .append(" artefact(s) that are not on this module's ").append(classpath)
-                .append(" classpath, so javac will fail on a missing package:")
+                .append(" classpath, so ").append(consequence).append(':')
                 .append(System.lineSeparator());
         for (Requirement requirement : missing) {
-            message.append("  - ").append(requirement.coordinate()).append(", imported by ")
+            message.append("  - ").append(requirement.coordinate()).append(", ").append(itemVerb).append(' ')
                     .append(requirement.importedBy()).append(System.lineSeparator());
         }
         return message.append(remedy).toString();

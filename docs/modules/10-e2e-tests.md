@@ -35,6 +35,7 @@ Unit tests of each module stay in that module. These modules test the seams betw
 | `KernelCodegenE2ETest` | Substring and structural assertions on the emitted Java |
 | `EmittedLintGateTest` | Emitted Java compiled with `-Xlint:all`; an unaccepted warning fails |
 | `GeneratedTestsE2ETest` | The emitted tests run against the emitted services |
+| `boot/GeneratedIntegrationTestsE2ETest` | The emitted integration tests compile against JUnit, AssertJ and the kernel alone, and pass against the emitted application booted on in-memory H2, with tokens from a loopback key set; a `TENANT` build gets no tree |
 | `boot/*BootE2ETest` | The emitted `Application` booted through `KernelBootstrap`, on in-memory H2 or, in the `postgres` group, on PostgreSQL, and driven over a real socket |
 | `GeneratorCatalogueConformanceE2ETest` | Every path the processor and pipeline write, main and test roots, reaches its row in the [generator catalogue](../generators.md), and every row is reached ([ADR-097](../adr/ADR-097-generator-catalogue-and-launchable-generator.md) obligation 8) |
 | `RoutePolicyRouterConformanceE2ETest` | `GeneratedRoutePolicy` answers for the route the kernel's `HttpRouter` actually dispatches to |
@@ -68,6 +69,7 @@ The surefire run reads `e2e.groups` and `e2e.excludedGroups`. By default nothing
 |---|---|
 | `app-on-starter` | An application on `exeris-app-parent` and `exeris-app-starter`: the two-pass build, then `verify`, then the effective POM under `-P release` |
 | `app-off-starter` | An application without the starter, which must fail at `javac` after `exeris:generate` named the one missing artifact (`EXT-PLUG-2004`) |
+| `app-integration-tests` | An application on `exeris-app-parent` with `exeris.integrationTests` on: the two-pass build, then `verify`, in which Failsafe runs the generated `*IT` classes on H2 the BOM manages and none of them fails |
 | `initializr-backend`, `initializr-e2e` | The projects `exeris-initializr` writes, built the same two-pass way |
 
 `-DskipTests` skips the fixture builds as well.
@@ -100,7 +102,7 @@ Trade-off: the boot tests run on H2, which accepts SQL that PostgreSQL refuses; 
 | [ADR-105](../adr/ADR-105-generated-route-policy-emission.md) | `route-policy.json` and the router conformance test (obligations 4 and 20) |
 | [ADR-096](../adr/ADR-096-generated-list-route-query-and-page-envelope.md) | `list-query.json` |
 | [ADR-091](../adr/ADR-091-opt-in-application-starter.md) | Obligation 7 and Amendment 5: the invoker fixtures |
-| [ADR-058](../adr/ADR-058-generated-test-emission-channel.md) | The generated tests that `GeneratedTestsE2ETest` runs |
+| [ADR-058](../adr/ADR-058-generated-test-emission-channel.md) | The generated tests that `GeneratedTestsE2ETest` runs, and the integration tests `GeneratedIntegrationTestsE2ETest` runs (Amendment 1) |
 
 ## Where this does not apply
 

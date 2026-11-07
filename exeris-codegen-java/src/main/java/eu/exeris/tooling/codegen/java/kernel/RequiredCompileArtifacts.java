@@ -26,6 +26,9 @@ import java.util.Objects;
  *       its repository imports Jackson 3 ({@code KernelRepositoryGenerator.importsJackson}).</li>
  *   <li>{@code org.junit.jupiter:junit-jupiter-api} and {@code org.assertj:assertj-core} — for the
  *       generated tests, the only two libraries ADR-058 lets them import.</li>
+ *   <li>{@code com.h2database:h2} — for the generated integration tests (ADR-058 Amendment 1),
+ *       which import nothing from it: their JDBC URL loads it at test runtime. Listed so a build
+ *       without it is told before the boot fails.</li>
  * </ul>
  *
  * <p>The emitted {@code Application} Javadoc names the same main-source artefacts under the same
@@ -126,5 +129,24 @@ public final class RequiredCompileArtifacts {
                         "every generated test"),
                 new Requirement("org.assertj", "assertj-core", Classpath.TEST,
                         "every generated test"));
+    }
+
+    /**
+     * Returns the artefacts the generated integration tests need beyond the main sources' own
+     * (ADR-058 Amendment 1): the two the generated tests import, and the H2 database they boot the
+     * application on, which no emitted file imports and the JDBC URL loads at test runtime.
+     *
+     * @param domains every entity this build emits integration tests for
+     * @return JUnit 5's API, AssertJ and H2; empty when {@code domains} is empty, because no
+     *         integration test is emitted without a domain
+     */
+    public static List<Requirement> forGeneratedIntegrationTests(List<DomainMetadata> domains) {
+        if (domains == null || domains.isEmpty()) {
+            return List.of();
+        }
+        List<Requirement> required = new ArrayList<>(forGeneratedTests(domains));
+        required.add(new Requirement("com.h2database", "h2", Classpath.TEST,
+                "the generated integration tests, which boot the application on an in-memory H2 database"));
+        return List.copyOf(required);
     }
 }

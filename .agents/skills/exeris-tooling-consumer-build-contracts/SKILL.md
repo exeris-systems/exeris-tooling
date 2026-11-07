@@ -50,6 +50,20 @@ Two constraints before touching `Kernel*TestGenerator`:
 Consequence: `public` + non-final + assignment-only constructors are a **contract of generated
 code** — the emitted service stub subclasses it.
 
+A third root, `src/test/generated-it/java` (its own `OutputWriter` + manifest), behind
+`exeris.integrationTests`, holds the integration tests (ADR-058 Amendment 1). They boot the
+generated application on in-memory H2 and call it over HTTP:
+
+1. They may import **JUnit 5, AssertJ and the JDK** (`java.net.http`, `com.sun.net.httpserver`,
+   `java.security`, `java.sql`) and nothing else; H2 and the kernel driver are test-runtime needs,
+   which `RequiredCompileArtifacts.forGeneratedIntegrationTests` names. No kernel testkit.
+2. Every test class ends in `IT` and no support class matches a Surefire or Failsafe default
+   include; `exeris-app-parent` binds Failsafe.
+3. Randomness (the RSA key pair, ports, the database name) exists at test runtime only; the
+   emitted text holds fixed literals.
+4. `GeneratedIntegrationTestsE2ETest` runs them; a new integration-test emitter is not proven
+   until it executes there.
+
 ## ADR-055 — Cap-tier Wall guard
 
 The pipeline reads a **second input class** — compiled bytecode from `target/classes`, not just

@@ -9,7 +9,7 @@ slug: adr/ADR-097
 
 # ADR-097 — exeris-tooling publishes a generator catalogue and a launchable generator
 
-- **Status:** ACCEPTED (2026-10-07) · accepted-on-merge per the per-repo pattern (ADR-047 / ADR-058)
+- **Status:** ACCEPTED (2026-10-07) · accepted-on-merge per the per-repo pattern (ADR-047 / ADR-058) · amended 2026-11-07 (Amendment 1 — a third output root, `integration-test`)
 - **Deciders:** the founder; `exeris-tooling` (catalogue format, module layout)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / build — cross-repo: `exeris-ai-bridge` consumes the catalogue and the launchable generator
@@ -327,3 +327,31 @@ for `.domain`. The generators substitute every occurrence of `.domain`, so a pac
    `build-explain_artefacts` in place of its own producer table, and runs the jar in
    `build-preview_generation`.
 5. Migration owner: `exeris-tooling`, target 0.10.0, release-plan wave J2b.
+
+## Amendment 1 — a third output root, `integration-test` (2026-11-07)
+
+- **Status:** ACCEPTED (2026-11-07). Decided by the founder with ADR-058 Amendment 1
+  (`exeris-tooling#408`).
+- **Amends:** obligation 2, the values of `outputRoot`, and obligation 11, the arguments. Every
+  other obligation is unchanged.
+
+ADR-058 Amendment 1 adds a channel of generated integration tests, written into a tree of its own
+with its own manifest: `src/test/generated-it/java` by default, under
+`-Dexeris.integrationTests=true`. A consumer reading a manifest has to know which rows apply to it,
+so the tree gets an `outputRoot` value of its own:
+
+1. **`outputRoot`** takes a third value, `integration-test`: the tree written under
+   `-Dexeris.integrationTests=true`. Its rows are `integration-test-support`,
+   `integration-test-tokens`, `route-policy-integration-test` and `crud-integration-test`, and
+   `docs/generators.md` lists them under "Integration test root". A consumer that does not know
+   the value skips the rows that carry it, as it skips a key it does not know; `catalogueFormat`
+   stays `1`, since no key changes meaning or type.
+2. **Arguments.** The command line takes `--integration-tests`, which also writes the generated
+   integration tests into `--integration-test-output-dir`, and each of the two is refused without
+   the other. A build the integration tests do not boot is not a failure: the run prints
+   `EXT-GEN-3105`, writes nothing into that root, and exits `0`.
+
+`GeneratorCatalogueTest` accepts the value and reads the new section of `docs/generators.md`; the
+conformance test reaches the four rows with a second fixture of `GLOBAL` entities, the only build
+the channel writes for. `exeris-ai-bridge` reads the third manifest when it explains a tree that
+has one, and its `ADR-097.link.md` mirrors this status line.

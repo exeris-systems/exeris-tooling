@@ -40,6 +40,8 @@ java -jar exeris-codegen-cli-<version>.jar --metadata-dir=<path> --output-dir=<p
 | `--base-package=<pkg>` | The package of `Application` and its siblings; default the first domain's package by qualified name, without `.domain` |
 | `--tests` | Also write the generated tests; requires `--test-output-dir` |
 | `--test-output-dir=<path>` | The root the generated tests are written to; read only with `--tests` |
+| `--integration-tests` | Also write the generated integration tests (ADR-058 Amendment 1); requires `--integration-test-output-dir`. A build they do not boot prints `EXT-GEN-3105`, writes nothing into that root, and still exits `0` |
+| `--integration-test-output-dir=<path>` | The root the generated integration tests are written to; read only with `--integration-tests` |
 | `--allow-empty` | Permit the teardown that prunes a previously generated main tree when no `@ExerisDomain` is found |
 | `--print-catalogue` | Write the bundled generator catalogue to standard output and exit; needs no other switch |
 

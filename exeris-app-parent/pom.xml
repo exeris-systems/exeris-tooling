@@ -114,9 +114,9 @@
 
             <!-- BEGIN exeris build block. README.md ("Quick start", route 2) carries a copy of
                  everything from here to END for an application that cannot take this parent; keep
-                 the two identical. The plugin version is spelled out, although exeris-app-bom's
-                 pluginManagement already supplies it here, because an imported BOM brings no
-                 pluginManagement and the copy has to carry it. -->
+                 the two identical. The plugin versions are spelled out, although exeris-app-bom's
+                 pluginManagement already supplies the codegen plugin's here, because an imported BOM
+                 brings no pluginManagement and the copy has to carry them. -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -148,6 +148,24 @@
                         <goals>
                             <goal>verify-capabilities</goal>
                             <goal>verify-runtime</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Runs the generated integration tests (ADR-058 Amendment 1), which exeris.integrationTests
+                 emits and whose class names all end in IT, in integration-test and verify. Surefire's
+                 default includes do not match that name, so `mvn test` runs the unit tests alone. A
+                 build with no *IT class runs nothing here. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>3.2.5</version>
+                <executions>
+                    <execution>
+                        <id>exeris-integration-tests</id>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
                         </goals>
                     </execution>
                 </executions>

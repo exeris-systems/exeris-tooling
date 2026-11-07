@@ -272,6 +272,20 @@ and why the tooling version is a property of your own.
                 </execution>
             </executions>
         </plugin>
+        <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-failsafe-plugin</artifactId>
+            <version>3.2.5</version>
+            <executions>
+                <execution>
+                    <id>exeris-integration-tests</id>
+                    <goals>
+                        <goal>integration-test</goal>
+                        <goal>verify</goal>
+                    </goals>
+                </execution>
+            </executions>
+        </plugin>
         <!-- END exeris build block -->
     </plugins>
 </build>
@@ -317,6 +331,7 @@ trees hold LF in the working copy as in the repository:
 ```
 src/main/generated/** text eol=lf
 src/test/generated/** text eol=lf
+src/test/generated-it/** text eol=lf
 src/app/generated/**  text eol=lf
 ```
 
@@ -332,6 +347,15 @@ Set `<exeris.tests>true</exeris.tests>` to emit tests for the generated code und
 `src/test/generated/java` ([ADR-058](docs/adr/ADR-058-generated-test-emission-channel.md)). They need JUnit 5 and AssertJ in your `test` scope
 and nothing else; the starter carries neither.
 
+Set `<exeris.integrationTests>true</exeris.integrationTests>` to emit integration tests under
+`src/test/generated-it/java` (ADR-058 Amendment 1). `mvn verify` runs them through Failsafe: they
+boot the generated application on an in-memory H2 database and call its routes over HTTP. Add
+`com.h2database:h2` at `test` scope beside JUnit 5 and AssertJ; `exeris-app-bom` manages its
+version, and the build block above binds Failsafe. They are emitted only for an application whose
+entities are all `GLOBAL` and that has no graph entity, `@Blob` field or `@CapabilityModule`; any
+other application gets a warning (`EXT-GEN-3105`) and no tree. `-Dexeris.it.application=<class>`
+boots a subclass of the generated `Application` instead.
+
 ## Running the Java generator without Maven
 
 From 0.10.0, `eu.exeris:exeris-codegen-cli` is the Java generator and its dependencies in one jar
@@ -345,6 +369,9 @@ java -jar exeris-codegen-cli-<version>.jar \
     --base-package=com.example.shop \
     --tests --test-output-dir=src/test/generated/java   # optional, ADR-058
 ```
+
+`--integration-tests --integration-test-output-dir=src/test/generated-it/java` also writes the
+generated integration tests, as `-Dexeris.integrationTests=true` does.
 
 `--allow-empty` permits deleting a previously generated tree when no `@ExerisDomain` is found, as
 `-Dexeris.codegen.allowEmpty=true` does. `--print-catalogue` prints the generator catalogue
