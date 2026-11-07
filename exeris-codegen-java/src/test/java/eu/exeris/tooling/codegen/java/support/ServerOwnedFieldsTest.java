@@ -114,7 +114,7 @@ class ServerOwnedFieldsTest {
     }
 
     @Test
-    @DisplayName("the create body leaves out the key, the owner, the shared scope, the stamps, read-only and inCreate = false fields")
+    @DisplayName("the create body leaves out the key, the owner, the shared scope, read-only and inCreate = false fields")
     void notInCreateBody() {
         DomainMetadata metadata = DomainMetadata.builder("Species", "com.example.domain")
                 .dataScope(DataScope.UNIVERSE)
@@ -126,8 +126,7 @@ class ServerOwnedFieldsTest {
                 .build();
 
         assertThat(ServerOwnedFields.notInCreateBody(metadata))
-                .containsExactly("createdAt", "createdBy", "id", "note", "status", "tenantId", "updatedAt",
-                        "updatedBy", "version", "worldId");
+                .containsExactly("id", "note", "status", "tenantId", "worldId");
         assertThat(ServerOwnedFields.notInUpdateBody(metadata)).doesNotContain("note", "worldId");
     }
 
@@ -154,6 +153,39 @@ class ServerOwnedFieldsTest {
         DomainMetadata plain = DomainMetadata.builder("Tx", "com.example.domain")
                 .fields(List.of(FieldMetadata.builder("createdAt", "String").build())).build();
         assertThat(ServerOwnedFields.notInCreateBody(plain)).containsExactly("id");
+    }
+
+    @Test
+    @DisplayName("a field a systemFields block names for a role whose flag is off is an ordinary field: "
+            + "in both bodies, written by every update")
+    void systemRoleWithItsFlagOffIsAnOrdinaryField() {
+        SystemFieldsMetadata roles = SystemFieldsMetadata.builder()
+                .versionField("version").createdAtField("createdAt").tenantIdField("tenantId")
+                .softDeleteField("deleted").build();
+        List<FieldMetadata> fields = List.of(FieldMetadata.builder("name", "String").build(),
+                FieldMetadata.builder("version", "Long").build(),
+                FieldMetadata.builder("createdAt", "java.time.Instant").build(),
+                FieldMetadata.builder("tenantId", "java.util.UUID").build(),
+                FieldMetadata.builder("deleted", "boolean").build());
+        DomainMetadata off = DomainMetadata.builder("Customer", "com.example.domain")
+                .systemFields(roles).fields(fields).build();
+
+        assertThat(ServerOwnedFields.notInCreateBody(off)).containsExactly("id");
+        assertThat(ServerOwnedFields.notInUpdateBody(off)).containsExactly("id");
+        assertThat(ServerOwnedFields.keptOnUpdate(off)).containsExactly("id");
+        assertThat(ServerOwnedFields.keptOnRequestUpdate(off)).containsExactly("id");
+        assertThat(ServerOwnedFields.resetOnCreate(off)).isEmpty();
+
+        DomainMetadata on = DomainMetadata.builder("Customer", "com.example.domain")
+                .audited(true).versioned(true).softDelete(true).dataScope(DataScope.TENANT)
+                .systemFields(roles).fields(fields).build();
+
+        assertThat(ServerOwnedFields.notInCreateBody(on)).containsExactly("createdAt", "createdBy", "deleted",
+                "deletedAt", "deletedBy", "id", "tenantId", "updatedAt", "updatedBy", "version");
+        assertThat(ServerOwnedFields.notInUpdateBody(on)).doesNotContain("name", "version")
+                .contains("createdAt", "tenantId", "deleted");
+        assertThat(ServerOwnedFields.keptOnUpdate(on)).contains("createdAt", "tenantId", "deleted")
+                .doesNotContain("updatedAt", "version", "name");
     }
 
     @Test

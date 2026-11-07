@@ -191,6 +191,7 @@ describe('FormGenerator emitted content — top-level structure', () => {
   it('an edit sends the loaded record with the form values over it, so a field the form does not offer keeps its value', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
+      audited: true,
       fields: [
         field({ name: 'id', type: 'java.util.UUID' }),
         field({ name: 'note', type: 'String' }),
@@ -406,9 +407,12 @@ describe('FormGenerator numeric controls hold numbers (T20c)', () => {
 describe('FormGenerator field filtering for createFields', () => {
   const gen = new FormGenerator();
 
-  it('excludes id / createdAt / updatedAt / createdBy / updatedBy / version / deleted / deletedAt / tenantId (system fields)', () => {
+  it('excludes id / createdAt / updatedAt / createdBy / updatedBy / version / tenantId of an audited, versioned, tenant-partitioned entity (system fields)', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
+      audited: true,
+      versioned: true,
+      dataScope: 'TENANT',
       fields: [
         field({ name: 'id', type: 'java.util.UUID' }),
         field({ name: 'createdAt', type: 'java.time.Instant' }),
@@ -455,19 +459,18 @@ describe('FormGenerator field filtering for createFields', () => {
     expect(plain).toContain('data-testid="field-worldId"');
   });
 
-  it('excludes lifecycle fields (active, onboardingStatus, parentTenantId, deleted, ...)', () => {
+  it('excludes lifecycle fields (active, onboardingStatus, parentTenantId, ...)', () => {
     const content = gen.generate(domain({
       entityName: 'Tenant',
       fields: [
         field({ name: 'active', type: 'java.lang.Boolean' }),
         field({ name: 'onboardingStatus', type: 'String' }),
         field({ name: 'parentTenantId', type: 'java.util.UUID' }),
-        field({ name: 'deleted', type: 'java.lang.Boolean' }),
         field({ name: 'name', type: 'String' }), // visible
       ],
     }), CTX)!.content;
 
-    for (const lc of ['active', 'onboardingStatus', 'parentTenantId', 'deleted']) {
+    for (const lc of ['active', 'onboardingStatus', 'parentTenantId']) {
       expect(content).not.toContain(`data-testid="field-${lc}"`);
     }
     expect(content).toContain('data-testid="field-name"');
@@ -486,39 +489,30 @@ describe('FormGenerator field filtering for createFields', () => {
     expect(content).toContain('data-testid="field-name"');
   });
 
-  it('lifecycle ∩ system overlap fields (createdAt / updatedAt / version / deleted) are excluded EXACTLY ONCE — no double-filter side effects', () => {
-    // These four field names appear in BOTH isLifecycleField and
-    // isSystemField sets in form-gen.ts:61-67. A future refactor that
-    // changed the filter chain semantics (e.g., switched from .filter
-    // to .filter().filter and forgot to chain correctly) could
-    // accidentally drop them twice — or, worse, only filter them once
-    // and leak the duplicate-filter source-of-truth. This test pins
-    // the current behaviour: overlap fields are excluded ONCE,
-    // sibling non-overlapping fields are preserved.
-    const content = gen.generate(domain({
-      entityName: 'Thing',
-      fields: [
-        field({ name: 'createdAt', type: 'java.time.Instant' }), // overlap
-        field({ name: 'updatedAt', type: 'java.time.Instant' }), // overlap
-        field({ name: 'version', type: 'java.lang.Long' }),       // overlap
-        field({ name: 'deleted', type: 'java.lang.Boolean' }),    // overlap
-        field({ name: 'name', type: 'String' }),                  // visible
-      ],
+  it('a field named for a system role is a control while the entity\'s flag for the role is off, and none once it is on', () => {
+    const fields = [
+      field({ name: 'createdAt', type: 'java.time.Instant' }),
+      field({ name: 'updatedAt', type: 'java.time.Instant' }),
+      field({ name: 'version', type: 'java.lang.Long' }),
+      field({ name: 'deleted', type: 'java.lang.Boolean' }),
+      field({ name: 'tenantId', type: 'java.util.UUID' }),
+      field({ name: 'name', type: 'String' }),
+    ];
+    const roles = ['createdAt', 'updatedAt', 'version', 'deleted', 'tenantId'];
+    const flagless = gen.generate(domain({ entityName: 'Thing', fields }), CTX)!.content;
+    const flagged = gen.generate(domain({
+      entityName: 'Thing', audited: true, versioned: true, softDelete: true, dataScope: 'TENANT', fields,
     }), CTX)!.content;
 
-    for (const overlap of ['createdAt', 'updatedAt', 'version', 'deleted']) {
-      // Each overlap field appears exactly zero times in the form
-      // (no data-testid, no label, no form model entry).
-      expect(content).not.toContain(`data-testid="field-${overlap}"`);
-      // The form model doesn't even reference the field name as a key —
-      // guards against a silent partial filter that leaves some
-      // occurrences behind.
-      expect(content).not.toMatch(new RegExp(`^\\s*${overlap}: `, 'm'));
+    for (const name of roles) {
+      expect(flagless).toContain(`data-testid="field-${name}"`);
+      expect(modelInterface(flagless)).toMatch(new RegExp(`^\\s*${name}: `, 'm'));
+      expect(flagged).not.toContain(`data-testid="field-${name}"`);
+      expect(flagged).not.toMatch(new RegExp(`^\\s*${name}: `, 'm'));
     }
-    // Sibling visible field survives.
-    expect(content).toContain('data-testid="field-name"');
-    expect(modelInterface(content)).toMatch(/^\s*name: string;/m);
-    expect(seedBlock(content)).toMatch(/^\s*name: '',/m);
+    expect(flagless).toContain('data-testid="field-name"');
+    expect(flagged).toContain('data-testid="field-name"');
+    expect(modelInterface(flagged)).toMatch(/^\s*name: string;/m);
   });
 
   it('excludes hidden=true and readOnly=true fields', () => {

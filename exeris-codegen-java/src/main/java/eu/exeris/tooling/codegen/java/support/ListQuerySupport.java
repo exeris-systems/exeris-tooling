@@ -3,7 +3,6 @@ package eu.exeris.tooling.codegen.java.support;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
-import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -161,56 +160,20 @@ public final class ListQuerySupport {
 
     /**
      * The fields that are never a sort key or a filter, whatever {@code @Field} says: the primary
-     * key, the owning tenant and the shared-scope field (the fields ADR-090 makes server-owned), the
-     * audit, version and soft-delete fields of an entity that has them, and every field
-     * {@code SystemFieldsMetadata} names for a role. Resolved the way the repository resolves them:
-     * the declared name, else the canonical default, for each role the entity's flags switch on.
-     * The primary key stays the {@code ORDER BY} tiebreak.
+     * key, a UNIVERSE entity's shared-scope field (ADR-090 makes it server-owned, with the owning
+     * tenant) and the field of every system role the entity's flags switch on
+     * ({@link SystemColumns#activeFields}): the owning tenant, the audit, version and soft-delete
+     * fields. A field named for a role whose flag is off is an ordinary domain field, as it is in
+     * the migration and the repository. The primary key stays the {@code ORDER BY} tiebreak.
      *
      * @param metadata the entity
      * @return the system field names, sorted
      */
     public static Set<String> systemFieldNames(DomainMetadata metadata) {
-        SystemFieldsMetadata declared = metadata.systemFields();
-        Set<String> names = new TreeSet<>();
+        Set<String> names = new TreeSet<>(SystemColumns.activeFields(metadata));
         names.add(PrimaryKeys.field(metadata));
-        DataScopeSupport.ownerFieldName(metadata).ifPresent(names::add);
         DataScopeSupport.sharedScopeField(metadata).ifPresent(field -> names.add(field.name()));
-        if (metadata.audited()) {
-            names.add(role(declared == null ? null : declared.createdAtField(), "createdAt"));
-            names.add(role(declared == null ? null : declared.createdByField(), "createdBy"));
-            names.add(role(declared == null ? null : declared.updatedAtField(), "updatedAt"));
-            names.add(role(declared == null ? null : declared.updatedByField(), "updatedBy"));
-        }
-        if (metadata.versioned()) {
-            names.add(role(declared == null ? null : declared.versionField(), "version"));
-        }
-        if (metadata.softDelete()) {
-            names.add(role(declared == null ? null : declared.softDeleteField(), "deleted"));
-            names.add(role(declared == null ? null : declared.softDeleteTimestampField(), "deletedAt"));
-            names.add(role(declared == null ? null : declared.softDeletedByField(), "deletedBy"));
-        }
-        if (declared != null) {
-            for (String name : List.of(nullToEmpty(declared.primaryKeyField()),
-                    nullToEmpty(declared.createdAtField()), nullToEmpty(declared.createdByField()),
-                    nullToEmpty(declared.updatedAtField()), nullToEmpty(declared.updatedByField()),
-                    nullToEmpty(declared.tenantIdField()), nullToEmpty(declared.versionField()),
-                    nullToEmpty(declared.softDeleteField()), nullToEmpty(declared.softDeleteTimestampField()),
-                    nullToEmpty(declared.softDeletedByField()), nullToEmpty(declared.sharedScopeField()))) {
-                if (!name.isBlank()) {
-                    names.add(name);
-                }
-            }
-        }
         return Collections.unmodifiableSet(names);
-    }
-
-    static String role(String declared, String fallback) {
-        return declared == null || declared.isBlank() ? fallback : declared;
-    }
-
-    private static String nullToEmpty(String value) {
-        return value == null ? "" : value;
     }
 
     /**

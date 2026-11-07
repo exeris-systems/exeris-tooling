@@ -174,4 +174,33 @@ class ListQuerySupportTest {
         assertThat(ListQuerySupport.sortable(global)).extracting(ListQuerySupport.Property::name)
                 .containsExactly("createdAt", "tenantId");
     }
+
+    @Test
+    @DisplayName("a field a systemFields block names for a role whose flag is off is a sort key and a filter")
+    void declaredRoleWithItsFlagOffIsOrdinary() {
+        eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata roles =
+                eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata.builder()
+                        .versionField("rev").createdAtField("born").tenantIdField("org").softDeleteField("gone")
+                        .build();
+        List<FieldMetadata> fields = List.of(FieldMetadata.simple("rev", "Long"),
+                FieldMetadata.simple("born", "java.time.Instant"),
+                FieldMetadata.simple("org", "java.util.UUID"),
+                FieldMetadata.simple("gone", "boolean"));
+        DomainMetadata off = DomainMetadata.builder("Customer", "com.example.domain")
+                .path("/customers").systemFields(roles).fields(fields).build();
+        DomainMetadata on = DomainMetadata.builder("Customer", "com.example.domain")
+                .path("/customers").systemFields(roles).fields(fields)
+                .audited(true).versioned(true).softDelete(true).tenantScoped(true).build();
+
+        assertThat(ListQuerySupport.systemFieldNames(off)).containsExactly("id");
+        assertThat(ListQuerySupport.sortable(off)).extracting(ListQuerySupport.Property::name)
+                .containsExactly("born", "gone", "org", "rev");
+        assertThat(ListQuerySupport.filters(off)).extracting(ListQuerySupport.Property::name)
+                .containsExactly("gone", "org", "rev");
+
+        assertThat(ListQuerySupport.systemFieldNames(on)).containsExactly("born", "createdBy", "deletedAt",
+                "deletedBy", "gone", "id", "org", "rev", "updatedAt", "updatedBy");
+        assertThat(ListQuerySupport.sortable(on)).isEmpty();
+        assertThat(ListQuerySupport.filters(on)).isEmpty();
+    }
 }

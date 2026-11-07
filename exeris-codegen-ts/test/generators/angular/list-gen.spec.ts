@@ -287,8 +287,10 @@ describe('ListGenerator list column selection', () => {
   it('takes the first 5 non-hidden non-system fields', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
+      audited: true,
+      versioned: true,
       fields: [
-        // System fields (always excluded from default selection)
+        // System fields of an audited, versioned entity (excluded from default selection)
         field({ name: 'id', type: 'UUID' }),
         field({ name: 'createdAt', type: 'Instant' }),
         field({ name: 'version', type: 'Long' }),

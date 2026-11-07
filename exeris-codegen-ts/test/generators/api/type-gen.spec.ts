@@ -5,8 +5,8 @@
  *
  * The file is the largest in src/generators/api (~380 LOC) with several
  * non-trivial helpers: collectEnumTypes (12-branch heuristic), buildZodType
- * (validation-chain builder + format-driven overrides), getSystemFieldNames
- * (idField alias + default-set fallback), and the create-DTO field filter
+ * (validation-chain builder + format-driven overrides), the system-field
+ * classification (key alias + flag-gated roles), and the create-DTO field filter
  * (excludes system + lifecycle + inCreate=false).
  */
 
@@ -17,9 +17,9 @@ import {
   auditFieldNames,
   buildZodType,
   generateTypes,
-  systemFieldNames,
   viewSystemFieldNames,
 } from '../../../src/generators/api/type-gen.js';
+import { systemRoleFieldNames } from '../../../src/core/server-owned-fields.js';
 import {
   createGeneratorContext,
   type GeneratorContext,
@@ -462,7 +462,7 @@ describe('TypeGenerator buildZodType — validation chain (exercised via emitted
   });
 });
 
-// ---------- getSystemFieldNames: default vs custom systemFields ----------
+// ---------- system-field resolution: default vs custom systemFields ----------
 
 describe('TypeGenerator system-field resolution (exercised via .omit set in the schema)', () => {
   const gen = new TypeGenerator();
@@ -518,8 +518,11 @@ describe('TypeGenerator system-field resolution (exercised via .omit set in the 
   it('every systemFields.* alias, when declared as a field, flows into the create omit set', () => {
     const files = gen.generateAggregate([domain({
       entityName: 'Thing',
-      // tenantIdField names the owner only on a tenant-partitioned entity.
+      // Each alias names a role only when the entity's flag for it is on.
       dataScope: 'TENANT',
+      audited: true,
+      versioned: true,
+      softDelete: true,
       systemFields: {
         primaryKeyField: 'id',
         versionField: 'rev',
@@ -562,6 +565,32 @@ describe('TypeGenerator system-field resolution (exercised via .omit set in the 
     for (const f of ['ct', 'ut', 'cb', 'ub', 'tid', 'gone', 'dt', 'db']) {
       expect(schema.slice(schema.indexOf('ThingUpdateSchema'))).toContain(`${f}: true`);
     }
+  });
+
+  it('a systemFields.* alias of a role whose flag is off is an ordinary field of both bodies', () => {
+    const files = gen.generateAggregate([domain({
+      entityName: 'Thing',
+      systemFields: {
+        primaryKeyField: 'id',
+        versionField: 'rev',
+        createdAtField: 'ct',
+        updatedByField: 'ub',
+        tenantIdField: 'tid',
+        softDeleteField: 'gone',
+      },
+      fields: [
+        field({ name: 'id', type: 'UUID' }),
+        field({ name: 'rev', type: 'long' }),
+        field({ name: 'ct', type: 'Instant' }),
+        field({ name: 'ub', type: 'String' }),
+        field({ name: 'tid', type: 'UUID' }),
+        field({ name: 'gone', type: 'boolean' }),
+      ],
+    })], ctx);
+    const schema = files.find(f => f.path === 'schemas/thing.schema.ts')!.content;
+
+    expect(schema).toContain('export const ThingCreateSchema = ThingSchema.omit({\n  id: true,\n});');
+    expect(schema).toContain('export const ThingUpdateSchema = ThingSchema.omit({ id: true });');
   });
 });
 
@@ -627,7 +656,7 @@ describe('TypeGenerator — a tenant-partitioned owner without a systemFields bl
     const createSlice = createSliceOf(content);
     const entityStart = content.indexOf('export interface Fleet {');
 
-    expect(systemFieldNames(entity('TENANT'))).toContain('tenantId');
+    expect(systemRoleFieldNames(entity('TENANT'))).toContain('tenantId');
     expect(schema.slice(schema.indexOf('FleetCreateSchema'))).toContain('  tenantId: true,');
     expect(createSlice).toContain('name?: string;');
     expect(createSlice).not.toContain('tenantId');
@@ -641,7 +670,7 @@ describe('TypeGenerator — a tenant-partitioned owner without a systemFields bl
       .find(f => f.path === 'schemas/fleet.schema.ts')!.content;
     const createSlice = createSliceOf(new TypeGenerator().generate(entity('GLOBAL'), CTX)!.content);
 
-    expect(systemFieldNames(entity('GLOBAL'))).not.toContain('tenantId');
+    expect(systemRoleFieldNames(entity('GLOBAL'))).not.toContain('tenantId');
     expect(schema.slice(schema.indexOf('FleetCreateSchema'))).not.toContain('tenantId: true');
     expect(createSlice).toContain('  tenantId?: string;');
   });
@@ -683,11 +712,11 @@ describe('TypeGenerator — a tenant-partitioned owner without a systemFields bl
 
     expect(createSlice).toContain('name?: string;');
     if (keeps) {
-      expect(systemFieldNames(metadata)).not.toContain('tenantId');
+      expect(systemRoleFieldNames(metadata)).not.toContain('tenantId');
       expect(createSlice).toContain('  tenantId?: string;');
       expect(createSchema).not.toContain('tenantId: true');
     } else {
-      expect(systemFieldNames(metadata)).toContain('tenantId');
+      expect(systemRoleFieldNames(metadata)).toContain('tenantId');
       expect(createSlice).not.toContain('tenantId');
       expect(createSchema).toContain('  tenantId: true,');
     }
@@ -882,29 +911,36 @@ describe('auditFieldNames / viewSystemFieldNames — the views\' system-field cl
     }))).toEqual({ createdAt: 'openedAt', updatedAt: 'updatedAt' });
   });
 
-  it('keeps the conventional names for an entity without a systemFields block', () => {
-    expect(viewSystemFieldNames(domain({ entityName: 'Order' }))).toEqual([
-      'id', 'version', 'createdAt', 'updatedAt', 'tenantId', 'createdBy', 'updatedBy', 'deleted', 'deletedAt',
-    ]);
+  it('is the key alone for an entity whose flags are all off, with or without a systemFields block', () => {
+    expect(viewSystemFieldNames(domain({ entityName: 'Order' }))).toEqual(['id']);
+    expect(viewSystemFieldNames(domain({
+      entityName: 'Order',
+      systemFields: { primaryKeyField: 'id', versionField: 'revision', createdAtField: 'openedAt', tenantIdField: 'tenantId', softDeleteField: 'closed' },
+    }))).toEqual(['id']);
   });
 
-  it('adds what the flags make server-owned, under the names systemFields gives them', () => {
+  it('holds the fields of every role the flags switch on, under the names systemFields gives them', () => {
     expect(viewSystemFieldNames(domain({
       entityName: 'Ticket',
       audited: true,
       versioned: true,
       softDelete: true,
       systemFields: { createdAtField: 'openedAt', updatedAtField: 'touchedAt', versionField: 'revision', softDeleteField: 'closed' },
-    }))).toEqual(['id', 'revision', 'openedAt', 'touchedAt', 'closed', 'tenantId']);
+    }))).toEqual(['closed', 'createdBy', 'deletedAt', 'deletedBy', 'id', 'openedAt', 'revision', 'touchedAt', 'updatedBy']);
   });
 
-  it('adds the default stamp and version names for flags on a block that names neither', () => {
+  it('takes the canonical names for flags on a block that names neither', () => {
     expect(viewSystemFieldNames(domain({
       entityName: 'Ticket',
       audited: true,
       versioned: true,
       systemFields: { primaryKeyField: 'id' },
-    }))).toEqual(['id', 'createdAt', 'updatedAt', 'version', 'tenantId']);
+    }))).toEqual(['createdAt', 'createdBy', 'id', 'updatedAt', 'updatedBy', 'version']);
+  });
+
+  it('holds the owner of a tenant-partitioned entity only', () => {
+    expect(viewSystemFieldNames(domain({ entityName: 'Fleet', dataScope: 'TENANT' }))).toEqual(['id', 'tenantId']);
+    expect(viewSystemFieldNames(domain({ entityName: 'Fleet', dataScope: 'GLOBAL' }))).toEqual(['id']);
   });
 });
 

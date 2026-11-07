@@ -4,7 +4,6 @@
  */
 
 import { outPath } from '../../core/paths.js';
-import { primaryKeyField } from '../../core/primary-key.js';
 import type { DomainMetadata } from '../../models/index.js';
 import { DslMapper, modelTypeName } from '../../models/index.js';
 import type { GeneratorConfig } from '../../config.js';
@@ -133,7 +132,6 @@ export class ServiceGenerator implements CodeGenerator {
       })),
     }));
 
-    const systemFields = this.getSystemFields(metadata);
     const blobFields = (metadata.fields ?? []).filter((f) => f.blob !== undefined);
 
     // Generate service content inline (without template file for reliability)
@@ -146,7 +144,6 @@ export class ServiceGenerator implements CodeGenerator {
       filterableFields,
       sortFields,
       actions,
-      systemFields,
       enumTypes,
       entityImports,
       blobFields,
@@ -170,7 +167,6 @@ export class ServiceGenerator implements CodeGenerator {
         hasParams: boolean;
         params: Array<{ name: string; tsType: string; bindingSource: 'BODY' | 'QUERY'; queryKey: string }>;
       }>;
-      systemFields: string[];
       enumTypes: string[];
       entityImports: string[];
       blobFields: Array<{ name: string }>;
@@ -397,23 +393,6 @@ export class ServiceGenerator implements CodeGenerator {
     if (!property.field) return 'string';
     const ts = DslMapper.mapType(property.type).tsType.replace(/ \| null$/, '');
     return ts === 'boolean' || ts === 'number' ? ts : 'string';
-  }
-
-  private getSystemFields(metadata: DomainMetadata): string[] {
-    const fields = [primaryKeyField(metadata)];
-    const sf = metadata.systemFields;
-
-    if (sf) {
-      if (sf.versionField) fields.push(sf.versionField);
-      if (sf.createdAtField) fields.push(sf.createdAtField);
-      if (sf.updatedAtField) fields.push(sf.updatedAtField);
-      if (sf.createdByField) fields.push(sf.createdByField);
-      if (sf.updatedByField) fields.push(sf.updatedByField);
-    } else {
-      fields.push('createdAt', 'updatedAt', 'version');
-    }
-
-    return fields;
   }
 
   /**

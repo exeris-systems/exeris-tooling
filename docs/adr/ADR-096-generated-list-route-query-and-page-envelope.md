@@ -14,6 +14,8 @@ slug: adr/ADR-096
   `Map` and `Set` fields are refused by generation)
   · amended 2026-10-06 (Amendment 2 — `Short`, `Byte` and `Float` are sort keys and filters; a
   `BigDecimal` or `LocalDate` filter binds through a cast placeholder)
+  · amended 2026-11-07 (Amendment 3 — a system role's field is excluded only while the entity's flag
+  switches the role on)
 - **Deciders:** the founder (server-side paging in 0.9.0; parameter strictness; system fields;
   size bounds)
 - **Repo:** `exeris-tooling`
@@ -309,3 +311,55 @@ Verification: `ListQuerySupportTest` and `DomainTypeKindTest` pin the kinds and 
 both Java lists to the contract file and `list-query-contract.spec.ts` the TypeScript ones; `FieldTypeStorageE2ETest` filters on a `Short`, `Byte`, `Float`,
 `BigDecimal` and `LocalDate` column on H2, and `PostgresTypeMatrixE2ETest` (opt-in) sorts and
 filters on every offered type on PostgreSQL 16.
+
+## Amendment 3 — a system role's field is excluded only while the entity's flag switches the role on (2026-11-07)
+
+**Status:** Accepted *(narrows the "never a sort key or a filter" set of obligation 5; the sortable
+and filterable types, the grammar and every other obligation are unchanged; Amendments 1 and 2 are
+unchanged)*
+
+**Deciders:** the founder.
+
+Obligation 5 excludes the system fields "for each role the entity's `dataScope`, `audited`,
+`versioned` and `softDelete` switch on, plus every name `SystemFieldsMetadata` declares for a role".
+The second half is withdrawn. A field in a system role whose flag is off is an ordinary domain field
+everywhere: the generated migration creates its column from the field's declared type, the
+repository reads and writes it like any other column, with no locking and no stamping, and the
+request bodies carry it. A list route that refused to sort or filter on it was the one place that
+still treated it as the server's.
+
+Obligation 5's excluded set reads, from this amendment:
+
+- **Never a sort key or a filter, with or without `@Field`:** the primary key, whatever the flags;
+  a UNIVERSE entity's shared-scope field; and the field of each system role the entity's flags
+  switch on, under its declared `SystemFieldsMetadata` name or the canonical default. A role is on
+  as follows: the owning tenant when the entity is tenant-partitioned (`TENANT` or `UNIVERSE` data
+  scope), the audit times and actors when `audited`, the soft-delete flag, time and actor when
+  `softDelete`, the version when `versioned`.
+- **A field named for a role whose flag is off**, by a `systemFields` entry, a system marker or the
+  role's canonical name, is sortable and filterable exactly as its type and `@Field` make it.
+
+`SystemColumns` (exeris-codegen-java) decides which roles are on, and the migration, the repository,
+`ListQuerySupport.systemFieldNames` and `ServerOwnedFields` all read it, so the list route, the table
+and the request bodies cannot disagree. `src/core/system-columns.ts` is its TypeScript twin, under
+`systemRoleFieldNames` and `listQuerySystemFieldNames`, which `<Entity>SortField`, `<Entity>Filter`
+and the list view's sort and filter controls follow.
+
+### Consequences of the amendment
+
+- **An entity with such a field gains sort keys and filters.** `<Entity>ListQuery` parses them,
+  `<Entity>Repository.findPage` orders and filters on their columns, and the OpenAPI list operation
+  lists them; the TypeScript `<Entity>SortField` and `<Entity>Filter` gain them. An entity whose
+  flags are all on, or that has no field named for a role, generates as before. The regeneration
+  notes are `docs/migration/0.11.0/java-26-system-marker-without-flag-is-client-writable.md` and
+  `docs/migration/0.11.0/ts-15-system-marker-without-flag-in-request-types.md`.
+
+### Verification of the amendment
+
+- `ListQuerySupportTest` — with the flags off, the fields a `systemFields` block names for the
+  roles are sort keys and filters and `systemFieldNames` is the key alone; with the flags on they
+  are excluded.
+- `SystemFieldSqlE2ETest` — the generated repository of an entity without the flags sorts on its
+  version and creation-time columns and filters on its version.
+- `system-columns.spec.ts` and `list-query-contract.spec.ts` (exeris-codegen-ts) — the TypeScript
+  roles, sort keys and filters follow the same flags.

@@ -13,8 +13,7 @@
  */
 
 import type { DomainMetadata, FieldMetadata, RelationshipMetadata } from '../../models/domain-model.js';
-import { effectiveDataScope, isTenantPartitioned } from '../../models/domain-model.js';
-import { primaryKeyField } from '../../core/primary-key.js';
+import { systemRoleFieldNames } from '../../core/server-owned-fields.js';
 
 /** Zero-based page index. */
 export const PAGE_PARAM = 'page';
@@ -161,41 +160,14 @@ function byName(a: { name: string }, b: { name: string }): number {
 }
 
 /**
- * The fields that are never a sort key or a filter: the primary key, the owning tenant and the
- * shared-scope field, the audit, version and soft-delete fields of an entity whose flags switch them
- * on — under the declared name, else the canonical one — and every name `systemFields` declares for
- * a role. `ListQuerySupport.systemFieldNames`, rule for rule.
+ * The fields that are never a sort key or a filter: the primary key, the owning tenant, a UNIVERSE
+ * entity's shared-scope field and the audit, version and soft-delete fields of an entity whose flags
+ * switch them on — under the declared name, else the canonical one (`systemRoleFieldNames`) — and
+ * every `blob` field. A field named for a role whose flag is off is an ordinary field.
+ * `ListQuerySupport.systemFieldNames`, rule for rule.
  */
 export function listQuerySystemFieldNames(metadata: DomainMetadata): ReadonlySet<string> {
-  const declared = metadata.systemFields;
-  const role = (name: string | undefined, fallback: string): string =>
-    name === undefined || name.trim() === '' ? fallback : name;
-  const names = new Set<string>([primaryKeyField(metadata)]);
-  if (isTenantPartitioned(metadata)) names.add(role(declared?.tenantIdField, 'tenantId'));
-  if (effectiveDataScope(metadata) === 'UNIVERSE' && declared?.sharedScopeField?.trim()) {
-    names.add(declared.sharedScopeField);
-  }
-  if (metadata.audited) {
-    names.add(role(declared?.createdAtField, 'createdAt'));
-    names.add(role(declared?.createdByField, 'createdBy'));
-    names.add(role(declared?.updatedAtField, 'updatedAt'));
-    names.add(role(declared?.updatedByField, 'updatedBy'));
-  }
-  if (metadata.versioned) names.add(role(declared?.versionField, 'version'));
-  if (metadata.softDelete) {
-    names.add(role(declared?.softDeleteField, 'deleted'));
-    names.add(role(declared?.softDeleteTimestampField, 'deletedAt'));
-    names.add(role(declared?.softDeletedByField, 'deletedBy'));
-  }
-  if (declared) {
-    for (const name of [
-      declared.primaryKeyField, declared.createdAtField, declared.createdByField, declared.updatedAtField,
-      declared.updatedByField, declared.tenantIdField, declared.versionField, declared.softDeleteField,
-      declared.softDeleteTimestampField, declared.softDeletedByField, declared.sharedScopeField,
-    ]) {
-      if (name !== undefined && name.trim() !== '') names.add(name);
-    }
-  }
+  const names = new Set<string>(systemRoleFieldNames(metadata));
   for (const field of metadata.fields ?? []) {
     if (field.blob !== undefined) names.add(field.name);
   }

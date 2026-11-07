@@ -96,9 +96,9 @@ describe('generatePeerTypes', () => {
     expect(schema.slice(schema.indexOf('FleetCreateSchema'))).toContain('  tenantId: true,');
   });
 
-  // The name a systemFields block gives a role is a role name whatever the data scope, so the
-  // create body of a GLOBAL peer entity leaves it out, and keeps a tenantId no block names.
-  it('leaves out the tenantId a GLOBAL peer entity\'s block names, and keeps one it does not', () => {
+  // A GLOBAL entity has no owner, so a tenantId field is an ordinary field whether or not a
+  // systemFields block names it.
+  it('keeps the tenantId of a GLOBAL peer entity in the create, named by its block or not', () => {
     const fleet = parseOffered({
       packageName: 'com.billing',
       entityName: 'Fleet',
@@ -109,16 +109,13 @@ describe('generatePeerTypes', () => {
         { name: 'tenantId', type: 'java.util.UUID' },
       ],
     });
-    const files = generatePeerTypes({ ...billing, domains: [fleet] }, { ...DEFAULT_CONFIG, generateZod: true });
-    const types = byPath(files, 'types/fleet.types.ts');
-    const schema = byPath(files, 'schemas/fleet.schema.ts');
-    expect(types.slice(types.indexOf('export interface FleetCreate'))).not.toContain('tenantId?: string;');
-    expect(schema.slice(schema.indexOf('FleetCreateSchema'), schema.indexOf('FleetUpdateSchema'))).toContain('tenantId: true');
-
-    const unnamed = parseOffered({ ...fleet, systemFields: undefined });
-    const kept = generatePeerTypes({ ...billing, domains: [unnamed] }, { ...DEFAULT_CONFIG, generateZod: true });
-    expect(byPath(kept, 'types/fleet.types.ts').slice(byPath(kept, 'types/fleet.types.ts').indexOf('export interface FleetCreate')))
-      .toContain('tenantId?: string;');
+    for (const entity of [fleet, parseOffered({ ...fleet, systemFields: undefined })]) {
+      const files = generatePeerTypes({ ...billing, domains: [entity] }, { ...DEFAULT_CONFIG, generateZod: true });
+      const types = byPath(files, 'types/fleet.types.ts');
+      const schema = byPath(files, 'schemas/fleet.schema.ts');
+      expect(types.slice(types.indexOf('export interface FleetCreate'))).toContain('tenantId?: string;');
+      expect(schema.slice(schema.indexOf('FleetCreateSchema'), schema.indexOf('FleetUpdateSchema'))).not.toContain('tenantId: true');
+    }
   });
 
   it('carries the peer name and the field description into the emitted text', () => {

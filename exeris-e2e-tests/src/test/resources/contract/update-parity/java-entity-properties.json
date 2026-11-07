@@ -21,6 +21,7 @@
   "TenantDefault": ["id", "tenantId", "title"],
   "TenantRenamed": ["id", "ownerId", "tenantId", "title"],
   "UnauditedDeclaresStamps": ["createdAt", "createdBy", "id", "title"],
+  "UnflaggedNamesRoles": ["born", "editor", "gone", "id", "rev", "title"],
   "UniverseDefault": ["id", "scopeId", "tenantId", "title"],
   "UniverseRenamed": ["id", "ownerId", "scopeId", "title"],
   "UniverseWithFlags": ["id", "scopeId", "sku", "tenantId", "title"],
