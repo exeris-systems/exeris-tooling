@@ -1668,6 +1668,34 @@ describe('FormGenerator — a MANY_TO_ONE foreign key is picked from its target 
       );
     });
 
+    it('keeps the options it holds while the next term loads', () => {
+      const content = emit(order(true), [order(true), searchableProduct]);
+      expect(content).toContain('signal, computed, linkedSignal, effect, inject }');
+      expect(content).toContain(
+        '  private readonly productIdOptionsHeld = linkedSignal<{ loading: boolean; options: { value: string; label: string }[] }, { value: string; label: string }[]>({\n'
+        + '    source: () => ({ loading: this.productIdOptionsResource.isLoading(), options: pickerOptions(this.productIdOptionsResource.hasValue() ? this.productIdOptionsResource.value() : undefined, (row) => row.name) }),\n'
+        + '    computation: (current, previous) => (current.loading && previous ? previous.value : current.options),\n'
+        + '  });\n'
+        + '  readonly productIdOptions = computed(() =>\n'
+        + '    this.productIdOptionsHeld(),\n'
+        + '  );\n',
+      );
+    });
+
+    it('shows the label the chosen record last had once a later term no longer lists it', () => {
+      const content = emit(order(true), [order(true), searchableProduct]);
+      expect(content).toContain(
+        '  readonly productIdChosenLabel = linkedSignal<{ value: string; options: { value: string; label: string }[] }, string>({\n'
+        + '    source: () => ({ value: this.formModel().productId, options: this.productIdOptions() }),\n'
+        + '    computation: (current, previous) =>\n'
+        + '      current.options.find((option) => option.value === current.value)?.label\n'
+        + '      ?? (previous?.source.value === current.value ? previous.value : current.value),\n'
+        + '  });\n',
+      );
+      expect(content).toContain('@if (productIdUnlisted()) {\n'
+        + '            <option [value]="form.productId().value()">{{ productIdChosenLabel() }}</option>');
+    });
+
     it('puts a labelled search box in front of the select and says the matches are capped', () => {
       const content = emit(order(true), [order(true), searchableProduct]);
       const input = '<input #productIdSearchInput type="search" data-testid="field-productId-search" '
@@ -1691,6 +1719,8 @@ describe('FormGenerator — a MANY_TO_ONE foreign key is picked from its target 
       const plain = emit(order(true), [order(true), product]);
       expect(plain).not.toContain('Search');
       expect(plain).not.toContain("from 'rxjs'");
+      expect(plain).not.toContain('linkedSignal');
+      expect(plain).not.toContain('ChosenLabel');
       expect(plain).toContain('private readonly productIdOptionsResource = rxResource({ stream: () => this.productService.findAll({ size: 100 }) });');
     });
   });
