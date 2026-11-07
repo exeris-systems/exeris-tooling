@@ -44,6 +44,7 @@ class SystemFieldSqlE2ETest {
     private static String tenantPolicyInvoices;
     private static String createCustomers;
     private static String customerRepository;
+    private static String customerOpenApi;
 
     @BeforeAll
     static void generateTheSchema() throws IOException {
@@ -59,6 +60,7 @@ class SystemFieldSqlE2ETest {
         createCustomers = migration(generated, "__create_customers");
         customerRepository = Files.readString(
                 generated.resolve("com/shop/repository/CustomerRepository.java"));
+        customerOpenApi = Files.readString(generated.resolve("openapi/customer-api.yaml"));
     }
 
     @Test
@@ -72,6 +74,23 @@ class SystemFieldSqlE2ETest {
         assertThat(customerRepository)
                 .contains("INSERT INTO customers (id, name, version, created_at)")
                 .doesNotContain(" AND version = ?");
+    }
+
+    @Test
+    @DisplayName("a @Version or @AuditCreatedAt field on an entity without the flag is client-writable: "
+            + "both bodies carry it and the update writes it")
+    void systemMarkerWithoutItsFlagIsClientWritable() {
+        assertThat(customerRepository)
+                .contains("UPDATE customers SET name = ?, version = ?, created_at = ? WHERE id = ?")
+                .contains("case \"createdAt\" -> \"created_at\";")
+                .contains("case \"version\" -> \"version\";")
+                .contains("predicates.add(\"version = ?\");");
+        assertThat(schema(customerOpenApi, "CustomerCreateDto"))
+                .contains("createdAt:")
+                .contains("version:");
+        assertThat(schema(customerOpenApi, "CustomerUpdateDto"))
+                .contains("createdAt:")
+                .contains("version:");
     }
 
     @Test
@@ -123,6 +142,17 @@ class SystemFieldSqlE2ETest {
                 .contains("DROP POLICY IF EXISTS invoices_tenant_policy ON invoices;")
                 .contains("USING (org_id = current_setting('exeris.tenant_id', true)::uuid)")
                 .contains("WITH CHECK (org_id = current_setting('exeris.tenant_id', true)::uuid);");
+    }
+
+    /** The text of one component schema of an OpenAPI document: from its key to the next one. */
+    private static String schema(String spec, String name) {
+        int start = spec.indexOf("\n    " + name + ":\n");
+        assertThat(start).as("schema " + name).isNotNegative();
+        int end = spec.indexOf("\n    ", spec.indexOf("\n", start + 1) + 1);
+        while (end >= 0 && spec.charAt(end + 5) == ' ') {
+            end = spec.indexOf("\n    ", end + 1);
+        }
+        return end < 0 ? spec.substring(start) : spec.substring(start, end);
     }
 
     /** Reads the one emitted migration whose file name contains {@code fragment}. */

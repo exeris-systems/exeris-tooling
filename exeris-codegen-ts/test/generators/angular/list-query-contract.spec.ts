@@ -289,6 +289,27 @@ describe('contract/list-query.json — which properties sort and filter', () => 
     expect(filterProperties(universe)).toEqual([]);
   });
 
+  it('sorts and filters on a field a block names for a role whose flag is off', () => {
+    const unflagged = parseOffered({
+      packageName: 'com.shop',
+      entityName: 'Customer',
+      systemFields: { versionField: 'version', createdAtField: 'createdAt', tenantIdField: 'tenantId' },
+      fields: [
+        { name: 'version', type: 'java.lang.Long', sortable: true, filterable: true },
+        { name: 'createdAt', type: 'java.time.Instant', sortable: true, filterable: true },
+        { name: 'tenantId', type: 'java.util.UUID', sortable: true, filterable: true },
+      ],
+    });
+    expect([...listQuerySystemFieldNames(unflagged)]).toEqual(['id']);
+    expect(sortableProperties(unflagged).map((p) => p.name)).toEqual(['createdAt', 'tenantId', 'version']);
+    expect(filterProperties(unflagged).map((p) => p.name)).toEqual(['tenantId', 'version']);
+    const flagged = parseOffered({ ...unflagged, audited: true, versioned: true, tenantScoped: true });
+    expect([...listQuerySystemFieldNames(flagged)].sort()).toEqual([
+      'createdAt', 'createdBy', 'id', 'tenantId', 'updatedAt', 'updatedBy', 'version',
+    ]);
+    expect(sortableProperties(flagged)).toEqual([]);
+  });
+
   it('sorts on every sortable field but a List or a system field', () => {
     // `updatedBy` is an ordinary field here: the entity names its updated-by role `editor`.
     const expected = [

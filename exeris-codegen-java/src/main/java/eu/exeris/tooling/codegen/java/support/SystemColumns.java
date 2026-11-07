@@ -103,6 +103,22 @@ public final class SystemColumns {
     }
 
     /**
+     * The fields of every active role.
+     *
+     * @param metadata the entity
+     * @return the field names, sorted
+     */
+    public static Set<String> activeFields(DomainMetadata metadata) {
+        Set<String> fields = new TreeSet<>();
+        for (Role role : Role.values()) {
+            if (role.isActive(metadata)) {
+                fields.add(field(metadata, role));
+            }
+        }
+        return Collections.unmodifiableSet(fields);
+    }
+
+    /**
      * The columns of every active role.
      *
      * @param metadata the entity

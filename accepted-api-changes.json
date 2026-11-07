@@ -28,5 +28,11 @@
     "since": "0.11",
     "adr": "ADR-015",
     "justification": "The defaultValue of a body-bound action parameter was read by nothing, so an omitted member reached the entity method as 0, false or null, while the same attribute on a query parameter was applied. The record applies it, and the boxed component keeps an omitted value apart from an explicit zero. A caller that relied on the zero value sends it, and code that names the record sees the boxed accessor type; docs/migration/0.11.0/java-28-action-body-param-default.md carries the steps."
+  },
+  {
+    "signature": "<Entity>CreateDto / <Entity>UpdateDto, list sort keys and filters, <Entity>Repository.update (exeris-codegen-java) and <Entity>Create / <Entity>Update / <Entity>SortField / <Entity>Filter (exeris-codegen-ts): a field in a system role whose @ExerisDomain flag is off (tenant, audited, softDelete, versioned) is carried by both request bodies, sortable and filterable by its @Field, and written by every update; the fields of an active role are unchanged",
+    "since": "0.11",
+    "adr": "ADR-015",
+    "justification": "The API treated every name a systemFields block declared as server-owned whatever the entity's flags, while the migration and the repository treat a role whose flag is off as an ordinary column. Such a field was out of both bodies and the update never wrote it, so nothing could set the column. The API now takes the active roles from the same place, on the Java and the TypeScript side. A client that relied on the server dropping the field now has its value stored; docs/migration/0.11.0/java-26-system-marker-without-flag-is-client-writable.md and ts-14-system-marker-without-flag-in-request-types.md carry the steps."
   }
 ]

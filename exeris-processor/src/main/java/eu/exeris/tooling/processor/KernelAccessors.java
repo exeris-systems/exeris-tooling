@@ -18,7 +18,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.stream.Stream;
 
 /**
  * The accessors the generated kernel application calls on an {@code @ExerisDomain} entity,
@@ -266,8 +265,8 @@ final class KernelAccessors {
 
     /**
      * Every field that plays a system role: the key, the owner, a UNIVERSE entity's shared scope,
-     * the audit, version and soft-delete fields the flags enable, and every name the
-     * {@code systemFields} block declares.
+     * and the audit, version and soft-delete fields the flags enable. A field named for a role whose
+     * flag is off is an ordinary domain field.
      */
     private static Set<String> systemFieldNames(DomainMetadata metadata, List<FieldMetadata> fields, Roles roles) {
         Set<String> names = new TreeSet<>();
@@ -285,21 +284,7 @@ final class KernelAccessors {
         if (metadata.softDelete()) {
             names.addAll(List.of(roles.deleted(), roles.deletedAt(), roles.deletedBy()));
         }
-        names.addAll(declaredRoleNames(metadata.systemFields()));
         return names;
-    }
-
-    /** Every non-blank name the {@code systemFields} block declares. */
-    private static List<String> declaredRoleNames(SystemFieldsMetadata declared) {
-        if (declared == null) {
-            return List.of();
-        }
-        return Stream.of(declared.primaryKeyField(), declared.createdAtField(), declared.createdByField(),
-                        declared.updatedAtField(), declared.updatedByField(), declared.tenantIdField(),
-                        declared.versionField(), declared.softDeleteField(), declared.softDeleteTimestampField(),
-                        declared.softDeletedByField(), declared.sharedScopeField())
-                .filter(name -> name != null && !name.isBlank())
-                .toList();
     }
 
     /** The fields the create body does not carry, so the create handler validates none of them. */

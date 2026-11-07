@@ -224,10 +224,11 @@ describe('the fields an update takes from the server', () => {
     expect(omitted('EverythingRenamed')).toEqual(['c1', 'c2', 'd0', 'd1', 'd2', 'org', 'pk', 'u1', 'u2']);
   });
 
-  it('are the stamps a block renames even when the entity is not audited, and a GLOBAL entity\'s declared tenant field', () => {
+  it('are no field a block names for a role whose flag is off', () => {
     expect(omitted('UnauditedDeclaresStamps')).toEqual(['id']);
     expect(omitted('GlobalDeclaresTenantId')).toEqual(['id']);
-    expect(omitted('GlobalNamesTenantIdField')).toEqual(['id', 'tenantId']);
+    expect(omitted('GlobalNamesTenantIdField')).toEqual(['id']);
+    expect(omitted('UnflaggedNamesRoles')).toEqual(['id']);
   });
 });
 
@@ -293,6 +294,8 @@ describe('the fields a create takes from the server', () => {
 
   it('keep a field that only has a role\'s name, and a stamp of an entity that is not audited', () => {
     expect(omitted('UnauditedDeclaresStamps')).toEqual(['id']);
+    expect(omitted('GlobalNamesTenantIdField')).toEqual(['id']);
+    expect(omitted('UnflaggedNamesRoles')).toEqual(['id']);
     expect(omitted('SoftDeleteRenamed')).toEqual(['gone', 'goneAt', 'goneBy', 'id']);
     expect(omitted('VersionedOpenCreate')).toEqual(['id', 'version']);
   });

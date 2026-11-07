@@ -518,8 +518,11 @@ describe('TypeGenerator system-field resolution (exercised via .omit set in the 
   it('every systemFields.* alias, when declared as a field, flows into the create omit set', () => {
     const files = gen.generateAggregate([domain({
       entityName: 'Thing',
-      // tenantIdField names the owner only on a tenant-partitioned entity.
+      // Each alias names a role only when the entity's flag for it is on.
       dataScope: 'TENANT',
+      audited: true,
+      versioned: true,
+      softDelete: true,
       systemFields: {
         primaryKeyField: 'id',
         versionField: 'rev',
@@ -562,6 +565,32 @@ describe('TypeGenerator system-field resolution (exercised via .omit set in the 
     for (const f of ['ct', 'ut', 'cb', 'ub', 'tid', 'gone', 'dt', 'db']) {
       expect(schema.slice(schema.indexOf('ThingUpdateSchema'))).toContain(`${f}: true`);
     }
+  });
+
+  it('a systemFields.* alias of a role whose flag is off is an ordinary field of both bodies', () => {
+    const files = gen.generateAggregate([domain({
+      entityName: 'Thing',
+      systemFields: {
+        primaryKeyField: 'id',
+        versionField: 'rev',
+        createdAtField: 'ct',
+        updatedByField: 'ub',
+        tenantIdField: 'tid',
+        softDeleteField: 'gone',
+      },
+      fields: [
+        field({ name: 'id', type: 'UUID' }),
+        field({ name: 'rev', type: 'long' }),
+        field({ name: 'ct', type: 'Instant' }),
+        field({ name: 'ub', type: 'String' }),
+        field({ name: 'tid', type: 'UUID' }),
+        field({ name: 'gone', type: 'boolean' }),
+      ],
+    })], ctx);
+    const schema = files.find(f => f.path === 'schemas/thing.schema.ts')!.content;
+
+    expect(schema).toContain('export const ThingCreateSchema = ThingSchema.omit({\n  id: true,\n});');
+    expect(schema).toContain('export const ThingUpdateSchema = ThingSchema.omit({ id: true });');
   });
 });
 

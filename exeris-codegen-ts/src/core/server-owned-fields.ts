@@ -2,13 +2,15 @@
  * The fields an update (`PUT {base}/{id}`) takes from the server rather than from the request body.
  *
  * The TS twin of the Java side's `ServerOwnedFields#notInUpdateBody` over
- * `ListQuerySupport#systemFieldNames`: the key, the owner, the shared scope, the audit fields
- * (created and updated at and by), the soft-delete fields (the flag, the timestamp, the actor) and
- * every field a `systemFields` role names, except the version. The version stays in the body
- * because an optimistic-lock update matches on the value the client loaded.
+ * `ListQuerySupport#systemFieldNames`: the key, the owner, a UNIVERSE entity's shared scope, the
+ * audit fields (created and updated at and by) and the soft-delete fields (the flag, the timestamp,
+ * the actor), except the version. The version stays in the body because an optimistic-lock update
+ * matches on the value the client loaded.
  *
- * A role counts under its declared name; the audit roles take their default name only on an
- * `audited` entity and the soft-delete roles only on a `softDelete` one, as on the Java side.
+ * A role counts under its declared name, else its default one, and only when the entity's flag for
+ * it is on: the audit roles on an `audited` entity, the soft-delete roles on a `softDelete` one, the
+ * version on a `versioned` one, as on the Java side (`SystemColumns`). A field named for a role
+ * whose flag is off is an ordinary domain field: both bodies carry it.
  */
 
 import { primaryKeyField } from './primary-key.js';
@@ -52,15 +54,8 @@ export function systemRoleFieldNames(metadata: DomainMetadata): string[] {
     names.add(role(sf?.softDeleteTimestampField, 'deletedAt'));
     names.add(role(sf?.softDeletedByField, 'deletedBy'));
   }
-  if (sf) {
-    for (const declared of [
-      sf.primaryKeyField, sf.createdAtField, sf.createdByField, sf.updatedAtField, sf.updatedByField,
-      sf.tenantIdField, sf.versionField, sf.softDeleteField, sf.softDeleteTimestampField,
-      sf.softDeletedByField, sf.sharedScopeField,
-    ]) {
-      if (declared !== undefined && declared.trim() !== '') names.add(declared);
-    }
-  }
+  const shared = sharedScopeFieldName(metadata);
+  if (shared) names.add(shared);
   return [...names].sort();
 }
 
@@ -101,8 +96,8 @@ export function omittedFromUpdate(metadata: DomainMetadata): string[] {
 
 /**
  * The fields the create body does not carry: every field that plays a system role (the key, the
- * owner, a UNIVERSE entity's shared scope, the audit, version and soft-delete fields the entity
- * enables, and every name a `systemFields` block declares), every `readOnly` field, every field
+ * owner, a UNIVERSE entity's shared scope, and the audit, version and soft-delete fields the
+ * entity's flags switch on), every `readOnly` field, every field
  * marked `inCreate = false` (ADR-090 Amendment 4) and every `blob` field (ADR-108). The server sets
  * the first kind itself. The TS twin of the Java side's `ServerOwnedFields#notInCreateBody`. Sorted.
  */

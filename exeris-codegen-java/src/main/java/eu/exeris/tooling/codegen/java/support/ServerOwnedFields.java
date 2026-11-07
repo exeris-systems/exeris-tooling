@@ -2,7 +2,7 @@ package eu.exeris.tooling.codegen.java.support;
 
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
-import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
+import eu.exeris.tooling.codegen.java.support.SystemColumns.Role;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -17,7 +17,8 @@ import java.util.TreeSet;
  * <p>An update replaces every domain field with the entity's value, except two kinds of field:
  * <ul>
  *   <li>the fields that play a system role — the primary key, the owning tenant, the audit fields
- *       (created and updated at and by) and the soft-delete fields: every field
+ *       (created and updated at and by) and the soft-delete fields the entity's flags switch on
+ *       ({@link SystemColumns}): every field
  *       {@link ListQuerySupport#systemFieldNames} names except the version, which the caller passes
  *       as the expected version an optimistic-lock update matches on, and a UNIVERSE entity's
  *       shared scope, which the update writes (ADR-090 §3). No update path writes them from the
@@ -28,6 +29,8 @@ import java.util.TreeSet;
  *       action's entity method drives writes them (ADR-090, Amendments 2 and 3). A field in a
  *       system role keeps that role's rule whether or not it is also marked.</li>
  * </ul>
+ * A field named for a role whose flag is off plays no system role: the bodies carry it and every
+ * update writes it, like any other domain field.
  *
  * <p>The sets that follow from that:
  * <ul>
@@ -57,7 +60,6 @@ import java.util.TreeSet;
 public final class ServerOwnedFields {
 
     private static final String NULL = "null";
-    private static final String VERSION_DEFAULT = "version";
 
     private static final Set<String> PRIMITIVE_TYPES =
             Set.of("boolean", "byte", "short", "int", "long", "float", "double", "char");
@@ -79,11 +81,10 @@ public final class ServerOwnedFields {
 
     /**
      * The fields the create request body does not carry: every field that plays a system role (the
-     * key, the owner, a UNIVERSE entity's shared scope, the audit, version and soft-delete fields
-     * the entity enables, and every name a {@code systemFields} block declares), the read-only
-     * fields, the fields marked {@code @Field(inCreate = false)} and the {@code @Blob} fields. The
-     * server sets all but the last: the
-     * repository fills the key, the owner and the shared scope, stamps the audit times, starts the
+     * key, the owner, a UNIVERSE entity's shared scope, and the audit, version and soft-delete
+     * fields the entity's flags switch on), the read-only fields, the fields marked
+     * {@code @Field(inCreate = false)} and the {@code @Blob} fields. The server sets all but the
+     * last: the repository fills the key, the owner and the shared scope, stamps the audit times, starts the
      * version and the soft-delete flag ({@link #resetOnCreate}).
      *
      * @param metadata the entity
@@ -123,25 +124,17 @@ public final class ServerOwnedFields {
      * @return the resets, in a fixed order
      */
     public static List<Reset> resetOnCreate(DomainMetadata metadata) {
-        SystemFieldsMetadata declared = metadata.systemFields();
         List<Reset> resets = new ArrayList<>();
         if (metadata.audited()) {
-            resets.add(new Reset(ListQuerySupport.role(declared == null ? null : declared.createdAtField(),
-                    "createdAt"), NULL));
-            resets.add(new Reset(ListQuerySupport.role(declared == null ? null : declared.updatedAtField(),
-                    "updatedAt"), NULL));
-            addIfDeclared(resets, metadata,
-                    ListQuerySupport.role(declared == null ? null : declared.createdByField(), "createdBy"));
-            addIfDeclared(resets, metadata,
-                    ListQuerySupport.role(declared == null ? null : declared.updatedByField(), "updatedBy"));
+            resets.add(new Reset(SystemColumns.field(metadata, Role.CREATED_AT), NULL));
+            resets.add(new Reset(SystemColumns.field(metadata, Role.UPDATED_AT), NULL));
+            addIfDeclared(resets, metadata, SystemColumns.field(metadata, Role.CREATED_BY));
+            addIfDeclared(resets, metadata, SystemColumns.field(metadata, Role.UPDATED_BY));
         }
         if (metadata.softDelete()) {
-            resets.add(new Reset(ListQuerySupport.role(declared == null ? null : declared.softDeleteField(),
-                    "deleted"), "false"));
-            addIfDeclared(resets, metadata, ListQuerySupport.role(
-                    declared == null ? null : declared.softDeleteTimestampField(), "deletedAt"));
-            addIfDeclared(resets, metadata, ListQuerySupport.role(
-                    declared == null ? null : declared.softDeletedByField(), "deletedBy"));
+            resets.add(new Reset(SystemColumns.field(metadata, Role.DELETED), "false"));
+            addIfDeclared(resets, metadata, SystemColumns.field(metadata, Role.DELETED_AT));
+            addIfDeclared(resets, metadata, SystemColumns.field(metadata, Role.DELETED_BY));
         }
         if (metadata.versioned()) {
             resets.add(new Reset(versionField(metadata), versionStart(metadata)));
@@ -276,9 +269,7 @@ public final class ServerOwnedFields {
      * @return the version field's name
      */
     public static String versionField(DomainMetadata metadata) {
-        SystemFieldsMetadata declared = metadata.systemFields();
-        String named = declared == null ? null : declared.versionField();
-        return named == null || named.isBlank() ? VERSION_DEFAULT : named;
+        return SystemColumns.field(metadata, Role.VERSION);
     }
 
     /** The system-role fields no update writes from the entity: all but the version and shared scope. */
@@ -297,8 +288,7 @@ public final class ServerOwnedFields {
      * @return the field's name
      */
     public static String updatedAtField(DomainMetadata metadata) {
-        SystemFieldsMetadata declared = metadata.systemFields();
-        return ListQuerySupport.role(declared == null ? null : declared.updatedAtField(), "updatedAt");
+        return SystemColumns.field(metadata, Role.UPDATED_AT);
     }
 
     /**
@@ -309,7 +299,6 @@ public final class ServerOwnedFields {
      * @return the field's name
      */
     public static String createdAtField(DomainMetadata metadata) {
-        SystemFieldsMetadata declared = metadata.systemFields();
-        return ListQuerySupport.role(declared == null ? null : declared.createdAtField(), "createdAt");
+        return SystemColumns.field(metadata, Role.CREATED_AT);
     }
 }
