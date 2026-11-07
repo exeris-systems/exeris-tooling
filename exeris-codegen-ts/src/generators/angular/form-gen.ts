@@ -103,13 +103,14 @@ export class FormGenerator implements CodeGenerator {
     const formModelName = `${entityName}FormModel`;
     const validation = formValidation(createFields);
 
-    lines.push("import { Component, ChangeDetectionStrategy, input, output, signal, computed, effect, inject } from '@angular/core';");
+    const searchablePicker = pickerFields.some((r) => r.form.picker!.searchable);
+    lines.push(`import { Component, ChangeDetectionStrategy, input, output, signal, computed, ${searchablePicker ? 'linkedSignal, ' : ''}effect, inject } from '@angular/core';`);
     lines.push("import { rxResource } from '@angular/core/rxjs-interop';");
     lines.push(`import { ${signalFormsImports(validation).join(', ')} } from '@angular/forms/signals';`);
     lines.push("import { ActivatedRoute, Router } from '@angular/router';");
     const rxjsImports = [
       ...(blobFields.length > 0 ? ['firstValueFrom'] : []),
-      ...(pickerFields.some((r) => r.form.picker!.searchable) ? ['switchMap', 'timer'] : []),
+      ...(searchablePicker ? ['switchMap', 'timer'] : []),
     ];
     if (rxjsImports.length > 0) {
       lines.push(`import { ${rxjsImports.join(', ')} } from 'rxjs';`);
@@ -430,7 +431,9 @@ export class FormGenerator implements CodeGenerator {
     // route serves. A target with a searchable property is asked again for the term typed into the
     // search box in front of the select, once typing pauses, so every row a term matches can be
     // reached; a target without one is asked once, when the form is created, and offers its first
-    // rows. The value the control holds stays an option whether or not it is among them.
+    // rows. The value the control holds stays an option whether or not it is among them. A searchable
+    // select keeps offering the options it holds while the next term loads, and keeps the label of
+    // the chosen record once a later term no longer matches it.
     for (const f of pickerFields) {
       const picker = f.form.picker!;
       const resource = `${pickerOptionsName(f.name)}Resource`;
@@ -449,13 +452,23 @@ export class FormGenerator implements CodeGenerator {
       } else {
         lines.push(`  private readonly ${resource} = rxResource({ stream: () => ${service}.findAll({ size: ${MAX_PAGE_SIZE} }) });`);
       }
+      const loaded = `pickerOptions(this.${resource}.hasValue() ? this.${resource}.value() : undefined${labelArg})`;
+      let options = loaded;
+      if (picker.searchable) {
+        const held = pickerHeldName(f.name);
+        lines.push(`  private readonly ${held} = linkedSignal<{ loading: boolean; options: ${PICKER_OPTION_TYPE}[] }, ${PICKER_OPTION_TYPE}[]>({`);
+        lines.push(`    source: () => ({ loading: this.${resource}.isLoading(), options: ${loaded} }),`);
+        lines.push('    computation: (current, previous) => (current.loading && previous ? previous.value : current.options),');
+        lines.push('  });');
+        options = `this.${held}()`;
+      }
       lines.push(`  readonly ${pickerOptionsName(f.name)} = computed(() =>`);
       if (picker.target === entityName) {
-        lines.push(`    pickerOptions(this.${resource}.hasValue() ? this.${resource}.value() : undefined${labelArg})`);
+        lines.push(`    ${options}`);
         // A record is never offered as its own parent: the edited record's id is left out.
         lines.push(`      .filter((option) => !this.editMode() || option.value !== String(this.id() ?? this.current()?.${idField})),`);
       } else {
-        lines.push(`    pickerOptions(this.${resource}.hasValue() ? this.${resource}.value() : undefined${labelArg}),`);
+        lines.push(`    ${options},`);
       }
       lines.push('  );');
       const targetDomain = context.allDomains.find((d) => d.entityName === picker.target);
@@ -470,6 +483,15 @@ export class FormGenerator implements CodeGenerator {
       lines.push(`    const value = this.formModel().${f.name};`);
       lines.push(`    return value !== '' && !this.${pickerOptionsName(f.name)}().some((option) => option.value === value);`);
       lines.push('  });');
+      if (picker.searchable) {
+        // The label an option last showed for the value, or the key when no option has shown it.
+        lines.push(`  readonly ${pickerChosenName(f.name)} = linkedSignal<{ value: string; options: ${PICKER_OPTION_TYPE}[] }, string>({`);
+        lines.push(`    source: () => ({ value: this.formModel().${f.name}, options: this.${pickerOptionsName(f.name)}() }),`);
+        lines.push('    computation: (current, previous) =>');
+        lines.push('      current.options.find((option) => option.value === current.value)?.label');
+        lines.push('      ?? (previous?.source.value === current.value ? previous.value : current.value),');
+        lines.push('  });');
+      }
     }
 
     // The metadata names a computed field's dependencies but not its formula, so the form shows
@@ -742,7 +764,7 @@ export class FormGenerator implements CodeGenerator {
         ? '          <option value="" disabled>Select...</option>'
         : '          <option value="">—</option>');
       result.push(`          @if (${pickerUnlistedName(f.name)}()) {`);
-      result.push(`            <option [value]="${state}.value()">{{ ${state}.value() }}</option>`);
+      result.push(`            <option [value]="${state}.value()">{{ ${f.form.picker!.searchable ? `${pickerChosenName(f.name)}()` : `${state}.value()`} }}</option>`);
       result.push('          }');
       result.push(`          @for (option of ${pickerOptionsName(f.name)}(); track option.value) {`);
       result.push('            <option [value]="option.value">{{ option.label }}</option>');
@@ -941,6 +963,19 @@ const PICKER_SEARCH_DEBOUNCE_MS = 250;
 /** The search term signal of a foreign-key select whose target is searchable. */
 function pickerSearchName(name: string): string {
   return `${name}Search`;
+}
+
+/** The element type of a foreign-key select's options. */
+const PICKER_OPTION_TYPE = '{ value: string; label: string }';
+
+/** The options a searchable foreign-key select holds, kept while the next term loads. */
+function pickerHeldName(name: string): string {
+  return `${name}OptionsHeld`;
+}
+
+/** The label a searchable foreign-key select shows for its value when no option lists it. */
+function pickerChosenName(name: string): string {
+  return `${name}ChosenLabel`;
 }
 
 /** The options signal of a foreign-key select. */

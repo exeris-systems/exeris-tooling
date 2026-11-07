@@ -26,8 +26,9 @@ reserved name, so a field named `search` is no longer a key of `<Model>Filter`.
 The create and edit form's select for a `MANY_TO_ONE` foreign key whose target has a searchable
 field gains a search box in front of it (`data-testid="field-<field>-search"`, at most 100
 characters). Typing narrows the options: 250 ms after the last keystroke the form asks the target's
-list route for the first 100 rows matching the term, and the value the select holds stays an option
-whether or not it matches. Its truncation hint reads "Showing the first 100 matches; type to
+list route for the first 100 rows matching the term. The select keeps the options it holds while
+the next term loads, and the value it holds stays an option, under the label it was chosen by,
+whether or not a later term matches it. Its truncation hint reads "Showing the first 100 matches; type to
 narrow." A select whose target has nothing searchable is unchanged and lists the target's first 100
 rows.
 
