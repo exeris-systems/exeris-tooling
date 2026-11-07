@@ -34,6 +34,7 @@ import { viewSystemFieldNames } from '../api/type-gen.js';
 import { foreignKeyLinks, foreignKeyPickers, type ForeignKeyPicker } from './relationship-links.js';
 import { filterProperties, sortableProperties, type ListQueryProperty } from './list-query.js';
 import { referencesNonScalar } from '../../core/type-references.js';
+import { storedMember } from '../../core/relationships.js';
 
 /**
  * The per-field render facet from `@View`, the second input of the model.
@@ -265,9 +266,15 @@ export function listFilterKind(property: ListQueryProperty, enums: readonly Enum
   }
 }
 
-/** Resolves every field of `domain`, in declaration order. */
+/**
+ * Resolves every field of `domain`, in declaration order. A field the record carries no value for
+ * (`storedMember`: a `@Blob` field, an inverse collection) is not displayed.
+ */
 export function resolveFieldRenders(domain: DomainMetadata, context: FieldRenderContext): FieldRenderModel[] {
-  return (domain.fields ?? []).map((field) => resolveFieldRender(field, context));
+  return (domain.fields ?? []).map((field) => {
+    const render = resolveFieldRender(field, context);
+    return storedMember(field, domain) ? render : { ...render, displayed: false };
+  });
 }
 
 /** Resolves how one field renders in the list, the detail view and the form. */

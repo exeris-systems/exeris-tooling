@@ -237,7 +237,7 @@ export const RELATIONSHIP_CONTRACT_COVERAGE = {
   cascade: {
     state: 'JAVA_ONLY',
     written: true,
-    reason: 'Sets ON DELETE CASCADE on the emitted foreign key constraint.',
+    reason: 'Sets ON DELETE CASCADE on the owning side foreign key constraint, declared on either side.',
   },
   orphanRemoval: { state: 'RESERVED', written: false, reason: RECORD_DEFAULT },
   optional: { state: 'RESERVED', written: false, reason: RECORD_DEFAULT },

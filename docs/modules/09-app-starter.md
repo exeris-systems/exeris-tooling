@@ -53,7 +53,7 @@ The parent declares Exeris's own `url` and inherits `licenses`, `developers` and
 | `exeris-kernel-spi`, `exeris-kernel-core` | compile | Every handler and repository imports the SPI; `Application` imports `KernelBootstrap`, `HttpRouter` and `TransactionOrchestrator` from Core |
 | `exeris-kernel-community` | runtime | The default driver. An application on another driver excludes it and declares its own; `exeris:verify-runtime` checks for registered providers, not for this artifact |
 | `exeris-sdk-composition-runtime` | compile | The composed `Application` imports `CompositionConductor` |
-| `tools.jackson.core:jackson-databind` | compile | The repository of an entity with a `List<X>` field imports Jackson 3 |
+| `tools.jackson.core:jackson-databind` | compile | The repository of an entity with a `List<X>` column imports Jackson 3; a `mappedBy` collection is no column |
 
 It declares no JDBC driver, no logging backend and no test library. Those are the application's: generated code logs through `System.Logger` and binds no facade, and the generated tests need JUnit 5 and AssertJ in the application's test scope.
 

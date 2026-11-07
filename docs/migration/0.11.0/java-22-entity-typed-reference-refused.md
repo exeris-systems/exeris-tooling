@@ -28,8 +28,9 @@ which no column stores; hold its key instead: UUID customerId, with
 
 A field is a reference when its type is an `@ExerisDomain` entity of the same build: by its
 qualified name, or by its simple name when it is in the referencing entity's package. This applies
-whether the field carries `@Relationship`, `@GraphEdge`, or neither. A `List` of entities is not
-affected. It is stored as a JSON column, as before.
+whether the field carries `@Relationship`, `@GraphEdge`, or neither. A `List` of entities has a
+step of its own in this release: a `mappedBy` collection holds no column, and any other `List` of
+entities is refused.
 
 **Where it applies.** Only to entities that declare a field typed as another entity of the build,
 or as themselves. Output for every other entity is byte-identical to the previous release.

@@ -27,6 +27,7 @@
  */
 
 import { outPath } from '../../core/paths.js';
+import { storedMember } from '../../core/relationships.js';
 import type { DomainMetadata } from '../../models/domain-model.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import { modelTypeName } from '../../models/model-naming.js';
@@ -109,7 +110,7 @@ function peerInterface(peerName: string, metadata: DomainMetadata): string {
 
   lines.push(`export interface ${typeName} {`);
   for (const field of metadata.fields) {
-    if (field.blob !== undefined) continue;
+    if (!storedMember(field, metadata)) continue;
     const optional = field.required ? '' : '?';
     const comment = field.description ? ` // ${field.description}` : '';
     lines.push(`  ${field.name}${optional}: ${DslMapper.mapType(field.type).tsType};${comment}`);
@@ -142,7 +143,7 @@ function peerZodSchema(peerName: string, metadata: DomainMetadata): string {
 
   lines.push(`export const ${typeName}Schema = z.object({`);
   for (const field of metadata.fields) {
-    if (field.blob !== undefined) continue;
+    if (!storedMember(field, metadata)) continue;
     lines.push(`  ${field.name}: ${buildZodType(field)},`);
   }
   lines.push(...undeclaredReadSchemaMembers(metadata));

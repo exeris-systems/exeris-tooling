@@ -34,5 +34,11 @@
     "since": "0.11",
     "adr": "ADR-015",
     "justification": "The API treated every name a systemFields block declared as server-owned whatever the entity's flags, while the migration and the repository treat a role whose flag is off as an ordinary column. Such a field was out of both bodies and the update never wrote it, so nothing could set the column. The API now takes the active roles from the same place, on the Java and the TypeScript side. A client that relied on the server dropping the field now has its value stored; docs/migration/0.11.0/java-26-system-marker-without-flag-is-client-writable.md and ts-15-system-marker-without-flag-in-request-types.md carry the steps."
+  },
+  {
+    "signature": "V{tier}{nnnnnn}__create_{table}.sql, V3000000__foreign_keys.sql, {E}Repository, {E}Handler, OpenAPI (exeris-codegen-java): a ONE_TO_MANY List<Target> with mappedBy holds no column and reads as null; its cascadeDelete sets ON DELETE CASCADE on the owning foreign key; any other List of entities is refused with EXT-GEN-3003",
+    "since": "0.11",
+    "adr": "ADR-015",
+    "justification": "An inverse collection was stored as a JSON column of the owner's table, a copy that no constraint, tenant scope or write of the target kept in step, and its cascadeDelete reached no constraint. Its rows are now the target's rows: no column, index, bind or read; the handler resets it to null after decoding; OpenAPI marks it readOnly and names the child list route its rows are read from; the processor requires its setter only (EXT-PROC-1034). A List of entities that no mappedBy ties to a key of the target is refused before any write. docs/migration/0.11.0/java-29-inverse-collection-holds-no-column.md carries the steps."
   }
 ]

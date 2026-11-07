@@ -23,7 +23,6 @@ import eu.exeris.tooling.codegen.java.support.NameCasing;
 import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
-import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
@@ -352,7 +351,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             for (ForeignKeys.Reference reference : ForeignKeys.outgoing(domain, domains)) {
                 foreignKeys.add(new ForeignKey(reference.table(), reference.constraint(), reference.column(),
                         tableByEntity.get(reference.targetEntity()),
-                        keyColumnByEntity.get(reference.targetEntity()), deletePolicy(reference.relationship())));
+                        keyColumnByEntity.get(reference.targetEntity()), deletePolicy(reference)));
             }
         }
 
@@ -384,18 +383,12 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     }
 
     /**
-     * Maps a relationship's cascade to an {@code ON DELETE} policy:
-     * {@code CASCADE} when the parent owns the child lifecycle
-     * ({@code ALL}/{@code REMOVE}), {@code RESTRICT} otherwise (the default —
-     * refuse to delete a parent that still has children).
+     * Maps a constraint's cascade to an {@code ON DELETE} policy: {@code CASCADE} when either side
+     * of the relationship declares {@code cascadeDelete} ({@link ForeignKeys.Reference#cascadeDelete}),
+     * {@code RESTRICT} otherwise (the default — refuse to delete a parent that still has children).
      */
-    private static String deletePolicy(RelationshipMetadata rel) {
-        RelationshipMetadata.CascadeType cascade = rel.cascade();
-        if (cascade == RelationshipMetadata.CascadeType.ALL
-                || cascade == RelationshipMetadata.CascadeType.REMOVE) {
-            return "CASCADE";
-        }
-        return "RESTRICT";
+    private static String deletePolicy(ForeignKeys.Reference reference) {
+        return reference.cascadeDelete() ? "CASCADE" : "RESTRICT";
     }
 
     /** One resolved foreign-key constraint, ready to emit. */

@@ -211,6 +211,27 @@ class SdkExamplesE2ETest {
     }
 
     @Test
+    @DisplayName("invoicing: Invoice.lines is read from the invoice_lines rows, which go with their invoice")
+    void inverseCollectionIsHeldByTheChildRows() throws IOException {
+        Map<String, String> migrations = contents(app.generatedMain().resolve("db/migration"));
+        String createInvoices = migrations.entrySet().stream()
+                .filter(e -> e.getKey().endsWith("__create_invoices.sql")).map(Map.Entry::getValue)
+                .findFirst().orElseThrow();
+        String foreignKeys = migrations.entrySet().stream()
+                .filter(e -> e.getKey().endsWith("__foreign_keys.sql")).map(Map.Entry::getValue)
+                .findFirst().orElseThrow();
+        Path invoicing = app.generatedMain().resolve(SdkExamplesSource.SCENARIO_PACKAGE).resolve("invoicing");
+
+        assertThat(createInvoices).doesNotContain("lines");
+        assertThat(foreignKeys).contains("ALTER TABLE invoice_lines ADD CONSTRAINT fk_invoice_lines_invoice_id"
+                + " FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE;");
+        assertThat(Files.readString(invoicing.resolve("repository/InvoiceRepository.java")))
+                .doesNotContain("setLines(").doesNotContain("tools.jackson");
+        assertThat(Files.readString(invoicing.resolve("handler/InvoiceHandler.java")))
+                .contains("entity.setLines(null);");
+    }
+
+    @Test
     @DisplayName("a second run over the same sources writes byte-identical metadata and emitted trees")
     void generationIsDeterministic() throws IOException {
         Build rerun = build(WORKSPACE.resolve("rerun"), sourcesOf(DOMAIN_SCENARIOS));
