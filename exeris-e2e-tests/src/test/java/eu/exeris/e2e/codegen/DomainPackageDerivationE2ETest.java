@@ -25,6 +25,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * its infrastructure in the packages beside that segment, from the main and the test emitters
  * alike: the generated tests compile against the generated main tree.
  *
+ * <p>The streaming action subscribes to an action-triggered event, so the generated stream test
+ * names the event publisher from the derived event package too.
+ *
  * <p>Both trees are generated with the base package auto-detected, so the application bootstrap
  * and the generated test support follow the same derivation as the per-entity types.
  */
@@ -63,6 +66,8 @@ class DomainPackageDerivationE2ETest {
         assertThat(generatedTests.resolve(base.resolve("repository/WidgetRepositoryTest.java"))).exists();
         assertThat(generatedTests.resolve(base.resolve("service/WidgetServiceTest.java"))).exists();
         assertThat(generatedTests.resolve(base.resolve("handler/WidgetHandlerTest.java"))).exists();
+        assertThat(generatedTests.resolve(base.resolve("handler/WidgetHandlerTest.java")))
+                .content().contains("WidgetEventPublisher");
         assertThat(generatedTests.resolve(base.resolve("testsupport/RecordingPersistence.java"))).exists();
 
         List<String> files = new ArrayList<>();
@@ -93,6 +98,8 @@ class DomainPackageDerivationE2ETest {
 
                 @ExerisDomain(module = "catalog", path = "/widgets")
                 @DomainEvent(name = "WidgetCreated", trigger = DomainEvent.Trigger.CREATE, topic = "widgets.created")
+                @DomainEvent(name = "WidgetTracked", trigger = DomainEvent.Trigger.ACTION, action = "track",
+                        topic = "widgets.tracked")
                 @Saga(name = "WidgetSaga", timeout = "PT5M", maxRetries = 1)
                 public class Widget {
 
@@ -111,6 +118,9 @@ class DomainPackageDerivationE2ETest {
 
                     @Action(name = "archive", label = "Archive")
                     public void archive() {}
+
+                    @Action(name = "track", label = "Track", streaming = true)
+                    public void track() {}
                 }
                 """.formatted(domainPackage);
     }

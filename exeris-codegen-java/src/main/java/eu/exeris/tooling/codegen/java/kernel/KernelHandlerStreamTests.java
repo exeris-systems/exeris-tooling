@@ -16,6 +16,7 @@ import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ParamSource;
+import eu.exeris.tooling.codegen.java.support.DomainPackages;
 import eu.exeris.tooling.codegen.java.support.KernelStreamScaffold;
 import eu.exeris.tooling.codegen.java.support.KernelStreamScaffold.StreamEventBinding;
 import eu.exeris.tooling.codegen.java.support.NameCasing;
@@ -426,7 +427,7 @@ final class KernelHandlerStreamTests {
         }
         if (a.subscribes()) {
             DomainMetadata metadata = s.metadata();
-            ClassName publisherType = ClassName.get(metadata.packageName().replace(".domain", ".event"),
+            ClassName publisherType = ClassName.get(DomainPackages.sibling(metadata, DomainPackages.EVENT),
                     metadata.entityName() + "EventPublisher");
             m.addStatement(NEW_ENGINE, s.engineType(), s.engineType());
             args.add(CodeBlock.of("new $T(engine)", publisherType));
