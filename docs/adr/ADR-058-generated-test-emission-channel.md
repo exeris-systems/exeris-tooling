@@ -9,7 +9,7 @@ slug: adr/ADR-058
 
 # ADR-058 — Generated tests: emission channel and dependency contract
 
-- **Status:** ACCEPTED (2026-07-31)
+- **Status:** ACCEPTED (2026-07-31) · amended 2026-11-07 (Amendment 1 — an opt-in integration-test channel that boots the generated application on H2)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / codegen pipeline
 - **Visibility:** public
@@ -221,6 +221,102 @@ mode this repo rejects elsewhere: a wrong expected status would ship silently.
 > — disagree there and the generated test covers a different set of guards than the handler emits,
 > green either way. The *comparison* stays unshared on purpose: deriving the operator once and
 > handing it to both would make the pair agree by construction instead of by behaviour.
+
+## Amendment 1 — an opt-in integration-test channel that boots the generated application on H2 (2026-11-07)
+
+**Status:** Accepted *(adds a second test channel beside §1. §1 to §4 and the slice notes are
+unchanged. The scope line "Any assertion about the database: nothing here starts a persistence
+engine" still holds for the unit channel, and this channel is where those assertions go.)*
+
+**Deciders:** the founder (ruling 2026-11-07, `exeris-tooling#408`).
+
+The generated unit tests run generated code against emitted doubles. Some pairs of emitter paths
+can only be compared by a running kernel, and no double can stand in for one:
+
+- the emitted migration and the repository's SQL, on a real engine;
+- the request codec and the entity's accessors;
+- the router and the handlers;
+- `GeneratedRoutePolicy`'s copy of the router's matching and the router itself (ADR-105
+  obligations 1 to 5).
+
+The tooling e2e compares them by booting the emitted `Application`. A consumer had none of that.
+
+### The decision of the amendment
+
+1. **A second opt-in, with its own root.** `exeris:generate` takes `exeris.integrationTests`
+   (default `false`) and `exeris.integrationTestOutputDir` (default `src/test/generated-it/java`).
+   The command line takes `--integration-tests` and `--integration-test-output-dir`, each refused
+   without the other. `CodegenPipeline.runIntegrationTests(metadataDir, itOutputDir, basePackage)` is
+   a separate entry point, as §1 reasons. The root has its own `OutputWriter` and manifest, so
+   neither test tree prunes the other, and it is registered with `addTestCompileSourceRoot`, under
+   `exeris.codegen.skip` too. The generator catalogue (ADR-097) names the tree `integration-test`.
+2. **Failsafe runs them, by name.** Every emitted test class ends in `IT`, and no support class
+   matches a Surefire or Failsafe default include (`ApplicationUnderTest`, `IntegrationHttp`,
+   `IntegrationTokens`). So `mvn test` runs the unit channel only, and `mvn verify` adds this one.
+3. **What boots.** The emitted `Application` boots once per test JVM, on the kernel driver already
+   on the test runtime classpath; the `exeris.it.application` system property names another class
+   to boot, such as a subclass that overrides a hook. It boots against a fresh in-memory H2 database
+   in PostgreSQL mode, handed over through the kernel's own `exeris.http.*` and
+   `exeris.persistence.*` keys, which are restored once the kernel has read them. The kernel's
+   persistence driver applies its own migrations only, so the support class applies the generated
+   ones before the boot, read from the test classpath in version order, as a migration tool would.
+   H2 knows two PostgreSQL spellings the migrations use by other names, `TIMESTAMPTZ` and a key
+   column's `PRIMARY KEY DEFAULT gen_random_uuid()`, and those two are restated; nothing else in a
+   migration is changed. Readiness is a response other than `503` from a path no route serves.
+4. **Scope of 0.11: `GLOBAL` applications.** The channel is emitted only when every entity resolves
+   to `GLOBAL` and the build derives neither `graph` nor `storage` and carries no capability
+   composition. H2 runs no row-level-security DDL, and the migrations apply to the whole
+   application, so one tenant-scoped entity rules H2 out for all of them. Otherwise nothing is
+   written or pruned, and the build warns `EXT-GEN-3105` with the first reason. A failure to write
+   the tree is `EXT-PLUG-2005`. PostgreSQL through Testcontainers, the tenant scopes and a
+   `NOBYPASSRLS` role (ADR-090) are a later amendment.
+5. **How a test binds a principal.** A route requirement is evaluated before the generated edge
+   handler, so a `decorate` wrapper cannot satisfy one. When some route demands an identity
+   (ADR-105 obligation 17), the support class starts a loopback JWKS endpoint
+   (`com.sun.net.httpserver`) with an RSA key pair made at test runtime. It sets
+   `security.jwks.uri`, `security.jwt.issuer` and `security.jwt.audience`, and mints RS256 tokens
+   with `java.security`. The `sub` is a fixed UUID, and a token carries a `scope` claim when it
+   is given scopes. The kernel verifies them exactly as it verifies a production token.
+6. **What the tests assert.** The ITs assert statuses and identifiers over HTTP, never SQL text or
+   emitted source.
+   - Per entity: the CRUD round trip; `404` for an absent row and after a delete; `400` for a
+     malformed key; `409` for a stale versioned update; `422` and `409` for foreign-key refusals;
+     exclusion of a deleted row from the list; the `@Validation` boundary pair. A case that would
+     have to create a row is emitted only where a valid body can be synthesized.
+   - Per declared route requirement: `401` without a token, with a query string and on `HEAD`;
+     `403` for a verified caller lacking every declared scope, and for one holding only the
+     entity's scopes on an action that declares its own; and passing the policy with a declared
+     scope.
+   - The expected requirement is read from the same declaration rules `GeneratedRoutePolicy` is
+     emitted from. The request is built independently of the emitted routing table, so the two
+     paths are compared and not shared.
+7. **The dependency contract.** The emitted integration tests import JUnit 5, AssertJ, the JDK
+   (`java.net.http`, `jdk.httpserver`, `java.security`, `java.sql`) and the generated main code. At
+   test runtime they need `com.h2database:h2`, which `RequiredCompileArtifacts` reports as
+   `EXT-PLUG-2004` when it is absent, and a kernel driver. `exeris-app-bom` manages the H2 version
+   the tooling e2e ran, and `exeris-app-parent` binds `maven-failsafe-plugin` (ADR-091
+   Amendment 7). No mocking framework and no kernel testkit are imported.
+8. **The gate runs them.** `GeneratedIntegrationTestsE2ETest` runs annotated source through the
+   processor, `run` and `runIntegrationTests`, compiles both trees with `javac` against JUnit,
+   AssertJ and the kernel alone, and executes the `*IT` classes on the JUnit Platform launcher. It
+   asserts that they pass and that each kind of case ran. The `app-integration-tests` invoker
+   fixture runs them under Failsafe in a consumer build on `exeris-app-parent`. §4's rule applies
+   unchanged.
+9. **Out of scope.** PostgreSQL and the tenant scopes. `@Action` stream frames, live view and
+   spectate over the booted application. Graph and blob routes. A TypeScript or browser smoke test
+   against the booted backend, which is not planned. The initializr option that turns the channel
+   on.
+
+### Consequences
+
+- Turning the channel on costs H2 at test scope and a Failsafe binding. The binding arrives with
+  `exeris-app-parent`; an application on route 2 copies it, and adds H2 either way.
+- The integration tests are committed L1 output like the rest, and `exeris:detach` does not move
+  them, as for the unit tree.
+- A generator that changes a status, a route or a requirement fails a consumer's `mvn verify`
+  when the channel is on. That is the purpose of the channel.
+- The tests read nothing from `DomainMetadata` that the Java emitters do not already read, and add
+  nothing to it, so the channel is Java-only for emitter parity.
 
 ## Engineering protocol
 

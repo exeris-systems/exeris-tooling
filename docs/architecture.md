@@ -24,11 +24,13 @@ graph LR
     ts["exeris-gen (@exeris/codegen-ts)"]
     java["src/main/generated/java"]
     tests["src/test/generated/java"]
+    its["src/test/generated-it/java"]
     ng["src/app/generated"]
 
     src --> proc --> meta
     meta --> pipe --> java
     pipe -. "exeris.tests" .-> tests
+    pipe -. "exeris.integrationTests" .-> its
     meta --> ts --> ng
 ```
 

@@ -180,7 +180,9 @@ the pipeline's integrity:
    lifecycle (`exeris:detach`). Never assume "always regenerate".
 6. **Consumer-build contracts:** Emitted code logs through `System.Logger` with `{0}` placeholders
    (ADR-060); emitted tests in `src/test/generated/java` import only JUnit 5 + AssertJ (ADR-058);
-   `CapTierWall` uses dependency-free Class-File API (ADR-055).
+   emitted integration tests in `src/test/generated-it/java` import JUnit 5, AssertJ and the JDK,
+   and need H2 at test runtime (ADR-058 Amendment 1); `CapTierWall` uses dependency-free
+   Class-File API (ADR-055).
 
 ## Contributor terms & DCO sign-off
 
