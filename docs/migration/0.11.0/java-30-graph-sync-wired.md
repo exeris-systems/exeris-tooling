@@ -39,7 +39,8 @@ generated and nothing built, registered or called it.
 
 - A graph failure now fails the write route with `500`, after the row has committed. A client that
   retries a failed create writes a second row. To let the write stand instead, override
-  `create<Entity>GraphSync()` and return a graph sync whose `syncToGraph` catches:
+  `create<Entity>GraphSync()` and return a graph sync whose `syncToGraph` and `deleteFromGraph`
+  catch:
 
   ```java
   @Override
@@ -53,12 +54,27 @@ generated and nothing built, registered or called it.
                   // logged by the graph sync; the node catches up on the entity's next write
               }
           }
+
+          @Override
+          public void deleteFromGraph(UUID entityId) {
+              try {
+                  super.deleteFromGraph(entityId);
+              } catch (RuntimeException e) {
+                  // logged by the graph sync; the node stays until it is deleted again
+              }
+          }
       };
   }
   ```
 
   Drop the `MemoryAllocator` argument for an entity with no `@GraphProperty`, as its graph sync's
   constructor does.
+
+- A graph failure after a delete has committed skips the route's later steps: the `DELETE` events
+  are not published, and a retried `DELETE` answers `404`, so they are not published for that row.
+  The handler of a hard-deleted entity with `@Blob` fields deletes the row's stored objects on that
+  failure when the row is gone, so they are not orphaned. The override above, catching in
+  `deleteFromGraph`, lets the route finish and publish.
 
 **What changes in behaviour.**
 

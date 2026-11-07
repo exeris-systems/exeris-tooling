@@ -6,6 +6,8 @@ import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.community.testkit.persistence.EmbeddedPersistenceEngineFixture;
 import eu.exeris.kernel.community.testkit.persistence.EmbeddedPersistenceEngineFixtures;
 import eu.exeris.kernel.core.persistence.TransactionOrchestrator;
+import eu.exeris.kernel.spi.graph.GraphEngine;
+import eu.exeris.kernel.spi.graph.GraphSession;
 import eu.exeris.kernel.spi.http.HttpExchange;
 import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpMethod;
@@ -31,6 +33,7 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -48,13 +51,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  * its Amendment 1): the upload stores the body under the row's key and refuses an empty body and a
  * media type the field does not accept, {@code GET} answers the bytes and their type, {@code HEAD}
  * the type and length with no body, the entity's own JSON carries the field as {@code null}, the
- * field's {@code DELETE} removes the object, and a hard delete of the row removes it too.
+ * field's {@code DELETE} removes the object, and a hard delete of the row removes it too, also when
+ * the graph projection that follows the row delete fails.
  *
  * <p>The row lives in in-memory H2 over the emitted migration, through the generated repository
  * and service; the store is {@link InMemoryBlobStore}. The entity is {@code GLOBAL} so the
  * migration runs on H2 without row-level security: refusing a {@code @Blob} on such an entity is
  * the processor's, and the facet here is written onto the metadata ({@link BlobFacet}), which the
- * generators take as given.
+ * generators take as given. The entity is a {@code @Graph} node, so its service projects each write
+ * into a graph engine double whose node delete fails on demand.
  */
 @Tag("e2e")
 @Tag("codegen")
@@ -76,6 +81,7 @@ class BlobFieldRoutesE2ETest {
 
     private InMemoryBlobStore store;
     private Object handler;
+    private boolean graphDeleteFails;
 
     @BeforeAll
     static void generateCompileAndMigrate() throws Exception {
@@ -117,7 +123,10 @@ class BlobFieldRoutesE2ETest {
     void newHandler() throws ReflectiveOperationException {
         store = new InMemoryBlobStore();
         Class<?> serviceType = app.loader().loadClass(BASE_PACKAGE + ".service.InvoiceService");
-        Object service = serviceType.getConstructor(repository.getClass()).newInstance(repository);
+        Class<?> graphSyncType = app.loader().loadClass(BASE_PACKAGE + ".graph.InvoiceGraphSync");
+        Object graphSync = graphSyncType.getConstructor(GraphEngine.class).newInstance(graphEngine());
+        Object service = serviceType.getConstructor(repository.getClass(), graphSyncType)
+                .newInstance(repository, graphSync);
         handler = handlerType.getConstructor(serviceType, MemoryAllocator.class, BlobStore.class)
                 .newInstance(service, allocator, store);
     }
@@ -228,6 +237,21 @@ class BlobFieldRoutesE2ETest {
         assertThat(store.objects()).isEmpty();
     }
 
+    @Test
+    @DisplayName("a row delete whose graph projection fails after the row is gone still removes its object; "
+            + "a retry answers 404")
+    void rowDeleteWhoseGraphProjectionFailsRemovesTheObject() throws Exception {
+        UUID id = saveRow();
+        call("handleUploadReceipt", request(HttpMethod.PUT, id, "application/pdf", PDF));
+        graphDeleteFails = true;
+
+        assertThat(call("handleDelete", request(HttpMethod.DELETE, id, null, null)).status()).isEqualTo(500);
+
+        assertThat(store.objects()).isEmpty();
+        assertThat(call("handleGetById", request(HttpMethod.GET, id, null, null)).status()).isEqualTo(404);
+        assertThat(call("handleDelete", request(HttpMethod.DELETE, id, null, null)).status()).isEqualTo(404);
+    }
+
     // ── harness ──────────────────────────────────────────────────────────────────────────────
 
     /** What the handler answered: a raw response, or a typed one the kernel would encode. */
@@ -236,6 +260,24 @@ class BlobFieldRoutesE2ETest {
         Optional<String> header(String name) {
             return headers.stream().filter(h -> h.nameEqualsIgnoreCase(name)).map(HttpHeader::value).findFirst();
         }
+    }
+
+    /** A graph engine whose sessions accept every write, and refuse a node delete while {@link #graphDeleteFails}. */
+    private GraphEngine graphEngine() {
+        GraphSession session = (GraphSession) Proxy.newProxyInstance(GraphSession.class.getClassLoader(),
+                new Class<?>[] {GraphSession.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("deleteNode") && graphDeleteFails) {
+                        throw new IllegalStateException("graph unavailable");
+                    }
+                    return null;
+                });
+        return (GraphEngine) Proxy.newProxyInstance(GraphEngine.class.getClassLoader(),
+                new Class<?>[] {GraphEngine.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("openSession")) {
+                        return session;
+                    }
+                    throw new UnsupportedOperationException(method.getName());
+                });
     }
 
     private static UUID saveRow() throws ReflectiveOperationException {
@@ -330,9 +372,11 @@ class BlobFieldRoutesE2ETest {
 
                 import eu.exeris.kernel.spi.storage.blob.BlobRef;
                 import eu.exeris.sdk.annotation.ExerisDomain;
+                import eu.exeris.sdk.annotation.Graph;
                 import java.util.UUID;
 
                 @ExerisDomain(module = "till", path = "/invoices", dataScope = ExerisDomain.DataScope.GLOBAL)
+                @Graph
                 public class Invoice {
 
                     private UUID id;

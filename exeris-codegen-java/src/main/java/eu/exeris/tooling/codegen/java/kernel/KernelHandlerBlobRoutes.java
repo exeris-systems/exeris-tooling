@@ -138,6 +138,44 @@ final class KernelHandlerBlobRoutes {
         if (!metadata.softDelete()) {
             handler.addMethod(deleteObjectsMethod(fields, entityLower));
         }
+        if (cleansUpAfterFailedDelete(metadata)) {
+            handler.addMethod(deleteObjectsOfAGoneRowMethod());
+        }
+    }
+
+    /**
+     * Whether the delete handler deletes the row's objects when {@code service.delete(id)} fails
+     * and the row is gone: a hard-deleted entity with {@code @Blob} fields whose service projects
+     * into the graph after the repository commits, so a graph failure leaves the row deleted and
+     * a retried {@code DELETE} answering {@code 404}.
+     *
+     * @param metadata the entity
+     * @return {@code true} when the delete handler wraps {@code service.delete(id)}
+     */
+    static boolean cleansUpAfterFailedDelete(DomainMetadata metadata) {
+        return !metadata.softDelete() && BlobFields.any(metadata)
+                && KernelGraphSyncGenerator.syncedByService(metadata);
+    }
+
+    /**
+     * Appends {@code service.delete(id)} to the delete handler; for an entity that
+     * {@link #cleansUpAfterFailedDelete} admits, wrapped so that a failure deletes the objects of a
+     * row that is gone before it propagates to the route's catches.
+     *
+     * @param method   the delete handler, inside its {@code try}
+     * @param metadata the entity
+     */
+    static void appendServiceDelete(MethodSpec.Builder method, DomainMetadata metadata) {
+        if (!cleansUpAfterFailedDelete(metadata)) {
+            method.addStatement("service.delete(id)");
+            return;
+        }
+        method.beginControlFlow("try")
+                .addStatement("service.delete(id)")
+                .nextControlFlow("catch ($T e)", RUNTIME_EXCEPTION)
+                .addStatement("deleteBlobObjectsIfRowGone(id, e)")
+                .addStatement("throw e")
+                .endControlFlow();
     }
 
     /**
@@ -305,6 +343,26 @@ final class KernelHandlerBlobRoutes {
      * object delete is logged at warning level and fails nothing, and leaves the object in the
      * store.
      */
+    private static MethodSpec deleteObjectsOfAGoneRowMethod() {
+        return MethodSpec.methodBuilder("deleteBlobObjectsIfRowGone")
+                .addModifiers(Modifier.PRIVATE)
+                .addParameter(UUID, "id")
+                .addParameter(RUNTIME_EXCEPTION, "failure")
+                .addJavadoc("Deletes the stored objects of a row whose delete failed, when the row is gone.\n")
+                .addJavadoc("<p>The service projects the delete into the graph after the repository commits,\n")
+                .addJavadoc("so a graph failure leaves no row for a retried {@code DELETE} to find. A row\n")
+                .addJavadoc("that is still stored keeps its objects. A failure here is suppressed into\n")
+                .addJavadoc("{@code failure}, which the route answers.\n")
+                .beginControlFlow("try")
+                .beginControlFlow("if (service.findById(id).isEmpty())")
+                .addStatement("deleteBlobObjects(id)")
+                .endControlFlow()
+                .nextControlFlow("catch ($T e)", RUNTIME_EXCEPTION)
+                .addStatement("failure.addSuppressed(e)")
+                .endControlFlow()
+                .build();
+    }
+
     private static MethodSpec deleteObjectsMethod(List<FieldMetadata> fields, String entityLower) {
         MethodSpec.Builder method = MethodSpec.methodBuilder("deleteBlobObjects")
                 .addModifiers(Modifier.PRIVATE)

@@ -505,7 +505,11 @@ one-argument constructor is no longer emitted for it.
 - A graph failure propagates, so the route answers 5xx for a row that committed. This is the
   after-commit trade-off ADR-075 accepted for the publish.
 - A consumer who wants the write to stand regardless returns a `create<Entity>GraphSync()` subclass
-  whose `syncToGraph` catches.
+  whose `syncToGraph` and `deleteFromGraph` catch.
+- On a graph failure after a delete, the delete route's later steps do not run: its `DELETE` events
+  are not published. The handler of a hard-deleted entity with `@Blob` fields wraps
+  `service.delete(id)` and, when the call fails and the row is gone, deletes the row's objects
+  before the failure propagates. A retried `DELETE` answers `404` and could not reach them.
 
 The service is the seam, not the handler. Every write reaches it, including each action and each
 streaming action through `service.update`, and the projection needs only the stored state, not the
@@ -526,6 +530,9 @@ tenant. The emitted service Javadoc says so, and the kernel ask is recorded upst
 - **[-]** Every write route of a graph entity pays the graph round trips, and a graph outage fails
   those routes after their rows commit.
 - **[-]** A crash between commit and sync leaves the graph stale for that row until its next sync.
+- **[-]** A graph failure after a delete commits skips the route's `DELETE` events; a retried
+  `DELETE` answers `404`, so they are not published for that row. The row's `@Blob` objects are
+  deleted on that failure path, and are not orphaned.
 - **[-]** A tenant-partitioned `@Graph` entity's graph stays the consumer's to call until the kernel
   can scope graph sessions to the acting tenant.
 
@@ -542,3 +549,5 @@ tenant. The emitted service Javadoc says so, and the kernel ask is recorded upst
    delete, read back from `graph_nodes` and the edge table. Its second case boots an application
    whose graph sync registers nothing and answers `500` for a committed row, which is the vacuity
    check of the registration.
+5. `BlobFieldRoutesE2ETest`: a hard delete of a `@Graph` entity with a `@Blob` field whose node
+   delete fails answers `500`, leaves no stored object, and a retry answers `404`.
