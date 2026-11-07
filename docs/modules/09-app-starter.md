@@ -31,7 +31,7 @@ None of the three inherits `exeris-tooling-root` or `exeris-tooling-parent`, so 
 
 Every tooling, kernel and SDK version in it is a literal property: `exeris.tooling.version`, `exeris.kernel.version`, `exeris.sdk.version` and `jackson3.version`, never `${project.version}` or anything derived from it, because the parent passes them on by inheritance and an inherited value is interpolated in the consumer's model. The kernel, SDK and Jackson values equal the same properties in `exeris-tooling-bom`, the versions this release's suites ran against. `tools/release-readiness/release-readiness.sh` fails a release where they differ or where an Exeris version is a `-SNAPSHOT`.
 
-It manages nothing else: no JavaPoet, swagger, Jackson 2, H2, compile-testing, JUnit or AssertJ.
+It manages `com.h2database:h2` at `h2.version`, for the generated integration tests ([ADR-091](../adr/ADR-091-opt-in-application-starter.md) Amendment 7), and nothing else: no JavaPoet, swagger, Jackson 2, compile-testing, JUnit or AssertJ.
 
 ### `exeris-app-parent`
 
@@ -42,6 +42,7 @@ It manages nothing else: no JavaPoet, swagger, Jackson 2, H2, compile-testing, J
 | Codegen | `exeris:generate` at `generate-sources`; `exeris:verify-capabilities` and `exeris:verify-runtime` at `process-classes` |
 | Resources | `src/main/resources`, and `db/migration/**` and `openapi/**` from `src/main/generated/java`, so the migrations and the OpenAPI document reach the classpath |
 | Surefire | 3.2.5, which runs the JUnit 5 generated tests with no provider declared |
+| Failsafe | 3.2.5, bound in `integration-test` and `verify` (execution `exeris-integration-tests`), which runs the generated `*IT` integration tests ([ADR-058](../adr/ADR-058-generated-test-emission-channel.md) Amendment 1) |
 
 The parent declares Exeris's own `url` and inherits `licenses`, `developers` and `scm` from the BOM, because Central validates it as published. An application on it inherits them unless it declares its own; the README's application POM blanks them.
 

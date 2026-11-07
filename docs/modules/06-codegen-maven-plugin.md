@@ -30,14 +30,14 @@ Every goal is `threadSafe`.
 
 | Goal | Default phase | Parameters (user property, default) |
 |---|---|---|
-| `generate` | `generate-sources` | `exeris.metadataDir` (`${project.build.outputDirectory}/exeris-metadata`), `exeris.outputDir` (`src/main/generated/java`), `exeris.basePackage` (unset), `exeris.codegen.skip` (`false`), `exeris.codegen.allowEmpty` (`false`), `exeris.tests` (`false`), `exeris.testOutputDir` (`src/test/generated/java`), `exeris.addCompileSourceRoot` (`true`) |
+| `generate` | `generate-sources` | `exeris.metadataDir` (`${project.build.outputDirectory}/exeris-metadata`), `exeris.outputDir` (`src/main/generated/java`), `exeris.basePackage` (unset), `exeris.codegen.skip` (`false`), `exeris.codegen.allowEmpty` (`false`), `exeris.tests` (`false`), `exeris.testOutputDir` (`src/test/generated/java`), `exeris.integrationTests` (`false`), `exeris.integrationTestOutputDir` (`src/test/generated-it/java`), `exeris.addCompileSourceRoot` (`true`) |
 | `verify-capabilities` | `process-classes` | `exeris.metadataDir`, `exeris.classesDir` (`${project.build.outputDirectory}`), `exeris.codegen.skip`, `exeris.wall.skip` (`false`) |
 | `verify-runtime` | `process-classes` | `exeris.metadataDir`, `exeris.codegen.skip`, `exeris.verifyRuntime.skip` (`false`); reads the resolved runtime classpath |
 | `detach` | none (run by hand) | `exeris.generatedDir` (`src/main/generated/java`), `exeris.targetDir` (`src/main/java`), `exeris.gitignore` (`.gitignore`), `exeris.ignoreEntry` (`src/main/generated/`), `exeris.failOnConflict` (`false`) |
 
 ### `generate`
 
-Runs `CodegenPipeline.run` and, under `exeris.tests`, `runTests`, and registers each output root as a compile or test-compile source root unless `exeris.addCompileSourceRoot=false`. Because the processor writes metadata during `compile`, which runs after `generate-sources`, the metadata this goal reads is the previous build's. The first build of a project is two passes: `mvn compile -Dexeris.codegen.skip=true` to seed the metadata, then an ordinary build.
+Runs `CodegenPipeline.run`, under `exeris.tests` `runTests`, and under `exeris.integrationTests` `runIntegrationTests`, and registers each output root as a compile or test-compile source root unless `exeris.addCompileSourceRoot=false`. Because the processor writes metadata during `compile`, which runs after `generate-sources`, the metadata this goal reads is the previous build's. The first build of a project is two passes: `mvn compile -Dexeris.codegen.skip=true` to seed the metadata, then an ordinary build.
 
 When `verify-capabilities` is bound at `process-classes` or later, a capability-graph failure here degrades to a warning, the previous `cap-manifest.json` is kept, and the later gate decides on fresh metadata. Without that gate the failure stays fatal here.
 
@@ -66,6 +66,8 @@ None: build-time. Each goal runs once per module per build.
 | `generate` | No metadata, and a previous run owns a committed tree | Failure `EXT-PLUG-2001`; nothing deleted. `-Dexeris.codegen.allowEmpty=true` permits the teardown |
 | `generate` | Reading metadata or writing the main tree fails | Error `EXT-PLUG-2002`, ending with the cause |
 | `generate` | Writing the generated-test tree fails | Error `EXT-PLUG-2003` |
+| `generate` | Writing the generated integration-test tree fails | Error `EXT-PLUG-2005` |
+| `generate` | `exeris.integrationTests` on a build the integration tests do not boot: an entity not `GLOBAL`, a graph entity, a `@Blob` field or a `@CapabilityModule` | Warning `EXT-GEN-3105` naming the reason; nothing written or pruned in that root |
 | `generate` | A generated import's artifact is not on the classpath | Warning `EXT-PLUG-2004` naming `groupId:artifactId`; `javac` fails next |
 | `generate` | A refusal from the pipeline (`EXT-PROC-1033`, `EXT-GEN-3003`) | Failure carrying the pipeline's message |
 | `generate`, `verify-capabilities` | The capability graph does not resolve | Failure `EXT-PLUG-2201`, every problem listed |
@@ -89,7 +91,7 @@ Trade-off: binding `generate` before `compile` makes the generated sources part 
 |---|---|
 | [ADR-078](../adr/ADR-078-runtime-driver-gate.md) | `verify-runtime` |
 | [ADR-055](../adr/ADR-055-cap-tier-wall-guard.md) | The Wall scan behind `verify-capabilities` |
-| [ADR-058](../adr/ADR-058-generated-test-emission-channel.md) | `exeris.tests` and the separate test root |
+| [ADR-058](../adr/ADR-058-generated-test-emission-channel.md) | `exeris.tests` and the separate test root; Amendment 1, `exeris.integrationTests` and the integration-test root |
 | [ADR-095](../adr/ADR-095-stable-diagnostic-identifiers.md) | The `EXT-PLUG` identifiers, grouped by goal |
 | [ADR-091](../adr/ADR-091-opt-in-application-starter.md) | Which goals `exeris-app-parent` binds, and where |
 
