@@ -3,6 +3,7 @@ package eu.exeris.e2e.codegen;
 import eu.exeris.e2e.codegen.compile.BlobFacet;
 import eu.exeris.e2e.codegen.compile.GeneratedTree;
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.graph.GraphKernelProviders;
 import eu.exeris.kernel.spi.http.HttpKernelProviders;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -38,7 +39,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * time. A list like that is worth exactly as much as its accuracy, and it is derived by the emitter
  * from the branches that emit each read — so this test does not trust the derivation. It builds a
  * real corpus (annotated sources → processor → pipeline → {@code javac}), scans every emitted main
- * source for {@code KernelProviders.X} / {@code HttpKernelProviders.X} reads — constants and their
+ * source for {@code KernelProviders.X} / {@code HttpKernelProviders.X} /
+ * {@code GraphKernelProviders.X} reads — constants and their
  * accessor methods, with comments and string literals stripped so Javadoc samples and error
  * messages do not count — resolves each to the real {@code ScopedValue} constant, and compares that
  * set with the lists read off the loaded class:
@@ -53,7 +55,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </ul>
  *
  * <p>The corpora cover each feature that brings a scope in — events, a stream, a saga, a tenant, a
- * {@code @Blob} field — alone and together, and the plain entity that brings in only the two every
+ * {@code @Blob} field, a graph entity — alone and together, and the plain entity that brings in only the two every
  * app reads. The emitted <em>test</em> tree is out of scope: it binds its own scopes.
  */
 @Tag("e2e")
@@ -79,7 +81,7 @@ class ScopeLedgerE2ETest {
             Set.of("Application.java", "RuntimeComponents.java", "RuntimeLifecycle.java");
 
     private static final Pattern READ = Pattern.compile(
-            "\\b(HttpKernelProviders|KernelProviders)\\s*\\.\\s*([A-Za-z_][A-Za-z0-9_]*)");
+            "\\b(HttpKernelProviders|GraphKernelProviders|KernelProviders)\\s*\\.\\s*([A-Za-z_][A-Za-z0-9_]*)");
 
     /** The lists themselves name every scope they list — that is a declaration, not a read. */
     private static final Pattern LIST_DECLARATION = Pattern.compile(
@@ -105,6 +107,9 @@ class ScopeLedgerE2ETest {
                                 "KernelProviders.FLOW_ENGINE"),
                         List.of("HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY",
                                 "KernelProviders.STORAGE_CONTEXT")),
+                new Corpus("graph entity with properties and edges", merge(tag(), shelf()),
+                        List.of("KernelProviders.MEMORY_ALLOCATOR", "GraphKernelProviders.GRAPH_ENGINE"),
+                        List.of("HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY")),
                 new Corpus("plain global entity", tag(),
                         List.of("KernelProviders.MEMORY_ALLOCATOR"),
                         List.of("HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY")),
@@ -222,7 +227,11 @@ class ScopeLedgerE2ETest {
     private static void requireScopedValueConstant(String scope, Path file) {
         String holder = scope.substring(0, scope.indexOf('.'));
         String constant = scope.substring(scope.indexOf('.') + 1);
-        Class<?> holderType = holder.equals("HttpKernelProviders") ? HttpKernelProviders.class : KernelProviders.class;
+        Class<?> holderType = switch (holder) {
+            case "HttpKernelProviders" -> HttpKernelProviders.class;
+            case "GraphKernelProviders" -> GraphKernelProviders.class;
+            default -> KernelProviders.class;
+        };
         try {
             Field field = holderType.getField(constant);
             assertThat(Modifier.isStatic(field.getModifiers()) && field.getType() == ScopedValue.class)
@@ -284,7 +293,7 @@ class ScopeLedgerE2ETest {
     /** Each listed ScopedValue by its constant name, resolved by identity against both holders. */
     private static List<String> names(List<ScopedValue<?>> scopes) throws IllegalAccessException {
         Map<Object, String> byIdentity = new IdentityHashMap<>();
-        for (Class<?> holder : List.of(KernelProviders.class, HttpKernelProviders.class)) {
+        for (Class<?> holder : List.of(KernelProviders.class, HttpKernelProviders.class, GraphKernelProviders.class)) {
             for (Field field : holder.getFields()) {
                 if (Modifier.isStatic(field.getModifiers()) && field.getType() == ScopedValue.class) {
                     byIdentity.put(field.get(null), holder.getSimpleName() + "." + field.getName());
@@ -425,6 +434,35 @@ class ScopeLedgerE2ETest {
                     public void setId(UUID id) { this.id = id; }
                     public String getLabel() { return label; }
                     public void setLabel(String label) { this.label = label; }
+                }
+                """);
+    }
+
+    /** A graph node with a property and an edge to a plain entity. */
+    private static Map<String, String> shelf() {
+        return Map.of("eu/exeris/e2e/ledger/domain/Shelf.java", """
+                package eu.exeris.e2e.ledger.domain;
+
+                import eu.exeris.sdk.annotation.ExerisDomain;
+                import eu.exeris.sdk.annotation.Field;
+                import eu.exeris.sdk.annotation.Graph;
+                import eu.exeris.sdk.annotation.GraphEdge;
+                import eu.exeris.sdk.annotation.GraphProperty;
+
+                import java.util.UUID;
+
+                @ExerisDomain(module = "catalog", path = "/shelves")
+                @Graph
+                public class Shelf {
+                    private UUID id;
+                    @Field(label = "Label", required = true) @GraphProperty private String label;
+                    @GraphEdge(type = "HOLDS", target = Tag.class) private UUID tagId;
+                    public UUID getId() { return id; }
+                    public void setId(UUID id) { this.id = id; }
+                    public String getLabel() { return label; }
+                    public void setLabel(String label) { this.label = label; }
+                    public UUID getTagId() { return tagId; }
+                    public void setTagId(UUID tagId) { this.tagId = tagId; }
                 }
                 """);
     }

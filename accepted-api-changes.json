@@ -28,5 +28,11 @@
     "since": "0.11",
     "adr": "ADR-015",
     "justification": "The defaultValue of a body-bound action parameter was read by nothing, so an omitted member reached the entity method as 0, false or null, while the same attribute on a query parameter was applied. The record applies it, and the boxed component keeps an omitted value apart from an explicit zero. A caller that relied on the zero value sends it, and code that names the record sees the boxed accessor type; docs/migration/0.11.0/java-28-action-body-param-default.md carries the steps."
+  },
+  {
+    "signature": "<Entity>Service (exeris-codegen-java): <Entity>Service(<Entity>Repository) -> <Entity>Service(<Entity>Repository, <Entity>GraphSync) for a @Graph entity that is not TENANT or UNIVERSE, whose save/update/updateFromRequest call syncToGraph and delete calls deleteFromGraph after the repository returns; + RuntimeComponents.create<Entity>GraphSync()/<entity>GraphSync() for every @Graph entity; + GraphKernelProviders.GRAPH_ENGINE in COMPOSITION_SCOPES; + <Entity>GraphSync.registerDescriptors(), called first by RuntimeLifecycle.run()",
+    "since": "0.11",
+    "adr": "ADR-070",
+    "justification": "The generated graph sync was built, registered and called by nothing, so a booted application's graph stayed empty and, on the Community SQL graph, had no tables. The service is the one seam every generated write passes through, so it now projects each write after the repository returns, and the composition root builds the graph sync and registers its descriptors at boot (ADR-070 Amendment 4). A consumer subclass or override that constructed the service with its repository alone passes the graph sync as well, and a graph failure now fails the write route; docs/migration/0.11.0/java-30-graph-sync-wired.md carries the steps."
   }
 ]

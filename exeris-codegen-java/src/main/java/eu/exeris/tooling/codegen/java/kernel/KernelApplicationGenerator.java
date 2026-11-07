@@ -174,6 +174,8 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     private static final ClassName STREAM_MATCH = ClassName.get("eu.exeris.kernel.spi.http", "StreamMatch");
     private static final ClassName KERNEL_PROVIDERS =
             ClassName.get("eu.exeris.kernel.spi.context", "KernelProviders");
+    private static final ClassName GRAPH_KERNEL_PROVIDERS =
+            ClassName.get("eu.exeris.kernel.spi.graph", "GraphKernelProviders");
     private static final ClassName TRANSACTIONAL_EXECUTOR =
             ClassName.get("eu.exeris.kernel.spi.persistence", "TransactionalExecutor");
     private static final ClassName TRANSACTION_ORCHESTRATOR =
@@ -208,12 +210,17 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
      * domains arrive in.
      */
     private enum Scope {
-        /** Read by every handler factory, and by a body-decoding per-action stream handler's. */
+        /**
+         * Read by every handler factory, by a body-decoding per-action stream handler's, and by
+         * the graph-sync factory of an entity with {@code @GraphProperty} fields.
+         */
         MEMORY_ALLOCATOR(KERNEL_PROVIDERS, Phase.COMPOSITION),
         /** Read by the publisher, subscriber, EV1 and event-triggering per-action stream-handler factories. */
         EVENT_ENGINE(KERNEL_PROVIDERS, Phase.COMPOSITION),
         /** Read by the saga-flow factories. */
         FLOW_ENGINE(KERNEL_PROVIDERS, Phase.COMPOSITION),
+        /** Read by every graph-sync factory. */
+        GRAPH_ENGINE(GRAPH_KERNEL_PROVIDERS, Phase.COMPOSITION),
         /** Read by the factory of every handler whose entity declares a {@code @Blob} field. */
         BLOB_STORE(KERNEL_PROVIDERS, Phase.COMPOSITION),
         /** Read by payload-bearing publisher factories; unbound only empties payloads. */
@@ -986,8 +993,10 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
             addComponent(type, repoType, repoName,
                     CodeBlock.of("new $T($L())", repoType, TX_EXECUTOR_NAME));
-            addComponent(type, serviceType, serviceName,
-                    CodeBlock.of("new $T($L())", serviceType, repoName));
+            // The graph sync joins the seam for every graph entity (ADR-070 Amendment 4); the
+            // service takes it only where it calls it.
+            addGraphSyncComponent(type, readers, domain);
+            addComponent(type, serviceType, serviceName, serviceConstruction(domain, serviceType, repoName));
 
             // T48 (ADR-070's own rule, applied to the one component that had been left out):
             // the publisher joins the seam, so a consumer can override how it is built — and
@@ -1236,6 +1245,45 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             read(readers, Scope.STORAGE_CONTEXT, CodeBlock.of(TENANT_GUARD_READER, handlerType));
         }
         return CodeBlock.of("new $T($L)", handlerType, args.build());
+    }
+
+    /**
+     * Adds the entity's {@code <Entity>GraphSync} to the seam. Its factory captures the graph
+     * engine, and the allocator when the sync encodes node properties, inside the boot callback,
+     * where both are bound; the request thread that runs the sync binds neither.
+     */
+    private void addGraphSyncComponent(TypeSpec.Builder type, Map<Scope, List<CodeBlock>> readers,
+                                       DomainMetadata domain) {
+        if (!domain.hasGraphMetadata()) {
+            return;
+        }
+        ClassName graphSyncType = KernelGraphSyncGenerator.graphSyncType(domain);
+        String name = graphSyncAccessor(domain);
+        read(readers, Scope.GRAPH_ENGINE, factoryReference(name));
+        CodeBlock construction;
+        if (KernelGraphSyncGenerator.takesAllocator(domain)) {
+            read(readers, Scope.MEMORY_ALLOCATOR, factoryReference(name));
+            construction = CodeBlock.of("new $T($T.GRAPH_ENGINE.get(), $T.MEMORY_ALLOCATOR.get())",
+                    graphSyncType, GRAPH_KERNEL_PROVIDERS, KERNEL_PROVIDERS);
+        } else {
+            construction = CodeBlock.of("new $T($T.GRAPH_ENGINE.get())", graphSyncType, GRAPH_KERNEL_PROVIDERS);
+        }
+        addComponent(type, graphSyncType, name, construction);
+    }
+
+    /**
+     * The default construction of an entity's service: its repository, and its graph sync when
+     * the service calls it, each through its accessor (ADR-070 obligation 2).
+     */
+    private CodeBlock serviceConstruction(DomainMetadata domain, ClassName serviceType, String repoName) {
+        return KernelGraphSyncGenerator.syncedByService(domain)
+                ? CodeBlock.of("new $T($L(), $L())", serviceType, repoName, graphSyncAccessor(domain))
+                : CodeBlock.of("new $T($L())", serviceType, repoName);
+    }
+
+    /** The {@code RuntimeComponents} accessor of an entity's graph sync, e.g. {@code productGraphSync}. */
+    private String graphSyncAccessor(DomainMetadata domain) {
+        return lowerFirst(domain.entityName()) + "GraphSync";
     }
 
     /** Records that {@code reader} — a Javadoc fragment naming it — reads {@code scope}. */
@@ -1595,6 +1643,11 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("Composes the application, starts its saga plans and subscribers,\n")
                 .addJavadoc("publishes the decorated router to the handler slot, and parks on a\n")
                 .addJavadoc("shutdown latch until the JVM exits; then releases the subscribers.\n");
+        List<String> graphSyncs = graphSyncAccessors(domains);
+        if (!graphSyncs.isEmpty()) {
+            method.addJavadoc("<p>Graph descriptors are registered before anything else, while the boot scope\n")
+                    .addJavadoc("binds the persistence engine a relational graph engine creates its tables with.\n");
+        }
         method.addJavadoc("@throws IllegalStateException when the router serves a stream route and\n")
                 .addJavadoc("        {@link $L#$L} returns a handler that is not a\n",
                         COMPONENTS_TYPE_NAME, DECORATE_METHOD)
@@ -1607,6 +1660,8 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             method.addJavadoc("        resolve; or when that handler resolves no stream for one of the\n")
                     .addJavadoc("        generated stream routes\n");
         }
+
+        addGraphRegistration(method, graphSyncs);
 
         // T49: the per-entity Repository → Service → Handler chain is built by
         // RuntimeComponents, not here. Only the handlers need a local, because only they
@@ -1775,6 +1830,28 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     }
 
     /** The saga-flow accessors, in domain order — the order {@code run()} initializes them in. */
+    /** The graph-sync accessors of the graph entities, in domain order. */
+    private List<String> graphSyncAccessors(List<DomainMetadata> domains) {
+        return domains.stream().filter(DomainMetadata::hasGraphMetadata).map(this::graphSyncAccessor).toList();
+    }
+
+    /**
+     * The first step of {@code run()}: every graph sync registers its descriptors, in domain order.
+     * A relational graph engine creates its tables on registration, which needs the persistence
+     * engine only the boot scope binds, and cascades a node delete only through registered edges.
+     */
+    private static void addGraphRegistration(MethodSpec.Builder method, List<String> graphSyncs) {
+        if (graphSyncs.isEmpty()) {
+            return;
+        }
+        method.addComment("Graph descriptors are registered first: a relational graph engine creates its")
+                .addComment("tables on registration, inside this boot scope, and cascades a node delete")
+                .addComment("only through registered edges.");
+        for (String graphSync : graphSyncs) {
+            method.addStatement("$L.$L().registerDescriptors()", COMPONENTS_FIELD, graphSync);
+        }
+    }
+
     private List<String> sagaAccessors(List<DomainMetadata> domains) {
         List<String> accessors = new ArrayList<>();
         for (DomainMetadata domain : domains) {
