@@ -928,8 +928,11 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("Generated component factory — the seam where application logic\n")
                 .addJavadoc("enters the generated runtime.\n")
                 .addJavadoc("<p>{@link $T} asks this object for every repository,\n", lifecycleType)
-                .addJavadoc("service, handler, publisher, subscriber and saga flow it wires or\n")
-                .addJavadoc("starts, instead of constructing them itself.\n")
+                .addJavadoc(domains.stream().anyMatch(DomainMetadata::hasGraphMetadata)
+                        ? "service, graph sync, handler, publisher, subscriber and saga flow it\n"
+                                + "wires or starts, instead of constructing them itself.\n"
+                        : "service, handler, publisher, subscriber and saga flow it wires or\n"
+                                + "starts, instead of constructing them itself.\n")
                 .addJavadoc("Each component has a {@code protected create*} factory carrying the\n")
                 .addJavadoc("default construction; override one, and every consumer of that\n")
                 .addJavadoc("component sees the replacement.\n")
@@ -1829,7 +1832,6 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         return method.build();
     }
 
-    /** The saga-flow accessors, in domain order — the order {@code run()} initializes them in. */
     /** The graph-sync accessors of the graph entities, in domain order. */
     private List<String> graphSyncAccessors(List<DomainMetadata> domains) {
         return domains.stream().filter(DomainMetadata::hasGraphMetadata).map(this::graphSyncAccessor).toList();
@@ -1852,6 +1854,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         }
     }
 
+    /** The saga-flow accessors, in domain order — the order {@code run()} initializes them in. */
     private List<String> sagaAccessors(List<DomainMetadata> domains) {
         List<String> accessors = new ArrayList<>();
         for (DomainMetadata domain : domains) {

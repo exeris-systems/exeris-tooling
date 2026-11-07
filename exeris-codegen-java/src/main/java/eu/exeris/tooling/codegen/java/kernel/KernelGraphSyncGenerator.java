@@ -152,12 +152,12 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
                 throw new UnpersistableFieldTypeException(unwritable);
             }
         }
-        boolean hasProperties = graph.properties() != null && !graph.properties().isEmpty();
+        boolean hasProperties = takesAllocator(metadata);
 
-        String packageName = metadata.packageName().replace(".domain", ".graph");
-        String className = entity + "GraphSync";
+        ClassName selfType = graphSyncType(metadata);
+        String packageName = selfType.packageName();
+        String className = selfType.simpleName();
         ClassName entityType = ClassName.get(metadata.packageName(), entity);
-        ClassName selfType = ClassName.get(packageName, className);
 
         FieldSpec.Builder nodeDescriptorBuilder = FieldSpec.builder(GRAPH_NODE_DESCRIPTOR, "NODE_DESCRIPTOR",
                         Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL);

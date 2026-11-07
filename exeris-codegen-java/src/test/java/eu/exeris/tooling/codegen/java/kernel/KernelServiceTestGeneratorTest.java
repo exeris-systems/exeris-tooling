@@ -246,6 +246,22 @@ class KernelServiceTestGeneratorTest {
     }
 
     @Test
+    @DisplayName("a graph entity with a read-only field asserts that a refused request update projects nothing")
+    void graphEntityWithReadOnlyFieldCoversTheRefusedRequestUpdate() {
+        String plain = generate(graphProduct(List.of()).build()).replaceAll("\\s+", " ");
+        String readOnly = generate(graphProduct(List.of())
+                .fields(List.of(FieldMetadata.builder("name", "String").readOnly(true).build(),
+                        FieldMetadata.builder("categoryId", "UUID").build()))
+                .build()).replaceAll("\\s+", " ");
+
+        String refusedRequestUpdate = "Assertions.assertThatThrownBy(() -> service.updateFromRequest("
+                + "UUID.fromString(\"00000000-0000-4000-8000-000000000001\"), new Product()))"
+                + ".isSameAs(repository.refusal); Assertions.assertThat(graphSync.calls).isZero();";
+        assertThat(readOnly).contains(refusedRequestUpdate);
+        assertThat(plain).doesNotContain("service.updateFromRequest(");
+    }
+
+    @Test
     @DisplayName("a tenant-partitioned graph entity's service test is the plain one")
     void tenantGraphEntityGetsThePlainTest() {
         String tenantGraph = generate(graphProduct(List.of()).dataScope(DataScope.TENANT).build());
