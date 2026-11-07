@@ -17,7 +17,9 @@ slug: adr/ADR-090
   `inCreate` / `inUpdate` shape the bodies like `readOnly`) · amended 2026-10-08 (Amendment 4 — the
   create body leaves out every server-owned field) · amended 2026-10-14 (Amendment 5 — an absent
   `inCreate` / `inUpdate` key reads as `false` in both loaders) · amended 2026-11-07 (Amendment 6 —
-  the regeneration notes are steps of the MIGRATION guide's 0.10.0 train)
+  the regeneration notes are steps of the MIGRATION guide's 0.10.0 train) · amended 2026-11-07
+  (Amendment 7 — a system role's field is server-owned only while the entity's flag switches the role
+  on)
 - **Deciders:** the founder (finding **T36**)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / codegen pipeline — emitted repository, handler, error types, OpenAPI, TypeScript
@@ -674,3 +676,70 @@ the step below; the text of the step is the text of the fragment.
 | Amendment 3, *Consequences* | `docs/migration/0.10.0/java-13-create-and-update-follow-the-published-schemas.md` | [A POST validates the fields its schema lists, a PUT leaves inUpdate = false fields as stored, and the entity schema lists the version](../MIGRATION-0.x-to-1.0.md#a-post-validates-the-fields-its-schema-lists-a-put-leaves-inupdate--false-fields-as-stored-and-the-entity-schema-lists-the-version) |
 | Amendment 4, *Consequences* | `docs/migration/0.10.0/java-14-create-body-leaves-out-server-owned-fields.md` | [A POST ignores the audit, version and soft-delete fields, and the entity schema lists createdAt and updatedAt only for an audited entity](../MIGRATION-0.x-to-1.0.md#a-post-ignores-the-audit-version-and-soft-delete-fields-and-the-entity-schema-lists-createdat-and-updatedat-only-for-an-audited-entity) |
 | Amendment 5, *Consequences* | `docs/migration/0.10.0/ts-14-absent-create-and-update-flags-read-as-false.md` | [`exeris-codegen-ts`: an absent `inCreate` or `inUpdate` reads as false](../MIGRATION-0.x-to-1.0.md#exeris-codegen-ts-an-absent-increate-or-inupdate-reads-as-false) |
+
+## Amendment 7 — a system role's field is server-owned only while the entity's flag switches the role on (2026-11-07)
+
+**Status:** Accepted *(supersedes the parts of §6, Amendment 1 and Amendment 3 that count a field as
+server-owned because a `systemFields` block names it, whatever the entity's flags; §1 to §5 and the
+rest of Amendments 1 to 5 are unchanged)*
+
+**Deciders:** the founder.
+
+Three passages count a field as server-owned by its name alone. §6 has the TypeScript emitter omit
+every owner and shared-scope field a `systemFields` block names, and the generated views render no
+control for them or for `tenantId` (`viewSystemFieldNames`). Amendment 1 counts among the
+server-owned fields "every field a `systemFields` role names". Amendment 3 counts among the fields
+in a system role "every name a `systemFields` block declares". The generated migration and
+repository never did: a role whose flag is off is an ordinary column there, created from the field's
+declared type and read and written like any other, with no locking and no stamping. An entity
+without the flags whose `@Version` or `@AuditCreatedAt` field was taken for the server's lost the
+field from both request bodies, and its update never wrote the column, so nothing could set it.
+
+**A field in a system role whose flag is off is an ordinary domain field everywhere.** The
+server-owned fields are the primary key, whatever the flags; a UNIVERSE entity's shared-scope field;
+and the field of each system role the entity's flags switch on, under the name the `systemFields`
+block declares, else the canonical one. A role is on as follows:
+
+| Role | Switched on by |
+|---|---|
+| owning tenant | a tenant-partitioned entity: `TENANT` or `UNIVERSE` data scope |
+| created at, created by, updated at, updated by | `audited` |
+| soft-delete flag, time and actor | `softDelete` |
+| version | `versioned` |
+
+A field named for a role whose flag is off, by a `systemFields` entry, a system marker or the role's
+canonical name, is carried by `…CreateDto` and `…UpdateDto` as its `readOnly`, `inCreate` and
+`inUpdate` decide, is written by every update, and is checked by `save` when it is `required` and
+`readOnly` like any other domain field. A `tenantId` field of a GLOBAL entity is such a field.
+
+One decision serves every emitter. `SystemColumns` (exeris-codegen-java) says which roles are on;
+`ListQuerySupport#systemFieldNames` adds the key and the shared scope to its active fields, and
+`ServerOwnedFields` builds every body set on that, so the migration, the repository, the handler and
+the OpenAPI read one answer. `src/core/system-columns.ts` (exeris-codegen-ts) is its TypeScript twin:
+`systemRoleFieldNames` shapes the `…Create` and `…Update` types and their schemas, and
+`viewSystemFieldNames`, the same set, decides which fields the form, the detail view and the list
+leave out. The TypeScript `systemFieldNames` §6 names has no successor of that name:
+`systemRoleFieldNames` is the set.
+
+### Consequences of the amendment
+
+- **Breaking for a client of an entity with such a field.** Both request bodies carry it, the
+  update writes it, and the TypeScript form renders a control for it where it rendered none. A
+  `softDelete` entity's deletion time and actor and an `audited` entity's actors are left out of the
+  form and the views under their canonical names too, as they already were out of the request
+  types. An entity whose flags are all on otherwise generates as before. The regeneration notes are
+  `docs/migration/0.11.0/java-26-system-marker-without-flag-is-client-writable.md` and
+  `docs/migration/0.11.0/ts-15-system-marker-without-flag-in-request-types.md`.
+- ADR-096 Amendment 3 records the same rule for the list route's sort keys and filters.
+
+### Verification of the amendment
+
+- `ServerOwnedFieldsTest`, `ListQuerySupportTest` — with the flags off and on, the body sets and the
+  system-field set follow the active roles.
+- `SystemFieldSqlE2ETest` — an entity without the flags carries its `@Version` and `@AuditCreatedAt`
+  fields in `CustomerCreateDto` and `CustomerUpdateDto`, and its `UPDATE` writes both columns.
+- `UpdateSchemaParityE2ETest` and `contract/update-parity/` — the `UnflaggedNamesRoles` fixture holds
+  the Java and TypeScript bodies to the same properties.
+- `system-columns.spec.ts`, `type-gen.spec.ts`, `form-gen.spec.ts`, `detail-gen.spec.ts` and
+  `field-render.spec.ts` (exeris-codegen-ts) — the roles, the request types and the views follow the
+  flags.
