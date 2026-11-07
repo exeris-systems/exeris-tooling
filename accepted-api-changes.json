@@ -22,5 +22,11 @@
     "since": "0.11",
     "adr": "ADR-015",
     "justification": "The create-table migration left out every field named or marked for a system role, whatever the entity's flags, while the repository read and wrote such a field as an ordinary column when the role's flag was off, so its first query named a column the table did not have. Both now take the active roles from one place. The regenerated migration of an affected entity differs from one a database has applied; docs/migration/0.11.0/java-25-system-marker-without-flag-is-a-column.md carries the steps."
+  },
+  {
+    "signature": "<Entity>Handler.<Action>Request (exeris-codegen-java): a body component whose @ActionParam declares defaultValue is declared with its boxed type, and a compact constructor sets the default when it is null",
+    "since": "0.11",
+    "adr": "ADR-015",
+    "justification": "The defaultValue of a body-bound action parameter was read by nothing, so an omitted member reached the entity method as 0, false or null, while the same attribute on a query parameter was applied. The record applies it, and the boxed component keeps an omitted value apart from an explicit zero. A caller that relied on the zero value sends it, and code that names the record sees the boxed accessor type; docs/migration/0.11.0/java-28-action-body-param-default.md carries the steps."
   }
 ]

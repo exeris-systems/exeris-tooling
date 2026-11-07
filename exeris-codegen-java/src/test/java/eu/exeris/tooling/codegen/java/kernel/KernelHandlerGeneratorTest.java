@@ -1140,6 +1140,82 @@ class KernelHandlerGeneratorTest {
     }
 
     @Test
+    @DisplayName("a body parameter with a defaultValue is a boxed component the compact constructor defaults")
+    void bodyParamDefaultValueIsAppliedByTheRequestRecord() {
+        DomainMetadata metadata = DomainMetadata.builder("Invoice", "com.example.domain")
+                .path("/invoices")
+                .actions(List.of(ActionMetadata.builder("issue").methodName("issue")
+                        .params(List.of(
+                                ActionParamMetadata.builder("dueInDays", "int").required(false)
+                                        .defaultValue("30").build(),
+                                ActionParamMetadata.builder("note", "java.lang.String").defaultValue("net").build(),
+                                ActionParamMetadata.builder("rush", "boolean").defaultValue("TRUE").build(),
+                                ActionParamMetadata.builder("grade", "char").defaultValue("B").build(),
+                                ActionParamMetadata.builder("rate", "java.math.BigDecimal").defaultValue("1.5").build(),
+                                ActionParamMetadata.builder("on", "java.time.LocalDate").defaultValue("2026-01-31").build(),
+                                ActionParamMetadata.builder("status", "com.example.domain.InvoiceStatus")
+                                        .defaultValue("DRAFT").build(),
+                                ActionParamMetadata.builder("copies", "int").build()))
+                        .build()))
+                .build();
+
+        String handler = new KernelHandlerGenerator().generate(metadata).content();
+
+        assertThat(handler)
+                .contains("public static record IssueRequest(Integer dueInDays, String note, Boolean rush, Character grade,")
+                .contains("BigDecimal rate, LocalDate on, InvoiceStatus status, int copies) {")
+                .contains("public IssueRequest {")
+                .contains("if (dueInDays == null) {")
+                .contains("dueInDays = Integer.valueOf(\"30\");")
+                .contains("note = \"net\";")
+                .contains("rush = Boolean.TRUE;")
+                .contains("grade = \"B\".charAt(0);")
+                .contains("rate = new BigDecimal(\"1.5\");")
+                .contains("on = LocalDate.parse(\"2026-01-31\");")
+                .contains("status = InvoiceStatus.valueOf(\"DRAFT\");")
+                .doesNotContain("copies == null")
+                .contains("entity.issue(request.dueInDays(), request.note(), request.rush(), request.grade(), "
+                        + "request.rate(), request.on(), request.status(), request.copies());");
+    }
+
+    @Test
+    @DisplayName("a body default that is not a boolean or a single character is refused when the record is built")
+    void unconvertibleBodyDefaultIsRefusedByTheRecord() {
+        DomainMetadata metadata = DomainMetadata.builder("Invoice", "com.example.domain")
+                .path("/invoices")
+                .actions(List.of(ActionMetadata.builder("issue").methodName("issue")
+                        .params(List.of(
+                                ActionParamMetadata.builder("rush", "boolean").defaultValue("yes").build(),
+                                ActionParamMetadata.builder("grade", "char").defaultValue("AB").build()))
+                        .build()))
+                .build();
+
+        String handler = new KernelHandlerGenerator().generate(metadata).content();
+
+        assertThat(handler)
+                .contains("public static record IssueRequest(Boolean rush, Character grade) {")
+                .contains("throw new IllegalArgumentException(\"default value is not a boolean: yes\");")
+                .contains("throw new IllegalArgumentException(\"default value is not a single character: AB\");");
+    }
+
+    @Test
+    @DisplayName("a request record without a body default has no compact constructor")
+    void requestRecordWithoutDefaultsHasNoCompactConstructor() {
+        DomainMetadata metadata = DomainMetadata.builder("Invoice", "com.example.domain")
+                .path("/invoices")
+                .actions(List.of(ActionMetadata.builder("issue").methodName("issue")
+                        .params(List.of(ActionParamMetadata.builder("dueInDays", "int").build()))
+                        .build()))
+                .build();
+
+        String handler = new KernelHandlerGenerator().generate(metadata).content();
+
+        assertThat(handler)
+                .contains("public static record IssueRequest(int dueInDays) {")
+                .doesNotContain("public IssueRequest {");
+    }
+
+    @Test
     @DisplayName("two @QueryParam parameters whose names differ only in casing do not collide")
     void queryParamsDifferingOnlyInCasingDoNotCollide() {
         DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")

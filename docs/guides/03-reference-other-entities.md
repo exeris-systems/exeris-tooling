@@ -107,6 +107,8 @@ An abstention hands the decision to the application's own policy, then to `unmat
 
 The action's `@QueryParam("token")` parameter is read from the query string, and a request without it is answered 400.
 
+The `issue` action reads `dueInDays` from the request body and declares `defaultValue = "30"` for it. The generated request record is `IssueRequest(Integer dueInDays)`, boxed so that an omitted member is told apart from an explicit `0`, and its compact constructor sets `30` when the body omits the member or sends `null`.
+
 ## Verify
 
 `SdkExamplesE2ETest` builds these three entities into the same application as the other scenarios, so their repositories compile against each other's exceptions and the emitted `InvoiceRepositoryTest`, `CustomerRepositoryTest` and handler tests pass. The emitted tests run on the recording persistence double, not on a database, so they do not exercise the constraints of step 2; a test against PostgreSQL with the generated migrations applied does.
@@ -114,7 +116,6 @@ The action's `@QueryParam("token")` parameter is read from the query string, and
 ## Not available today
 
 - **`@Action(httpMethod = "GET")`.** `viewShared` declares it, and the route is `POST /invoices/{id}/actions/view-shared`: every action is served on `POST`. Under `-Aexeris.strict=true` the processor reports the attribute as `EXT-PROC-1201`.
-- **`@ActionParam(defaultValue)` on a body parameter.** `issue` declares `defaultValue = "30"` for `dueInDays`, and the generated `IssueRequest(int dueInDays)` reads an absent member as `0`. The default is applied to a `@QueryParam` only.
 - **A `ONE_TO_MANY` collection.** `Invoice.lines` is a `List<InvoiceLine>` with `mappedBy = "invoiceId"`. The run writes it as a `lines VARCHAR(255)` column of `invoices`, holding the list as JSON, rather than reading the children from `invoice_lines`. Its `cascadeDelete = true` reaches no constraint: the foreign key is the child's, and it is `ON DELETE RESTRICT`.
 
 ## Where this does not apply

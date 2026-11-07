@@ -756,19 +756,28 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
 
     /** Emits the per-action request record (canonical constructor = {@code @ActionParam}
      *  body components, in declaration order). Decoded by {@code parseBody} via the ADR-036
-     *  codec SPI, exactly like the CRUD body. */
+     *  codec SPI, exactly like the CRUD body. A component with a {@code defaultValue} is declared
+     *  boxed and defaulted by the compact constructor ({@link KernelActionRequestDefaults}). */
     static TypeSpec buildActionRequestRecord(ActionMetadata action) {
+        List<ActionParamMetadata> bodyParams = action.params().stream()
+                .filter(p -> p.effectiveBindingSource() == ParamSource.BODY)
+                .toList();
         MethodSpec.Builder canonical = MethodSpec.constructorBuilder().addModifiers(Modifier.PUBLIC);
-        for (ActionParamMetadata p : action.params()) {
-            if (p.effectiveBindingSource() == ParamSource.BODY) {
-                canonical.addParameter(ParameterSpec.builder(typeNameOf(p.type()), p.name()).build());
-            }
+        for (ActionParamMetadata p : bodyParams) {
+            TypeName component = KernelActionRequestDefaults.componentType(p, typeNameOf(p.type()));
+            canonical.addParameter(ParameterSpec.builder(component, p.name()).build());
         }
-        return TypeSpec.recordBuilder(actionRequestName(action))
+        TypeSpec.Builder record = TypeSpec.recordBuilder(actionRequestName(action))
                 .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
                 .addJavadoc("Request body for the {@code $L} action.\n", action.name())
-                .recordConstructor(canonical.build())
-                .build();
+                .recordConstructor(canonical.build());
+        MethodSpec defaults = KernelActionRequestDefaults.compactConstructor(
+                bodyParams, KernelHandlerGenerator::typeNameOf);
+        if (defaults != null) {
+            record.addJavadoc("<p>A component the body omits or sends as {@code null} takes its declared default.\n")
+                    .addMethod(defaults);
+        }
+        return record.build();
     }
 
     private static String queryParamLocal(ActionParamMetadata p) {
