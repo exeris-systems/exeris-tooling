@@ -31,6 +31,8 @@ import { fileHeaderLines } from '../file-header.js';
 import { tsSingleQuoted } from './ts-literal.js';
 import { fieldRenderContext, formStartsBlank, resolveFieldRenders } from './field-render.js';
 import { entityViews, hasFormPage } from './entity-views.js';
+import { AUTH_INTERCEPTOR_NAME, authInterceptorPrefix } from './auth-interceptor-gen.js';
+import { REQUIRE_ANY_PERMISSION, REQUIRE_AUTHENTICATED } from './guard-gen.js';
 
 /** An emitted file, in the (path, content) shape the orchestrator composes. */
 export interface SpecOutputFile {
@@ -549,4 +551,148 @@ export function generateFormSpec(
   lines.push('');
 
   return { path: outPath('components', `${kebab}-form.component.spec.ts`), content: lines.join('\n') };
+}
+
+/** The call that runs a guard inside the TestBed injector in the emitted guards spec. */
+const NAVIGATE = (guard: string): string => `navigate(${guard})`;
+
+/**
+ * The route guards spec. Each guard runs against an `AuthService` double that answers what the
+ * test sets: the service is a seed the consumer completes, so the spec pins only what the guards
+ * do, which is to put the question to the service and return its answer. The permission names are
+ * fixtures of the spec, not names any route declares.
+ */
+export function generateRouteGuardsSpec(): SpecOutputFile {
+  const anyOf = (...names: string[]): string => `${REQUIRE_ANY_PERMISSION}(${names.map((n) => `'${n}'`).join(', ')})`;
+  const scope = 'scope-a';
+  const signedIn = '    authenticated = true;';
+
+  const lines = HEADER('Route guards spec');
+  lines.push("import { TestBed } from '@angular/core/testing';");
+  lines.push("import type { ActivatedRouteSnapshot, CanActivateFn, RouterStateSnapshot } from '@angular/router';");
+  lines.push("import { beforeEach, describe, expect, it } from 'vitest';");
+  lines.push("import { AuthService } from './auth.service';");
+  lines.push(`import { ${REQUIRE_ANY_PERMISSION}, ${REQUIRE_AUTHENTICATED} } from './route-guards';`);
+  lines.push('');
+  lines.push(`describe('route guards', () => {`);
+  lines.push(`  let authenticated: boolean;`);
+  lines.push(`  let granted: boolean;`);
+  lines.push(`  let asked: string[][];`);
+  lines.push('');
+  lines.push(`  beforeEach(() => {`);
+  lines.push(`    authenticated = false;`);
+  lines.push(`    granted = false;`);
+  lines.push(`    asked = [];`);
+  lines.push(`    const auth = {`);
+  lines.push(`      isAuthenticated: () => authenticated,`);
+  lines.push(`      hasAnyPermission: (permissions: string[]) => {`);
+  lines.push(`        asked.push(permissions);`);
+  lines.push(`        return granted;`);
+  lines.push(`      },`);
+  lines.push(`    };`);
+  lines.push(`    TestBed.configureTestingModule({ providers: [{ provide: AuthService, useValue: auth }] });`);
+  lines.push(`  });`);
+  lines.push('');
+  lines.push(`  const navigate = (guard: CanActivateFn) =>`);
+  lines.push(`    TestBed.runInInjectionContext(() => guard({} as ActivatedRouteSnapshot, {} as RouterStateSnapshot));`);
+  lines.push('');
+  lines.push(`  it('${REQUIRE_AUTHENTICATED} refuses a navigation without an identity', () => {`);
+  lines.push(`    expect(${NAVIGATE(REQUIRE_AUTHENTICATED)}).toBe(false);`);
+  lines.push(`  });`);
+  lines.push('');
+  lines.push(`  it('${REQUIRE_AUTHENTICATED} admits a signed-in user', () => {`);
+  lines.push(signedIn);
+  lines.push(`    expect(${NAVIGATE(REQUIRE_AUTHENTICATED)}).toBe(true);`);
+  lines.push(`  });`);
+  lines.push('');
+  lines.push(`  it('${REQUIRE_ANY_PERMISSION} asks for exactly the declared permissions, any one of them', () => {`);
+  lines.push(`    ${NAVIGATE(anyOf(scope, 'scope-b'))};`);
+  lines.push(`    expect(asked).toEqual([['scope-a', 'scope-b']]);`);
+  lines.push(`  });`);
+  lines.push('');
+  lines.push(`  it('${REQUIRE_ANY_PERMISSION} refuses a navigation the auth service refuses', () => {`);
+  lines.push(signedIn);
+  lines.push(`    expect(${NAVIGATE(anyOf(scope))}).toBe(false);`);
+  lines.push(`  });`);
+  lines.push('');
+  lines.push(`  it('${REQUIRE_ANY_PERMISSION} admits a navigation the auth service admits', () => {`);
+  lines.push(signedIn);
+  lines.push(`    granted = true;`);
+  lines.push(`    expect(${NAVIGATE(anyOf(scope))}).toBe(true);`);
+  lines.push(`  });`);
+  lines.push(`});`);
+  lines.push('');
+
+  return { path: outPath('core', 'route-guards.spec.ts'), content: lines.join('\n') };
+}
+
+/**
+ * The bearer interceptor spec: the real interceptor in Angular's testing HTTP backend, with an
+ * `AuthService` double holding the token signal the interceptor reads. It pins where the token goes
+ * (a request under the prefix the generated services call) and where it never goes (no token held,
+ * another host, a protocol-relative URL).
+ */
+export function generateAuthInterceptorSpec(config: GeneratorConfig): SpecOutputFile {
+  const held = "token.set('token-1');";
+  const underPrefix = 'authorizationSentTo(`${API_PREFIX}probe`)';
+
+  const lines = HEADER('Bearer token interceptor spec');
+  lines.push("import { signal } from '@angular/core';");
+  lines.push("import { TestBed } from '@angular/core/testing';");
+  lines.push("import { HttpClient, provideHttpClient, withInterceptors } from '@angular/common/http';");
+  lines.push("import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';");
+  lines.push("import { afterEach, beforeEach, describe, expect, it } from 'vitest';");
+  lines.push("import { AuthService } from './auth.service';");
+  lines.push(`import { ${AUTH_INTERCEPTOR_NAME} } from './auth.interceptor';`);
+  lines.push('');
+  lines.push(`describe('${AUTH_INTERCEPTOR_NAME}', () => {`);
+  lines.push(`  const API_PREFIX = '${authInterceptorPrefix(config)}';`);
+  lines.push(`  const token = signal<string | null>(null);`);
+  lines.push(`  let client: HttpClient;`);
+  lines.push(`  let http: HttpTestingController;`);
+  lines.push('');
+  lines.push(`  beforeEach(() => {`);
+  lines.push(`    token.set(null);`);
+  lines.push(`    TestBed.configureTestingModule({`);
+  lines.push(`      providers: [`);
+  lines.push(`        provideHttpClient(withInterceptors([${AUTH_INTERCEPTOR_NAME}])),`);
+  lines.push(`        provideHttpClientTesting(),`);
+  lines.push(`        { provide: AuthService, useValue: { token } },`);
+  lines.push(`      ],`);
+  lines.push(`    });`);
+  lines.push(`    client = TestBed.inject(HttpClient);`);
+  lines.push(`    http = TestBed.inject(HttpTestingController);`);
+  lines.push(`  });`);
+  lines.push('');
+  lines.push(`  afterEach(() => http.verify());`);
+  lines.push('');
+  lines.push(`  const authorizationSentTo = (url: string): string | null => {`);
+  lines.push(`    client.get(url).subscribe();`);
+  lines.push(`    const request = http.expectOne(url);`);
+  lines.push(`    request.flush({});`);
+  lines.push(`    return request.request.headers.get('Authorization');`);
+  lines.push(`  };`);
+  lines.push('');
+  lines.push(`  it('sends the held token as a bearer credential to the generated API', () => {`);
+  lines.push(`    ${held}`);
+  lines.push(`    expect(${underPrefix}).toBe('Bearer token-1');`);
+  lines.push(`  });`);
+  lines.push('');
+  lines.push(`  it('sends no credential while no token is held', () => {`);
+  lines.push(`    expect(${underPrefix}).toBeNull();`);
+  lines.push(`  });`);
+  lines.push('');
+  lines.push(`  it('sends no credential to another host', () => {`);
+  lines.push(`    ${held}`);
+  lines.push(`    expect(authorizationSentTo('https://outside.invalid/probe')).toBeNull();`);
+  lines.push(`  });`);
+  lines.push('');
+  lines.push(`  it('sends no credential to a protocol-relative URL', () => {`);
+  lines.push(`    ${held}`);
+  lines.push(`    expect(authorizationSentTo('//outside.invalid/probe')).toBeNull();`);
+  lines.push(`  });`);
+  lines.push(`});`);
+  lines.push('');
+
+  return { path: outPath('core', 'auth.interceptor.spec.ts'), content: lines.join('\n') };
 }

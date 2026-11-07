@@ -451,7 +451,9 @@ src/app/generated/
 Under `--tests`, each entity also gets `schemas/<entity>.schema.spec.ts` (with Zod schemas on),
 `services/<entity>.service.spec.ts` (with services on), `stores/<entity>.store.spec.ts` (with
 stores and services on) and `components/<entity>-form.component.spec.ts` (with forms and services
-on, for an entity with a form page), run by `npm test`; `docs/generators.md` lists the conditions.
+on, for an entity with a form page), run by `npm test`. An app whose routes demand an identity
+also gets `core/route-guards.spec.ts` and `core/auth.interceptor.spec.ts` beside the guards and
+the interceptor. `docs/generators.md` lists the conditions.
 
 ## Generated tests (`--tests`)
 
@@ -466,6 +468,10 @@ Off by default, because turning it on adds to *your* `package.json`. It emits, e
   (409 conflict on update vs delete, 422 unprocessable);
 - `*-form.component.spec.ts` — Signal Forms controls on create vs edit (`inCreate` / `inUpdate`),
   read-only field exclusion, and a required field that starts blank (no default) blocking submit;
+- `route-guards.spec.ts` and `auth.interceptor.spec.ts`, when the guards and the interceptor are
+  emitted — `requireAuthenticated` and `requireAnyPermission(...)` against an `AuthService` double,
+  and the bearer token sent under `apiBasePath` and withheld from every other URL. The double
+  stands in for the auth service seed you complete, so the specs keep passing once you do;
 - a `test` target on `@angular/build:unit-test` (Vitest), a `tsconfig.spec.json`, and the two
   devDependencies the runner cannot start without — `vitest` (an *optional* peer of
   `@angular/build`) and `jsdom` (the builder refuses to run without a DOM implementation).

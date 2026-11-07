@@ -23,7 +23,14 @@ import { generateForm } from './generators/angular/form-gen.js';
 import { generateList } from './generators/angular/list-gen.js';
 import { generateDetail } from './generators/angular/detail-gen.js';
 import { EventHandlerGenerator } from './generators/angular/event-gen.js';
-import { generateSchemaSpec, generateServiceSpec, generateStoreSpec, generateFormSpec } from './generators/angular/spec-gen.js';
+import {
+  generateAuthInterceptorSpec,
+  generateFormSpec,
+  generateRouteGuardsSpec,
+  generateSchemaSpec,
+  generateServiceSpec,
+  generateStoreSpec,
+} from './generators/angular/spec-gen.js';
 import { generateSaga } from './generators/angular/saga-gen.js';
 import { generateStore } from './generators/angular/store-gen.js';
 import { generateAppBarrel, generateAppStructure, RETIRED_SCAFFOLD_SEED_PATHS, SCAFFOLD_SEED_PATHS } from './generators/angular/app-structure-gen.js';
@@ -213,6 +220,10 @@ export function buildGeneratedFiles(
     const authService = new GuardGenerator().generateAggregate(domains, ctx).find((f) => f.path === AUTH_SERVICE_PATH);
     if (authService) appTree.push(authService);
     appTree.push(generateRouteGuards());
+    if (config.generateTests) {
+      appTree.push(generateAuthInterceptorSpec(config));
+      appTree.push(generateRouteGuardsSpec());
+    }
   }
 
   // The stream-client barrels, and the StreamFrame module the action stream clients share.

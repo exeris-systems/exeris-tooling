@@ -22,10 +22,17 @@ export const AUTH_INTERCEPTOR_PATH = outPath('core', 'auth.interceptor.ts');
 /** The name `app.config.ts` registers through `withInterceptors`. */
 export const AUTH_INTERCEPTOR_NAME = 'authInterceptor';
 
-export function generateAuthInterceptor(config: GeneratorConfig): { path: string; content: string } {
-  // Every emitted service calls `${apiBasePath}${path}`, and an entity path starts with '/'.
+/**
+ * The prefix the interceptor sends the token under, escaped for a single-quoted TypeScript string.
+ * Every emitted service calls `${apiBasePath}${path}`, and an entity path starts with '/'.
+ */
+export function authInterceptorPrefix(config: GeneratorConfig): string {
   const base = config.apiBasePath;
-  const prefix = tsSingleQuoted(base.endsWith('/') ? base : `${base}/`);
+  return tsSingleQuoted(base.endsWith('/') ? base : `${base}/`);
+}
+
+export function generateAuthInterceptor(config: GeneratorConfig): { path: string; content: string } {
+  const prefix = authInterceptorPrefix(config);
   const lines: string[] = [];
   lines.push(
     ...fileHeaderLines({
