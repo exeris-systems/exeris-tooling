@@ -16,7 +16,8 @@ slug: adr/ADR-090
   writes from) · amended 2026-10-08 (Amendment 3 — the create validates the body it carries, and
   `inCreate` / `inUpdate` shape the bodies like `readOnly`) · amended 2026-10-08 (Amendment 4 — the
   create body leaves out every server-owned field) · amended 2026-10-14 (Amendment 5 — an absent
-  `inCreate` / `inUpdate` key reads as `false` in both loaders)
+  `inCreate` / `inUpdate` key reads as `false` in both loaders) · amended 2026-11-07 (Amendment 6 —
+  the regeneration notes are steps of the MIGRATION guide's 0.10.0 train)
 - **Deciders:** the founder (finding **T36**)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / codegen pipeline — emitted repository, handler, error types, OpenAPI, TypeScript
@@ -654,3 +655,22 @@ pinned SDK writes both keys is left to tooling 0.11 (`exeris-tooling#401`).
 - `contract/lifecycle-flags.spec.ts` — the TypeScript `TicketCreate`, `TicketUpdate` and the form
   list the same properties.
 - `LifecycleFlagsBootE2ETest` — the booted application is unchanged.
+
+## Amendment 6 — the regeneration notes are steps of the MIGRATION guide's 0.10.0 train (2026-11-07)
+
+**Status:** Accepted *(replaces the five fragment paths that the Consequences of Amendments 1 to 5
+name as their regeneration notes; no decision changes; §1 to §5 and Amendments 1 to 5 are otherwise
+unchanged)*
+
+The 0.10.0 release inlined every fragment under `docs/migration/0.10.0/` into the 0.10.0 train of
+`docs/MIGRATION-0.x-to-1.0.md` and deleted the files, as the release does with every train
+([migration fragments](../migration/README.md)). Each regeneration note those Consequences name is
+the step below; the text of the step is the text of the fragment.
+
+| Named in | Fragment, no longer in the repository | Step in the MIGRATION guide |
+| --- | --- | --- |
+| Amendment 1, *Consequences* | `docs/migration/0.10.0/java-11-update-keeps-server-owned-columns.md` | [An update no longer writes the audit and soft-delete columns from the request body](../MIGRATION-0.x-to-1.0.md#an-update-no-longer-writes-the-audit-and-soft-delete-columns-from-the-request-body) |
+| Amendment 2, *Consequences* | `docs/migration/0.10.0/java-12-update-keeps-read-only-fields.md` | [A PUT no longer writes read-only fields, and the update schema lists the shared scope and the version](../MIGRATION-0.x-to-1.0.md#a-put-no-longer-writes-read-only-fields-and-the-update-schema-lists-the-shared-scope-and-the-version) |
+| Amendment 3, *Consequences* | `docs/migration/0.10.0/java-13-create-and-update-follow-the-published-schemas.md` | [A POST validates the fields its schema lists, a PUT leaves inUpdate = false fields as stored, and the entity schema lists the version](../MIGRATION-0.x-to-1.0.md#a-post-validates-the-fields-its-schema-lists-a-put-leaves-inupdate--false-fields-as-stored-and-the-entity-schema-lists-the-version) |
+| Amendment 4, *Consequences* | `docs/migration/0.10.0/java-14-create-body-leaves-out-server-owned-fields.md` | [A POST ignores the audit, version and soft-delete fields, and the entity schema lists createdAt and updatedAt only for an audited entity](../MIGRATION-0.x-to-1.0.md#a-post-ignores-the-audit-version-and-soft-delete-fields-and-the-entity-schema-lists-createdat-and-updatedat-only-for-an-audited-entity) |
+| Amendment 5, *Consequences* | `docs/migration/0.10.0/ts-14-absent-create-and-update-flags-read-as-false.md` | [`exeris-codegen-ts`: an absent `inCreate` or `inUpdate` reads as false](../MIGRATION-0.x-to-1.0.md#exeris-codegen-ts-an-absent-increate-or-inupdate-reads-as-false) |

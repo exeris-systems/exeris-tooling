@@ -10,7 +10,8 @@ slug: adr/ADR-076
 # ADR-076 — A write against a row that is not there answers 404, not 500
 
 - **Status:** ACCEPTED (2026-08-27) · amended 2026-10-14 (Amendment 1 — a write naming a missing row
-  through a relationship answers 422, and a delete of a still-referenced row answers 409)
+  through a relationship answers 422, and a delete of a still-referenced row answers 409) · amended
+  2026-11-07 (Amendment 2 — the regeneration notes are steps of the MIGRATION guide's 0.10.0 train)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / codegen pipeline
 - **Visibility:** public
@@ -306,3 +307,18 @@ the catalogue JSON gains no field, because ADR-097 fixes its row keys and their 
   reference answers `409`, then `204` once they are gone.
 - `KernelCodegenCompileTest` compiles the renamed-key corpus, whose `Payment` references `Invoice`,
   with every lint category.
+
+## Amendment 2 — the regeneration notes are steps of the MIGRATION guide's 0.10.0 train (2026-11-07)
+
+**Status:** Accepted *(replaces the two fragment paths that the Consequences of Amendment 1 name; no
+decision changes; §1 to §5 and Amendment 1 are otherwise unchanged)*
+
+The 0.10.0 release inlined every fragment under `docs/migration/0.10.0/` into the 0.10.0 train of
+`docs/MIGRATION-0.x-to-1.0.md` and deleted the files, as the release does with every train
+([migration fragments](../migration/README.md)). Each note those Consequences name is the step
+below; the text of the step is the text of the fragment.
+
+| Named in | Fragment, no longer in the repository | Step in the MIGRATION guide |
+| --- | --- | --- |
+| Amendment 1, *Consequences*, the `500` | `docs/migration/0.10.0/java-15-foreign-key-violation-answers-422-or-409.md` | [A write naming a missing row through a relationship answers 422, and a delete of a still-referenced row answers 409](../MIGRATION-0.x-to-1.0.md#a-write-naming-a-missing-row-through-a-relationship-answers-422-and-a-delete-of-a-still-referenced-row-answers-409) |
+| Amendment 1, *Consequences*, the two meanings of `409` | `docs/migration/0.10.0/ts-14-referenced-delete-and-missing-reference-messages.md` | [`exeris-codegen-ts`: the error message names a still-referenced delete and a missing related record](../MIGRATION-0.x-to-1.0.md#exeris-codegen-ts-the-error-message-names-a-still-referenced-delete-and-a-missing-related-record) |
