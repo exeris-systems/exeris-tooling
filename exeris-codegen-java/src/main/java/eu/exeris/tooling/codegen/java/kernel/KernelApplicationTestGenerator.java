@@ -17,6 +17,7 @@ import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -164,7 +165,8 @@ public final class KernelApplicationTestGenerator {
      * its list route with a query string, and on a {@code HEAD} of one row.
      */
     private static MethodSpec generatedPolicyCase(ClassName applicationType, DomainMetadata domain) {
-        CodeBlock expected = KernelRoutePolicyTable.requirementExpression(RouteRequirements.forEntity(domain));
+        CodeBlock expected = KernelRoutePolicyTable.requirementExpression(Objects.requireNonNull(
+                RouteRequirements.forEntity(domain), "an entity that declares access has a requirement"));
         String base = domain.effectivePath();
         return test("generatedPolicyAnswersTheRoutesItDescribes")
                 .addJavadoc("{@code $L} declares access, so the generated policy describes its routes.\n",
