@@ -9,6 +9,7 @@ import com.palantir.javapoet.TypeSpec;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.java.support.DomainPackages;
 import eu.exeris.tooling.codegen.java.support.KernelEventSupport;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
@@ -90,7 +91,7 @@ public class KernelEventHandlerGenerator implements KernelArtifactGenerator {
         KernelEventSupport.assertDistinctEventNames(metadata);
 
         String entity = metadata.entityName();
-        String packageName = metadata.packageName().replace(".domain", ".event");
+        String packageName = DomainPackages.sibling(metadata, DomainPackages.EVENT);
         String className = entity + "EventSubscriber";
         ClassName selfType = ClassName.get(packageName, className);
         TypeName listOfTokens = ParameterizedTypeName.get(LIST, SUBSCRIPTION_TOKEN);

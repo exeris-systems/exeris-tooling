@@ -13,6 +13,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.Artifact
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.support.ColumnNaming;
 import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
+import eu.exeris.tooling.codegen.java.support.DomainPackages;
 import eu.exeris.tooling.codegen.java.support.DomainTypeKind;
 import eu.exeris.tooling.codegen.java.support.ForeignKeys;
 import eu.exeris.tooling.codegen.java.support.InverseCollections;
@@ -504,7 +505,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      */
     GeneratedFile generate(DomainMetadata metadata, List<DomainMetadata> build) {
         requirePersistableFields(List.of(metadata), build);
-        String basePackage = metadata.packageName().replace(".domain", "");
+        String basePackage = DomainPackages.basePackage(metadata);
         String packageName = basePackage + ".repository";
         String entity = metadata.entityName();
         String className = entity + "Repository";

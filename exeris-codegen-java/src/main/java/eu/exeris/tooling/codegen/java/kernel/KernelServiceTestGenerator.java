@@ -11,6 +11,7 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.java.kernel.KernelRepositoryGenerator.FinderSpec;
+import eu.exeris.tooling.codegen.java.support.DomainPackages;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 
 import javax.lang.model.element.Modifier;
@@ -106,7 +107,7 @@ public final class KernelServiceTestGenerator {
         String entity = metadata.entityName();
         String domainPackage = metadata.packageName();
         KernelApplicationGenerator.requireDomainPackages(List.of(metadata));
-        String infrastructureBase = domainPackage.substring(0, domainPackage.lastIndexOf(".domain"));
+        String infrastructureBase = DomainPackages.basePackage(domainPackage);
         String packageName = infrastructureBase + ".service";
         String className = entity + "ServiceTest";
 

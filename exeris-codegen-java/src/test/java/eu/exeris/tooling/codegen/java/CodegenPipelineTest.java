@@ -335,6 +335,17 @@ class CodegenPipelineTest {
         }
 
         @Test
+        @DisplayName("a .domain earlier in the package stays: only the trailing segment is removed")
+        void domainEarlierInThePackage() {
+            assertThat(CodegenPipeline.autoDetectBasePackage(List.of(
+                    DomainMetadata.builder("Widget", "com.domainco.app.domain").build())))
+                    .isEqualTo("com.domainco.app");
+            assertThat(CodegenPipeline.autoDetectBasePackage(List.of(
+                    DomainMetadata.builder("Gadget", "a.domain.b.domain").build())))
+                    .isEqualTo("a.domain.b");
+        }
+
+        @Test
         @DisplayName("several packages: the first domain by qualified name, in either input order")
         void firstDomainByQualifiedName() {
             DomainMetadata order = DomainMetadata.builder("Order", "org.shop.domain").build();

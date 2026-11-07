@@ -15,6 +15,7 @@ import eu.exeris.tooling.codegen.core.access.RouteRequirements;
 import eu.exeris.tooling.codegen.core.driver.RequiredSubsystems;
 import eu.exeris.tooling.codegen.java.support.BlobFields;
 import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
+import eu.exeris.tooling.codegen.java.support.DomainPackages;
 import eu.exeris.tooling.codegen.java.support.ForeignKeys;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.tooling.codegen.java.support.KernelStreamScaffold;
@@ -112,9 +113,6 @@ import java.util.Map;
  * @since 0.1
  */
 public class KernelApplicationGenerator implements KernelArtifactGenerator {
-
-    /** The package suffix an entity's package ends in, which the infrastructure packages replace. */
-    private static final String DOMAIN_SUFFIX = ".domain";
 
     private static final String TX_EXECUTOR_NAME = "transactionalExecutor";
     /** The scope-ledger entry of a stream or respond-once handler's tenant guard. */
@@ -866,7 +864,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         List<String> refused = new ArrayList<>();
         for (DomainMetadata domain : domains) {
             String packageName = domain.packageName() == null ? "" : domain.packageName();
-            if (!packageName.endsWith(DOMAIN_SUFFIX)) {
+            if (!packageName.endsWith(DomainPackages.DOMAIN_SUFFIX)) {
                 refused.add(packageName.isEmpty()
                         ? domain.entityName() + " (the unnamed package)"
                         : packageName + "." + domain.entityName());
@@ -883,12 +881,11 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
      * {@link #requireDomainPackages} has already established.
      */
     private InfraPackages infraPackages(DomainMetadata domain) {
-        String domainPkg = domain.packageName();
         return new InfraPackages(
-                domainPkg.replace(DOMAIN_SUFFIX, ".repository"),
-                domainPkg.replace(DOMAIN_SUFFIX, ".service"),
-                domainPkg.replace(DOMAIN_SUFFIX, ".handler"),
-                domainPkg.replace(DOMAIN_SUFFIX, ".event"));
+                DomainPackages.sibling(domain, DomainPackages.REPOSITORY),
+                DomainPackages.sibling(domain, DomainPackages.SERVICE),
+                DomainPackages.sibling(domain, DomainPackages.HANDLER),
+                DomainPackages.sibling(domain, DomainPackages.EVENT));
     }
 
     /**
