@@ -130,6 +130,7 @@ so it is visible without `mvn -e`.
 | `EXT-PLUG-2002` | Source generation failed reading metadata or writing the generated tree. | Check the cause for the path; check permissions and disk space on the metadata and output directories. |
 | `EXT-PLUG-2003` | Test generation failed reading metadata or writing the generated test tree. | As 2002, for the generated-test output directory. |
 | `EXT-PLUG-2004` | The generated code imports an artefact that is not on the classpath it is compiled against. A warning: `javac` fails next, on a missing package; this line names the jar. Printed once for the main sources (compile, provided or system scope) and once for the generated tests (any scope). | Add each `groupId:artifactId` the message lists: the main-source ones at compile scope, or depend on `eu.exeris:exeris-app-starter` (type `pom`), which declares all of them; JUnit 5 and AssertJ at test scope. A dependency at runtime scope does not reach the compile classpath, even through a driver that depends on it. |
+| `EXT-PLUG-2005` | Integration-test generation failed reading metadata or writing the generated integration-test tree (`exeris.integrationTests=true`, ADR-058 Amendment 1). | As 2002, for the generated integration-test output directory (`exeris.integrationTestOutputDir`). |
 
 ### 21xx — `exeris:detach`
 
@@ -191,6 +192,7 @@ fail-fast.
 | `EXT-GEN-3102` | An optional `@Requires` has no matching provider, so the requirement is skipped. | Nothing, if the capability is meant to be optional. Otherwise add the `@Provides` the message names, or widen its version range. |
 | `EXT-GEN-3103` | The capability graph did not resolve on possibly stale metadata; the post-compile gate decides. | Nothing yet: `exeris:verify-capabilities` checks the freshly compiled metadata later in the same build and fails it with `EXT-PLUG-2201` if the graph is still unresolved. |
 | `EXT-GEN-3104` | No base package was given and the entities span more than one package. `Application`, `RuntimeComponents`, `RuntimeLifecycle`, `GeneratedRoutePolicy` and the generated `testsupport` package go to the package of the entity whose fully-qualified name sorts first, with `.domain` removed (`com.shop.billing.domain.Invoice` and `com.shop.order.domain.Order` give `com.shop.billing`). | Nothing, if that package suits you. Otherwise set `exeris.basePackage` (`--base-package` on the command line) to the package you want; the warning is not printed when it is set. |
+| `EXT-GEN-3105` | The generated integration tests were asked for (`exeris.integrationTests=true`, `--integration-tests`), and the build is outside what they boot on: an entity whose data scope is not `GLOBAL`, an entity with graph metadata or a `@Blob` field, or a `@CapabilityModule`. The message names the first reason found. Nothing is written to the integration-test tree and nothing in it is pruned (ADR-058 Amendment 1). | Nothing, if the build should keep that shape: the unit-level generated tests (`exeris.tests`) still cover it. Otherwise switch `exeris.integrationTests` off to silence the warning. |
 
 ## Initializr — `EXT-INIT`
 

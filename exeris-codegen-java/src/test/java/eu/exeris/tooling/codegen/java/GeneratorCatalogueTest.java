@@ -51,7 +51,7 @@ class GeneratorCatalogueTest {
             "since");
     private static final List<String> RETIRED_KEYS = List.of("retiredIn", "replacedBy");
 
-    private static final Set<String> OUTPUT_ROOTS = Set.of("main", "test");
+    private static final Set<String> OUTPUT_ROOTS = Set.of("main", "test", "integration-test");
     private static final Set<String> SCOPES = Set.of("entity", "project");
     private static final Set<String> CARDINALITIES =
             Set.of("one", "zero-or-one", "one-per-streaming-action", "fixed-set");
@@ -284,7 +284,8 @@ class GeneratorCatalogueTest {
 
         assertThat(writers).contains("KernelApplicationGenerator", "KernelTestSupportGenerator",
                 "KernelHandlerTestGenerator", "KernelServiceTestGenerator",
-                "KernelRepositoryTestGenerator", "KernelSagaTestGenerator");
+                "KernelRepositoryTestGenerator", "KernelSagaTestGenerator", "KernelIntegrationSupportGenerator",
+                "KernelCrudIntegrationTestGenerator", "KernelRoutePolicyIntegrationTestGenerator");
         Set<String> named = new TreeSet<>();
         rows.forEach(row -> named.add(row.get("generator").asText()));
         assertThat(named).containsExactlyElementsOf(writers);
@@ -474,7 +475,7 @@ class GeneratorCatalogueTest {
     private static final class Doc {
 
         private static final Pattern SECTION =
-                Pattern.compile("^### (Main|Test) root, (entity|project) scope$");
+                Pattern.compile("^### (Main|Test|Integration test) root, (entity|project) scope$");
         private static final Pattern CELL_SPLIT = Pattern.compile("(?<!\\\\)\\|");
 
         final List<List<String>> rows = new ArrayList<>();
@@ -495,7 +496,7 @@ class GeneratorCatalogueTest {
                 }
                 Matcher section = SECTION.matcher(line);
                 if (section.matches()) {
-                    root = section.group(1).toLowerCase(java.util.Locale.ROOT);
+                    root = section.group(1).toLowerCase(java.util.Locale.ROOT).replace(' ', '-');
                     scope = section.group(2);
                     continue;
                 }

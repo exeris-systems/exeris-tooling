@@ -8,9 +8,12 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.java.CodegenPipeline;
 import eu.exeris.tooling.codegen.java.kernel.KernelApplicationGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelApplicationTestGenerator;
+import eu.exeris.tooling.codegen.java.kernel.KernelCrudIntegrationTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
 import eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator;
+import eu.exeris.tooling.codegen.java.kernel.KernelIntegrationSupportGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelRepositoryTestGenerator;
+import eu.exeris.tooling.codegen.java.kernel.KernelRoutePolicyIntegrationTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelSagaTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelServiceTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelTestSupportGenerator;
@@ -42,7 +45,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * The generator catalogue against what a real run writes (ADR-097 obligation 8).
  *
  * <p>Annotated sources go through {@code javac} and the processor, the metadata through
- * {@link CodegenPipeline#run} and {@link CodegenPipeline#runTests}, and the two
+ * {@link CodegenPipeline#run}, {@link CodegenPipeline#runTests} and
+ * {@link CodegenPipeline#runIntegrationTests}, and the
  * {@code .exeris-codegen-manifest} files the run leaves are matched against the catalogue the way
  * ADR-097 tells a consumer to match them: first row in catalogue order whose {@code outputRoot} is
  * the manifest's tree and whose {@code pathPattern} matches.
@@ -54,6 +58,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>The base package is passed explicitly: the pipeline's fallback reads it from whichever domain
  * the metadata directory lists first.
+ *
+ * <p>The integration-test tree is written for a build of {@code GLOBAL} entities only (ADR-058
+ * Amendment 1), which the main fixture is not, so a second, smaller build reaches its rows.
  */
 @Tag("e2e")
 @Tag("codegen")
@@ -64,6 +71,8 @@ class GeneratorCatalogueConformanceE2ETest {
     private static final String DOMAIN = "eu/exeris/e2e/catalogue/domain/";
     private static final String CATALOGUE = "/META-INF/exeris/generator-catalogue.json";
     private static final String PIPELINE = CodegenPipeline.class.getSimpleName();
+    private static final String IT_BASE_PACKAGE = "eu.exeris.e2e.catalogueit";
+    private static final String IT_ROOT = "integration-test";
 
     @TempDir
     static Path workspace;
@@ -73,6 +82,8 @@ class GeneratorCatalogueConformanceE2ETest {
     private static Map<String, String> testWriters;
     private static Set<String> mainManifest;
     private static Set<String> testManifest;
+    private static Map<String, String> itWriters;
+    private static Set<String> itManifest;
 
     record Row(String id, String generator, String outputRoot, Pattern pattern, List<String> ambiguousWith) {
         boolean matches(String root, String path) {
@@ -115,6 +126,15 @@ class GeneratorCatalogueConformanceE2ETest {
         List<DomainMetadata> domains = pipeline.loadMetadata(metadata);
         mainWriters = mainWriters(domains, pipelineOwn);
         testWriters = testWriters(domains);
+
+        Path itClasses = workspace.resolve("it/target/classes");
+        Path itMetadata = itClasses.resolve("exeris-metadata");
+        Path itTree = workspace.resolve("it/src/test/generated-it/java");
+        ProcessorCompiler.compile(workspace.resolve("it/src/main/java"), itClasses, null, integrationSources());
+        pipeline.run(itMetadata, workspace.resolve("it/src/main/generated/java"), IT_BASE_PACKAGE);
+        pipeline.runIntegrationTests(itMetadata, itTree, IT_BASE_PACKAGE);
+        itManifest = manifest(itTree);
+        itWriters = integrationTestWriters(pipeline.loadMetadata(itMetadata));
     }
 
     @Test
@@ -123,6 +143,7 @@ class GeneratorCatalogueConformanceE2ETest {
         assertThat(mainWriters.values()).contains(PIPELINE);
         assertThat(mainManifest).hasSizeGreaterThan(60);
         assertThat(testManifest).isNotEmpty();
+        assertThat(itManifest).isNotEmpty();
     }
 
     @Test
@@ -130,6 +151,7 @@ class GeneratorCatalogueConformanceE2ETest {
     void attributionCoversTheManifests() {
         assertThat(mainWriters.keySet()).containsExactlyInAnyOrderElementsOf(mainManifest);
         assertThat(testWriters.keySet()).containsExactlyInAnyOrderElementsOf(testManifest);
+        assertThat(itWriters.keySet()).containsExactlyInAnyOrderElementsOf(itManifest);
     }
 
     @Test
@@ -138,6 +160,7 @@ class GeneratorCatalogueConformanceE2ETest {
         List<String> failures = new ArrayList<>();
         check("main", mainWriters, failures);
         check("test", testWriters, failures);
+        check(IT_ROOT, itWriters, failures);
         assertThat(failures).isEmpty();
     }
 
@@ -147,6 +170,7 @@ class GeneratorCatalogueConformanceE2ETest {
         Set<String> reached = new TreeSet<>();
         mainWriters.forEach((path, writer) -> reach(reached, resolve("main", path, writer)));
         testWriters.forEach((path, writer) -> reach(reached, resolve("test", path, writer)));
+        itWriters.forEach((path, writer) -> reach(reached, resolve(IT_ROOT, path, writer)));
         assertThat(reached).containsExactlyInAnyOrderElementsOf(catalogue.stream().map(Row::id).toList());
     }
 
@@ -251,6 +275,46 @@ class GeneratorCatalogueConformanceE2ETest {
             }
         }
         return writers;
+    }
+
+    private static Map<String, String> integrationTestWriters(List<DomainMetadata> domains) {
+        Map<String, String> writers = new TreeMap<>();
+        for (GeneratedFile file : new KernelIntegrationSupportGenerator().generateAll(domains, IT_BASE_PACKAGE)) {
+            attribute(writers, file, KernelIntegrationSupportGenerator.class.getSimpleName());
+        }
+        KernelCrudIntegrationTestGenerator crud = new KernelCrudIntegrationTestGenerator();
+        for (DomainMetadata domain : domains) {
+            attribute(writers, crud.generate(domain, IT_BASE_PACKAGE, domains),
+                    KernelCrudIntegrationTestGenerator.class.getSimpleName());
+        }
+        GeneratedFile routePolicy = new KernelRoutePolicyIntegrationTestGenerator()
+                .generate(domains, IT_BASE_PACKAGE);
+        assertThat(routePolicy).as("the scoped entity yields the route-policy integration test").isNotNull();
+        attribute(writers, routePolicy, KernelRoutePolicyIntegrationTestGenerator.class.getSimpleName());
+        return writers;
+    }
+
+    /** A build the integration tests are written for: one GLOBAL entity whose routes demand a scope. */
+    private static Map<String, String> integrationSources() {
+        return Map.of("eu/exeris/e2e/catalogueit/domain/Permit.java", """
+                package eu.exeris.e2e.catalogueit.domain;
+
+                import eu.exeris.sdk.annotation.ExerisDomain;
+                import eu.exeris.sdk.annotation.Field;
+
+                import java.util.UUID;
+
+                @ExerisDomain(module = "permits", path = "/permits", permissions = {"permit:read"})
+                public class Permit {
+                    private UUID id;
+                    @Field(label = "Holder")
+                    private String holder;
+                    public UUID getId() { return id; }
+                    public void setId(UUID id) { this.id = id; }
+                    public String getHolder() { return holder; }
+                    public void setHolder(String holder) { this.holder = holder; }
+                }
+                """);
     }
 
     private static void attribute(Map<String, String> writers, GeneratedFile file, String writer) {

@@ -350,6 +350,10 @@ public enum DiagnosticId {
     GENERATED_IMPORT_NOT_ON_CLASSPATH("EXT-PLUG-2004",
             "The generated code imports an artefact that is not on the classpath it is compiled against."),
 
+    /** Generated-integration-test emission failed on I/O. */
+    INTEGRATION_TEST_GENERATION_FAILED("EXT-PLUG-2005",
+            "Integration-test generation failed reading metadata or writing the generated integration-test tree."),
+
     // -----------------------------------------------------------------------
     // EXT-PLUG-21xx — exeris:detach
     // -----------------------------------------------------------------------
@@ -459,6 +463,14 @@ public enum DiagnosticId {
      */
     BASE_PACKAGE_INFERRED("EXT-GEN-3104",
             "No base package was given and the entities span several packages; the first entity's package is used."),
+
+    /**
+     * The generated integration tests were asked for, and the build is outside what they boot on:
+     * an entity that is not {@code GLOBAL}, the graph or storage subsystem, or a capability
+     * composition. Nothing is written and nothing is pruned.
+     */
+    INTEGRATION_TESTS_WITHHELD("EXT-GEN-3105",
+            "The generated integration tests are withheld: the build needs more than an in-memory H2 boot."),
 
     // -----------------------------------------------------------------------
     // EXT-INIT-50xx — the exeris-initializr command line, errors
