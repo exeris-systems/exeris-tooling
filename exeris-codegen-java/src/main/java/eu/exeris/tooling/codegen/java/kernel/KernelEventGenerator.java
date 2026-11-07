@@ -12,6 +12,7 @@ import com.palantir.javapoet.WildcardTypeName;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.java.support.DomainPackages;
 import eu.exeris.tooling.codegen.java.support.KernelEventSupport;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
@@ -134,7 +135,7 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
             return null;
         }
 
-        String packageName = metadata.packageName().replace(".domain", ".event");
+        String packageName = DomainPackages.sibling(metadata, DomainPackages.EVENT);
         String entity = metadata.entityName();
         String className = entity + "EventPublisher";
         ClassName selfType = ClassName.get(packageName, className);
