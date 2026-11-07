@@ -45,6 +45,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -555,9 +556,12 @@ class PostgresTypeMatrixE2ETest {
                         i2.atOffset(ZoneOffset.ofHours(-5)), "'" + i1 + "'"),
                 timestamp("ZdtBox", "ZonedDateTime", i1.atZone(ZoneId.of("Europe/Warsaw")),
                         i2.atZone(ZoneId.of("Europe/Warsaw")), "'" + i1 + "'"),
-                // A JSON column: no finder, neither filtered nor sorted.
+                // A JSON column: no finder, neither filtered nor sorted. The updated value's JSON is
+                // longer than 255 characters, which the column holds because it declares no width.
                 new Probe("ListBox", "List<String>", List.of("java.util.List"), true,
-                        l -> List.of("a", "b"), l -> List.of("c"), "'[\"a\",\"b\"]'", Object::toString,
+                        l -> List.of("a", "b"),
+                        l -> IntStream.range(0, 40).mapToObj(i -> "element-" + i).toList(),
+                        "'[\"a\",\"b\"]'", Object::toString,
                         false, false, false)));
         probes.add(new Probe("EnumBox", "Grade", List.of(), true,
                 l -> enumConstant(l, "A"), l -> enumConstant(l, "B"), "'A'", v -> ((Enum<?>) v).name(),
