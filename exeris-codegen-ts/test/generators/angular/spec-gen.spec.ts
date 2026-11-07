@@ -8,7 +8,15 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { generateFormSpec, generateSchemaSpec, generateServiceSpec, generateStoreSpec } from '../../../src/generators/angular/spec-gen.js';
+import {
+  generateAuthInterceptorSpec,
+  generateFormSpec,
+  generateRouteGuardsSpec,
+  generateSchemaSpec,
+  generateServiceSpec,
+  generateStoreSpec,
+} from '../../../src/generators/angular/spec-gen.js';
+import { generateAuthInterceptor } from '../../../src/generators/angular/auth-interceptor-gen.js';
 import { DEFAULT_CONFIG } from '../../../src/config.js';
 import { parseOffered } from '../../support/offered.js';
 
@@ -418,5 +426,71 @@ describe('generateFormSpec', () => {
 
   it('verifies no request was left outstanding', () => {
     expect(generateFormSpec(idOnly, DEFAULT_CONFIG)!.content).toContain('afterEach(() => http.verify());');
+  });
+});
+
+describe('generateRouteGuardsSpec', () => {
+  const content = generateRouteGuardsSpec().content;
+
+  it('emits beside the route guards it exercises', () => {
+    expect(generateRouteGuardsSpec().path).toBe('core/route-guards.spec.ts');
+  });
+
+  it('runs both guards in the injector against an auth service double, requiring no mocking library', () => {
+    expect(content).toContain("import { requireAnyPermission, requireAuthenticated } from './route-guards';");
+    expect(content).toContain('{ provide: AuthService, useValue: auth }');
+    expect(content).toContain('TestBed.runInInjectionContext(');
+    expect(content).not.toContain('vi.fn');
+    expect(content).not.toContain('vi.mock');
+  });
+
+  it('asserts requireAuthenticated refuses without an identity and admits a signed-in user', () => {
+    expect(content).toContain('expect(navigate(requireAuthenticated)).toBe(false);');
+    expect(content).toContain('authenticated = true;\n    expect(navigate(requireAuthenticated)).toBe(true);');
+  });
+
+  it('asserts requireAnyPermission forwards exactly the declared names and returns the answer', () => {
+    expect(content).toContain("navigate(requireAnyPermission('scope-a', 'scope-b'));");
+    expect(content).toContain("expect(asked).toEqual([['scope-a', 'scope-b']]);");
+    expect(content).toContain("expect(navigate(requireAnyPermission('scope-a'))).toBe(false);");
+    expect(content).toContain("granted = true;\n    expect(navigate(requireAnyPermission('scope-a'))).toBe(true);");
+  });
+
+  it('names no permission an entity could derive', () => {
+    expect(content).not.toMatch(/'[a-z_]+:(read|create|update|delete)'/);
+  });
+});
+
+describe('generateAuthInterceptorSpec', () => {
+  it('emits beside the interceptor it exercises', () => {
+    expect(generateAuthInterceptorSpec(DEFAULT_CONFIG).path).toBe('core/auth.interceptor.spec.ts');
+  });
+
+  it('drives the real interceptor through Angular\'s testing backend with an auth service double', () => {
+    const content = generateAuthInterceptorSpec(DEFAULT_CONFIG).content;
+    expect(content).toContain('provideHttpClient(withInterceptors([authInterceptor])),');
+    expect(content).toContain('{ provide: AuthService, useValue: { token } },');
+    expect(content).toContain('afterEach(() => http.verify());');
+    expect(content).not.toContain('vi.fn');
+  });
+
+  it('asserts the prefix the interceptor sends the token under', () => {
+    expect(generateAuthInterceptorSpec({ ...DEFAULT_CONFIG, apiBasePath: '/api' }).content).toContain("const API_PREFIX = '/api/';");
+    expect(generateAuthInterceptorSpec({ ...DEFAULT_CONFIG, apiBasePath: '/v2/' }).content).toContain("const API_PREFIX = '/v2/';");
+  });
+
+  it('agrees with the interceptor on the prefix, quote escaping included', () => {
+    const config = { ...DEFAULT_CONFIG, apiBasePath: "/it's" };
+    const prefixLine = (text: string) => text.split('\n').find((l) => l.includes('const API_PREFIX = '))?.trim();
+    expect(prefixLine(generateAuthInterceptorSpec(config).content)).toBe(prefixLine(generateAuthInterceptor(config).content));
+    expect(prefixLine(generateAuthInterceptorSpec(config).content)).toBe("const API_PREFIX = '/it\\'s/';");
+  });
+
+  it('asserts the token is sent under the prefix and withheld everywhere else', () => {
+    const content = generateAuthInterceptorSpec(DEFAULT_CONFIG).content;
+    expect(content).toContain("expect(authorizationSentTo(`${API_PREFIX}probe`)).toBe('Bearer token-1');");
+    expect(content).toContain('expect(authorizationSentTo(`${API_PREFIX}probe`)).toBeNull();');
+    expect(content).toContain("expect(authorizationSentTo('https://outside.invalid/probe')).toBeNull();");
+    expect(content).toContain("expect(authorizationSentTo('//outside.invalid/probe')).toBeNull();");
   });
 });

@@ -782,6 +782,18 @@ describe('buildGeneratedFiles — declared route access guards pages and live vi
     expect(buildGeneratedFiles(open, [], config)).toEqual(undeclared);
   });
 
+  it('emits the guards and interceptor specs exactly when the guards and the interceptor are emitted and tests are on', () => {
+    const SPECS = ['src/app/core/route-guards.spec.ts', 'src/app/core/auth.interceptor.spec.ts'];
+    const declared = shop({ invoice: { routeAccess: 'AUTHENTICATED' } });
+    const withTests = buildGeneratedFiles(declared, [], { ...DEFAULT_CONFIG, generateTests: true }).map((f) => f.path);
+    expect(withTests).toEqual(expect.arrayContaining(SPECS));
+    const withoutTests = buildGeneratedFiles(declared, [], DEFAULT_CONFIG).map((f) => f.path);
+    for (const spec of SPECS) {
+      expect(withoutTests).not.toContain(spec);
+      expect(undeclared.map((f) => f.path)).not.toContain(spec);
+    }
+  });
+
   it('with the scaffold off, writes the guards at the tree root and no app.routes.ts', () => {
     const files = buildGeneratedFiles(shop({ invoice: { routeAccess: 'AUTHENTICATED' } }), [], { ...DEFAULT_CONFIG, scaffold: false });
     expect(files.map((f) => f.path)).toContain('core/route-guards.ts');
