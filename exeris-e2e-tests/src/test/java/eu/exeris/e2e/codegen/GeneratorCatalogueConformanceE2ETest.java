@@ -7,6 +7,7 @@ import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.java.CodegenPipeline;
 import eu.exeris.tooling.codegen.java.kernel.KernelApplicationGenerator;
+import eu.exeris.tooling.codegen.java.kernel.KernelApplicationTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
 import eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelRepositoryTestGenerator;
@@ -232,6 +233,8 @@ class GeneratorCatalogueConformanceE2ETest {
         for (GeneratedFile file : new KernelTestSupportGenerator().generateAll(BASE_PACKAGE)) {
             attribute(writers, file, KernelTestSupportGenerator.class.getSimpleName());
         }
+        attribute(writers, new KernelApplicationTestGenerator().generate(domains, BASE_PACKAGE),
+                KernelApplicationTestGenerator.class.getSimpleName());
         KernelHandlerTestGenerator handlerTests = new KernelHandlerTestGenerator();
         KernelServiceTestGenerator serviceTests = new KernelServiceTestGenerator();
         KernelRepositoryTestGenerator repositoryTests = new KernelRepositoryTestGenerator();

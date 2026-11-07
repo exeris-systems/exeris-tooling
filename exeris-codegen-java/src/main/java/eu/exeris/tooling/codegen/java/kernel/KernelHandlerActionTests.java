@@ -192,8 +192,8 @@ final class KernelHandlerActionTests {
         return m.build();
     }
 
-    private static void appendActionDispatch(MethodSpec.Builder method, String handlerMethod,
-                                             boolean hasBodyParams, boolean tenantScoped) {
+    static void appendActionDispatch(MethodSpec.Builder method, String handlerMethod,
+                                     boolean hasBodyParams, boolean tenantScoped) {
         if (hasBodyParams) {
             if (tenantScoped) {
                 method.addStatement("$T.where($T.HTTP_REQUEST_BODY_DECODER_REGISTRY, body)\n"
@@ -210,7 +210,7 @@ final class KernelHandlerActionTests {
         }
     }
 
-    private static CodeBlock actionRequestArgs(List<ActionParamMetadata> bodyParams) {
+    static CodeBlock actionRequestArgs(List<ActionParamMetadata> bodyParams) {
         List<CodeBlock> args = new ArrayList<>();
         for (ActionParamMetadata p : bodyParams) {
             args.add(sampleActionParamValue(p));

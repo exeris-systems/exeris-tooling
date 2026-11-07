@@ -138,7 +138,8 @@ existing key is removed or changes meaning or type.
 
 | Row | Generator | Artefact | Path template | Cardinality | Condition | ADR |
 |---|---|---|---|---|---|---|
-| `test-support` | `KernelTestSupportGenerator` | The recording doubles of the kernel SPIs that the generated tests use. | `{app}/testsupport/Recording{HttpExchange,Persistence,Flow,RequestBody,EventEngine}.java` | fixed-set | at least one `@ExerisDomain` | ADR-058 |
+| `test-support` | `KernelTestSupportGenerator` | The recording doubles of the kernel SPIs that the generated tests use. | `{app}/testsupport/Recording{HttpExchange,Persistence,Flow,RequestBody,EventEngine,StreamExchange}.java` | fixed-set | at least one `@ExerisDomain` | ADR-058 |
+| `application-test` | `KernelApplicationTestGenerator` | The generated tests of the route policy the application binds. | `{app}/ApplicationRoutePolicyTest.java` | one | at least one `@ExerisDomain` | ADR-058 |
 
 ### Test root, entity scope
 

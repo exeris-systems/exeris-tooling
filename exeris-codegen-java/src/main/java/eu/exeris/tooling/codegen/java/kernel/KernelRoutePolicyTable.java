@@ -224,7 +224,7 @@ final class KernelRoutePolicyTable {
         return name.replaceAll("([a-z0-9])([A-Z])", "$1_$2").replace('-', '_').toUpperCase(Locale.ROOT);
     }
 
-    private static CodeBlock requirementExpression(Requirement requirement) {
+    static CodeBlock requirementExpression(Requirement requirement) {
         return switch (requirement.kind()) {
             case PERMIT_ALL -> CodeBlock.of("$T.permitAll()", ROUTE_REQUIREMENT);
             case AUTHENTICATED -> CodeBlock.of("$T.authenticated()", ROUTE_REQUIREMENT);

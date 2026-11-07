@@ -61,9 +61,42 @@ class KernelTestSupportGeneratorTest {
 
         assertThat(files).extracting(GeneratedFile::className)
                 .containsExactly("RecordingHttpExchange", "RecordingPersistence", "RecordingFlow",
-                        "RecordingRequestBody", "RecordingEventEngine");
+                        "RecordingRequestBody", "RecordingEventEngine", "RecordingStreamExchange");
         assertThat(files).allSatisfy(f ->
                 assertThat(f.packageName()).isEqualTo("com.example.testsupport"));
+    }
+
+    @Test
+    @DisplayName("RecordingStreamExchange records every frame and disconnects after the frames the peer takes")
+    void streamExchangeRecordsFramesAndDisconnects() {
+        String source = new KernelTestSupportGenerator().generateStreamExchange("com.example").content();
+
+        assertThat(source)
+                .contains("final class RecordingStreamExchange implements HttpStreamExchange")
+                .contains("public final List<StreamEvent> frames = new ArrayList<>();")
+                .contains("public int framesBeforeDisconnect = Integer.MAX_VALUE;")
+                .contains("frames.add(frame);")
+                .contains("if (frames.size() > framesBeforeDisconnect)")
+                .contains("throw StreamClosedException.peerDisconnect(0L);")
+                .contains("closes++;")
+                .contains("public static RecordingStreamExchange get(String path)")
+                .contains("public static RecordingStreamExchange post(String path, LoanedBuffer body)");
+    }
+
+    @Test
+    @DisplayName("RecordingEventEngine delivers a publish to the subscribers of its type, and staged events on subscribe")
+    void eventEngineDeliversToSubscribers() {
+        String source = new KernelTestSupportGenerator().generateEventEngine("com.example").content();
+
+        assertThat(source)
+                .contains("deliver(descriptor, payload);")
+                .contains(".filter(spec -> spec.ordinal() == ordinal)")
+                .contains("if (subscription.eventType().equals(spec.name()))")
+                .contains("handler.handle(event.descriptor(), new BytesPayload(event.data()));")
+                .contains("public void stage(String eventType, EventDescriptor descriptor, String data)")
+                .contains("public int activeSubscriptions()")
+                .contains("unsubscribed.add(token);")
+                .contains("return token;");
     }
 
     @Test

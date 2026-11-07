@@ -62,7 +62,7 @@ Generated code logs through `System.Logger` and binds no logging facade ([ADR-06
 
 ### Generated tests
 
-Under `exeris.tests=true` (`--tests`), `runTests` writes tests for the handler, service and repository of each entity and the flow of each saga, and a `testsupport` package of recording doubles of the kernel SPIs, into a separate root, `src/test/generated/java` by default. The tests import only JUnit 5 and AssertJ ([ADR-058](../adr/ADR-058-generated-test-emission-channel.md)). A run with no domains writes nothing into the test root and prunes nothing in it.
+Under `exeris.tests=true` (`--tests`), `runTests` writes tests for the handler, service and repository of each entity, the flow of each saga and the route policy of the generated `Application`, and a `testsupport` package of recording doubles of the kernel SPIs, into a separate root, `src/test/generated/java` by default. The tests import only JUnit 5 and AssertJ ([ADR-058](../adr/ADR-058-generated-test-emission-channel.md)). A run with no domains writes nothing into the test root and prunes nothing in it.
 
 ### Emission technique and output stability
 

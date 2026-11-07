@@ -57,6 +57,9 @@ public final class KernelTestSupportGenerator {
     /** Simple name of the emitted event-engine double (T48). */
     public static final String RECORDING_EVENT_ENGINE = "RecordingEventEngine";
 
+    /** Simple name of the emitted {@code HttpStreamExchange} double. */
+    public static final String RECORDING_STREAM_EXCHANGE = "RecordingStreamExchange";
+
     private static final ClassName HTTP_EXCHANGE =
             ClassName.get("eu.exeris.kernel.spi.http", "HttpExchange");
     private static final ClassName HTTP_REQUEST =
@@ -69,6 +72,11 @@ public final class KernelTestSupportGenerator {
             ClassName.get("eu.exeris.kernel.spi.http", "HttpMethod");
     private static final ClassName HTTP_VERSION =
             ClassName.get("eu.exeris.kernel.spi.http", "HttpVersion");
+    private static final ClassName HTTP_STREAM_EXCHANGE =
+            ClassName.get("eu.exeris.kernel.spi.http", "HttpStreamExchange");
+    private static final ClassName STREAM_EVENT = ClassName.get("eu.exeris.kernel.spi.http", "StreamEvent");
+    private static final ClassName STREAM_CLOSED_EXCEPTION =
+            ClassName.get("eu.exeris.kernel.spi.exceptions.http", "StreamClosedException");
     private static final ClassName LIST = ClassName.get("java.util", "List");
     private static final ClassName MAP = ClassName.get("java.util", "Map");
     private static final ClassName LINKED_HASH_MAP = ClassName.get("java.util", "LinkedHashMap");
@@ -131,6 +139,11 @@ public final class KernelTestSupportGenerator {
     private static final ClassName FLOW_STATE = ClassName.get(SPI_FLOW_MODEL, "FlowState");
     private static final ClassName ARRAY_LIST = ClassName.get("java.util", "ArrayList");
 
+    private static final String EVENT_TYPE = "eventType";
+    private static final String DESCRIPTOR = "descriptor";
+    private static final String PAYLOAD = "payload";
+    private static final String DATA = "data";
+
     private static final List<Bind> BINDS = List.of(
             new Bind("bindInt", TypeName.INT),
             new Bind("bindLong", TypeName.LONG),
@@ -182,7 +195,7 @@ public final class KernelTestSupportGenerator {
     public List<GeneratedFile> generateAll(String basePackage) {
         return List.of(generate(basePackage), generatePersistence(basePackage),
                 generateFlow(basePackage), generateRequestBody(basePackage),
-                generateEventEngine(basePackage));
+                generateEventEngine(basePackage), generateStreamExchange(basePackage));
     }
 
     /**
@@ -761,6 +774,10 @@ public final class KernelTestSupportGenerator {
         TypeName specList = ParameterizedTypeName.get(LIST, EVENT_TYPE_SPEC);
         TypeName stringSet = ParameterizedTypeName.get(ClassName.get(java.util.Set.class),
                 ClassName.get(String.class));
+        TypeName stringList = ParameterizedTypeName.get(LIST, ClassName.get(String.class));
+        ClassName selfType = ClassName.get(packageName, RECORDING_EVENT_ENGINE);
+        ClassName subscriptionType = selfType.nestedClass("Subscription");
+        ClassName stagedType = selfType.nestedClass("Staged");
 
         TypeSpec.Builder type = KernelScaffold.publicClass(RECORDING_EVENT_ENGINE)
                 .addModifiers(Modifier.FINAL)
@@ -772,7 +789,9 @@ public final class KernelTestSupportGenerator {
                         EVENT_ENGINE, EVENT_BUS, EVENT_REGISTRY)
                 .addJavadoc("publisher is constructed with the engine, registers its\n")
                 .addJavadoc("{@code EventTypeSpec}s into the registry, and publishes onto the bus.\n")
-                .addJavadoc("<p>{@code published} and {@code registered} are the assertion surface.\n")
+                .addJavadoc("<p>{@code published}, {@code registered}, {@code subscribed} and\n")
+                .addJavadoc("{@code unsubscribed} are the assertion surface. A publish reaches every\n")
+                .addJavadoc("subscriber of its type synchronously, on the publishing thread.\n")
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n")
                 .addField(FieldSpec.builder(descriptorList, "published", Modifier.PUBLIC, Modifier.FINAL)
                         .initializer("new $T<>()", ClassName.get(java.util.ArrayList.class))
@@ -781,6 +800,23 @@ public final class KernelTestSupportGenerator {
                 .addField(FieldSpec.builder(specList, "registered", Modifier.PUBLIC, Modifier.FINAL)
                         .initializer("new $T<>()", ClassName.get(java.util.ArrayList.class))
                         .addJavadoc("Every spec passed to {@link #register}, in call order.\n")
+                        .build())
+                .addField(FieldSpec.builder(stringList, "subscribed", Modifier.PUBLIC, Modifier.FINAL)
+                        .initializer("new $T<>()", ClassName.get(java.util.ArrayList.class))
+                        .addJavadoc("Every event type passed to {@link #subscribe}, in call order.\n")
+                        .build())
+                .addField(FieldSpec.builder(ParameterizedTypeName.get(LIST, SUBSCRIPTION_TOKEN), "unsubscribed",
+                                Modifier.PUBLIC, Modifier.FINAL)
+                        .initializer("new $T<>()", ClassName.get(java.util.ArrayList.class))
+                        .addJavadoc("Every subscription dropped through {@link #unsubscribe}, in call order.\n")
+                        .build())
+                .addField(FieldSpec.builder(ParameterizedTypeName.get(MAP, SUBSCRIPTION_TOKEN, subscriptionType),
+                                "subscriptions", Modifier.PRIVATE, Modifier.FINAL)
+                        .initializer("new $T<>()", LINKED_HASH_MAP)
+                        .build())
+                .addField(FieldSpec.builder(ParameterizedTypeName.get(LIST, stagedType), "staged",
+                                Modifier.PRIVATE, Modifier.FINAL)
+                        .initializer("new $T<>()", ClassName.get(java.util.ArrayList.class))
                         .build());
 
         // EventEngine
@@ -794,22 +830,77 @@ public final class KernelTestSupportGenerator {
 
         // EventBus
         type.addMethod(override("publish", TypeName.VOID)
-                .addParameter(EVENT_DESCRIPTOR, "descriptor")
-                .addParameter(EVENT_PAYLOAD, "payload")
+                .addParameter(EVENT_DESCRIPTOR, DESCRIPTOR)
+                .addParameter(EVENT_PAYLOAD, PAYLOAD)
                 .addStatement("published.add(descriptor)")
+                .addStatement("deliver(descriptor, payload)")
                 .build());
         type.addMethod(override("publishAndAwait", TypeName.VOID)
-                .addParameter(EVENT_DESCRIPTOR, "descriptor")
-                .addParameter(EVENT_PAYLOAD, "payload")
+                .addParameter(EVENT_DESCRIPTOR, DESCRIPTOR)
+                .addParameter(EVENT_PAYLOAD, PAYLOAD)
                 .addStatement("published.add(descriptor)")
+                .addStatement("deliver(descriptor, payload)")
                 .build());
         type.addMethod(override("subscribe", SUBSCRIPTION_TOKEN)
-                .addParameter(ClassName.get(String.class), "eventType")
+                .addParameter(ClassName.get(String.class), EVENT_TYPE)
                 .addParameter(EVENT_HANDLER, "handler")
-                .addStatement("return null")
+                .addStatement("$T token = new $T(1, subscribed.size())", SUBSCRIPTION_TOKEN, SUBSCRIPTION_TOKEN)
+                .addStatement("subscriptions.put(token, new Subscription(eventType, handler))")
+                .addStatement("subscribed.add(eventType)")
+                .beginControlFlow("for ($T event : staged)", stagedType)
+                .beginControlFlow("if (event.eventType().equals(eventType))")
+                .addStatement("handler.handle(event.descriptor(), new BytesPayload(event.data()))")
+                .endControlFlow()
+                .endControlFlow()
+                .addStatement("return token")
                 .build());
         type.addMethod(override("unsubscribe", TypeName.VOID)
                 .addParameter(SUBSCRIPTION_TOKEN, "token")
+                .beginControlFlow("if (subscriptions.remove(token) != null)")
+                .addStatement("unsubscribed.add(token)")
+                .endControlFlow()
+                .build());
+        type.addMethod(MethodSpec.methodBuilder("stage")
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(String.class, EVENT_TYPE)
+                .addParameter(EVENT_DESCRIPTOR, DESCRIPTOR)
+                .addParameter(String.class, DATA)
+                .addJavadoc("Stages an event that every later subscriber of {@code eventType} receives\n")
+                .addJavadoc("the moment it subscribes, with {@code data} as its UTF-8 payload: a stream\n")
+                .addJavadoc("handler under test then finds the event queued before it starts draining.\n")
+                .addStatement("staged.add(new Staged(eventType, descriptor, data))")
+                .build());
+        type.addMethod(MethodSpec.methodBuilder("activeSubscriptions")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(TypeName.INT)
+                .addJavadoc("The subscriptions taken and not yet dropped.\n")
+                .addStatement("return subscriptions.size()")
+                .build());
+        type.addMethod(MethodSpec.methodBuilder("deliver")
+                .addModifiers(Modifier.PRIVATE)
+                .addParameter(EVENT_DESCRIPTOR, DESCRIPTOR)
+                .addParameter(EVENT_PAYLOAD, PAYLOAD)
+                .addJavadoc("Hands a published event to each subscriber of the registered type whose\n")
+                .addJavadoc("ordinal the descriptor carries, on the publishing thread.\n")
+                .addStatement("$T spec = typeOf(descriptor.eventTypeOrdinal())", EVENT_TYPE_SPEC)
+                .beginControlFlow("if (spec == null)")
+                .addStatement("return")
+                .endControlFlow()
+                .beginControlFlow("for ($T subscription : $T.copyOf(subscriptions.values()))",
+                        subscriptionType, LIST)
+                .beginControlFlow("if (subscription.eventType().equals(spec.name()))")
+                .addStatement("subscription.handler().handle(descriptor, payload)")
+                .endControlFlow()
+                .endControlFlow()
+                .build());
+        type.addMethod(MethodSpec.methodBuilder("typeOf")
+                .addModifiers(Modifier.PRIVATE)
+                .returns(EVENT_TYPE_SPEC)
+                .addParameter(TypeName.INT, "ordinal")
+                .addStatement("return registered.stream()\n"
+                        + "        .filter(spec -> spec.ordinal() == ordinal)\n"
+                        + "        .findFirst()\n"
+                        + "        .orElse(null)")
                 .build());
 
         // EventRegistry
@@ -818,7 +909,7 @@ public final class KernelTestSupportGenerator {
                 .addStatement("registered.add(spec)")
                 .build());
         type.addMethod(override("resolve", EVENT_TYPE_SPEC)
-                .addParameter(ClassName.get(String.class), "eventType")
+                .addParameter(ClassName.get(String.class), EVENT_TYPE)
                 .addStatement("return registered.stream()\n"
                         + "        .filter(spec -> spec.name().equals(eventType))\n"
                         + "        .findFirst()\n"
@@ -832,8 +923,152 @@ public final class KernelTestSupportGenerator {
                 .addStatement("return registered.size()")
                 .build());
 
+        type.addType(TypeSpec.recordBuilder(subscriptionType.simpleName())
+                .addModifiers(Modifier.PRIVATE)
+                .recordConstructor(MethodSpec.constructorBuilder()
+                        .addParameter(String.class, EVENT_TYPE)
+                        .addParameter(EVENT_HANDLER, "handler")
+                        .build())
+                .build());
+        type.addType(TypeSpec.recordBuilder(stagedType.simpleName())
+                .addModifiers(Modifier.PRIVATE)
+                .recordConstructor(MethodSpec.constructorBuilder()
+                        .addParameter(String.class, EVENT_TYPE)
+                        .addParameter(EVENT_DESCRIPTOR, DESCRIPTOR)
+                        .addParameter(String.class, DATA)
+                        .build())
+                .build());
+        type.addType(bytesPayload());
+
         return new GeneratedFile(packageName, RECORDING_EVENT_ENGINE,
                 KernelScaffold.render(packageName, type.build()), ArtifactType.TEST);
+    }
+
+    /**
+     * The payload a staged event is delivered with: the UTF-8 bytes of its data, which a stream
+     * handler copies into the frame it emits.
+     */
+    private static TypeSpec bytesPayload() {
+        return TypeSpec.classBuilder("BytesPayload")
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                .addSuperinterface(EVENT_PAYLOAD)
+                .addField(ArrayTypeName.of(TypeName.BYTE), "bytes", Modifier.PRIVATE, Modifier.FINAL)
+                .addMethod(MethodSpec.constructorBuilder()
+                        .addParameter(String.class, DATA)
+                        .addStatement("this.bytes = data.getBytes($T.UTF_8)",
+                                ClassName.get("java.nio.charset", "StandardCharsets"))
+                        .build())
+                .addMethod(override("segment", MEMORY_SEGMENT)
+                        .addStatement("return $T.ofArray(bytes)", MEMORY_SEGMENT)
+                        .build())
+                .addMethod(override("length", TypeName.INT).addStatement("return bytes.length").build())
+                .addMethod(override("retain", TypeName.VOID)
+                        .addComment("heap bytes carry no reference count")
+                        .build())
+                .addMethod(override("close", TypeName.VOID)
+                        .addComment("heap bytes hold nothing to release")
+                        .build())
+                .addMethod(override("refCount", TypeName.INT).addStatement("return 1").build())
+                .addMethod(override("isAlive", TypeName.BOOLEAN).addStatement("return true").build())
+                .build();
+    }
+
+    /**
+     * Emits {@code RecordingStreamExchange}, the {@code HttpStreamExchange} double the generated
+     * stream-handler cases drive.
+     *
+     * <p>{@code emit} records every frame it is handed. {@code framesBeforeDisconnect} is how many
+     * of them the peer takes: the frame after that is still recorded, and its {@code emit} throws the
+     * {@code StreamClosedException} a disconnect raises, which is how a case ends a stream that would
+     * otherwise stay open. The default takes every frame.
+     *
+     * @param basePackage the project base package; the support type lands in
+     *                    {@code <basePackage>.testsupport}
+     * @return the single emitted file; never {@code null}
+     */
+    public GeneratedFile generateStreamExchange(String basePackage) {
+        String packageName = supportPackage(basePackage);
+        ClassName selfType = ClassName.get(packageName, RECORDING_STREAM_EXCHANGE);
+        TypeName stringMap = ParameterizedTypeName.get(MAP,
+                ClassName.get(String.class), ClassName.get(String.class));
+
+        TypeSpec.Builder type = KernelScaffold.publicClass(RECORDING_STREAM_EXCHANGE)
+                .addModifiers(Modifier.FINAL)
+                .addSuperinterface(HTTP_STREAM_EXCHANGE)
+                .addJavadoc("An {@link $T} double that records the frames a stream handler emits.\n",
+                        HTTP_STREAM_EXCHANGE)
+                .addJavadoc("<p>{@code framesBeforeDisconnect} is how many frames the peer takes; the\n")
+                .addJavadoc("next {@code emit} records its frame and throws {@link $T}, the way a\n",
+                        STREAM_CLOSED_EXCEPTION)
+                .addJavadoc("disconnect surfaces. {@code closes} counts the calls to {@link #close()}.\n")
+                .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n")
+                .addField(FieldSpec.builder(HTTP_REQUEST, "request", Modifier.PRIVATE, Modifier.FINAL).build())
+                .addField(FieldSpec.builder(stringMap, "pathParams", Modifier.PRIVATE, Modifier.FINAL)
+                        .initializer("new $T<>()", LINKED_HASH_MAP).build())
+                .addField(FieldSpec.builder(ParameterizedTypeName.get(LIST, STREAM_EVENT), "frames",
+                                Modifier.PUBLIC, Modifier.FINAL)
+                        .initializer("new $T<>()", ARRAY_LIST)
+                        .addJavadoc("Every frame passed to {@link #emit}, in call order.\n")
+                        .build())
+                .addField(FieldSpec.builder(TypeName.INT, "framesBeforeDisconnect", Modifier.PUBLIC)
+                        .initializer("$T.MAX_VALUE", Integer.class)
+                        .addJavadoc("How many frames the peer takes before it disconnects.\n")
+                        .build())
+                .addField(FieldSpec.builder(TypeName.INT, "closes", Modifier.PUBLIC)
+                        .addJavadoc("How many times the handler closed the stream.\n")
+                        .build());
+
+        type.addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PRIVATE)
+                .addParameter(HTTP_REQUEST, "request")
+                .addStatement("this.request = request")
+                .build());
+        type.addMethod(streamFactory(selfType, "get", "GET"));
+        type.addMethod(streamFactory(selfType, "post", "POST"));
+        type.addMethod(MethodSpec.methodBuilder("post")
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(selfType)
+                .addParameter(String.class, "path")
+                .addParameter(LOANED_BUFFER, "body")
+                .addJavadoc("A body-carrying {@code POST} stream exchange for {@code path}; {@code body}\n")
+                .addJavadoc("only has to be non-null, as for {@code $L}.\n", RECORDING_EXCHANGE)
+                .addStatement("return new $T(new $T($T.POST, path, $T.HTTP_1_1, $T.of(), body))",
+                        selfType, HTTP_REQUEST, HTTP_METHOD, HTTP_VERSION, LIST)
+                .build());
+        type.addMethod(MethodSpec.methodBuilder("withPathParam")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(selfType)
+                .addParameter(String.class, "name")
+                .addParameter(String.class, "value")
+                .addJavadoc("Binds one path parameter, the way the router binds {@code {id}}.\n")
+                .addStatement("this.pathParams.put(name, value)")
+                .addStatement("return this")
+                .build());
+        type.addMethod(override("request", HTTP_REQUEST).addStatement("return request").build());
+        type.addMethod(override("pathParams", stringMap).addStatement("return pathParams").build());
+        type.addMethod(override("emit", TypeName.VOID)
+                .addParameter(STREAM_EVENT, "frame")
+                .addStatement("frames.add(frame)")
+                .beginControlFlow("if (frames.size() > framesBeforeDisconnect)")
+                .addStatement("throw $T.peerDisconnect(0L)", STREAM_CLOSED_EXCEPTION)
+                .endControlFlow()
+                .build());
+        type.addMethod(override("close", TypeName.VOID).addStatement("closes++").build());
+
+        return new GeneratedFile(packageName, RECORDING_STREAM_EXCHANGE,
+                KernelScaffold.render(packageName, type.build()), ArtifactType.TEST);
+    }
+
+    /** A {@code static RecordingStreamExchange <verb>(String path)} factory for one HTTP method. */
+    private static MethodSpec streamFactory(ClassName selfType, String name, String httpMethod) {
+        return MethodSpec.methodBuilder(name)
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(selfType)
+                .addParameter(String.class, "path")
+                .addJavadoc("A bodyless {@code $L} stream exchange for {@code path}.\n", httpMethod)
+                .addStatement("return new $T($T.noBody($T.$L, path, $T.HTTP_1_1, $T.of()))",
+                        selfType, HTTP_REQUEST, HTTP_METHOD, httpMethod, HTTP_VERSION, LIST)
+                .build();
     }
 
     /** A {@code public} {@code @Override} method builder — every double method has that shape. */

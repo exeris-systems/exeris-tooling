@@ -2,6 +2,7 @@ package eu.exeris.tooling.codegen.java.kernel;
 
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
+import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ParamSource;
@@ -503,5 +504,92 @@ class KernelHandlerTestGeneratorTest {
                 .contains("void handleSendRespondsConflictOnStaleVersion()")
                 .contains("service.rowExists = false;")
                 .contains("assertThat(exchange.status()).isEqualTo(HttpStatus.CONFLICT)");
+    }
+
+    @Test
+    @DisplayName("a realTimeApi entity with events covers the live view and the spectate stream over staged events")
+    void realTimeEntityWithEventsCoversItsStreams() {
+        DomainMetadata domain = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").realTimeApi(true)
+                .events(List.of(DomainEventMetadata.builder("OrderUpdated")
+                        .trigger(DomainEventMetadata.Trigger.UPDATE).build()))
+                .build();
+        String source = new KernelHandlerTestGenerator().generate(domain, "com.example").content();
+
+        assertThat(source)
+                .contains("void liveStreamForwardsEachEventUnderItsFrameName()")
+                .contains("engine.stage(\"OrderUpdatedEvent\", onStream(UUID.fromString(")
+                .contains("OrderStreamHandler handler = new OrderStreamHandler(engine);")
+                .contains("exchange.framesBeforeDisconnect = 0;")
+                .contains("StreamEvent.of(\"OrderUpdated\", \"{\\\"seq\\\":1}\")")
+                .contains("void spectateStreamAnswersAMalformedIdWithABadRequestFrame()")
+                .contains("void spectateStreamAnswersAnAbsentRowWithANotFoundFrame()")
+                .contains("void spectateStreamForwardsOnlyTheEventsOfItsRow()")
+                .contains("new OrderSpectateStreamHandler(service, engine)")
+                .contains("StreamEvent.of(\"stream-error\", \"{\\\"type\\\":\\\"about:blank\\\",\\\"title\\\":"
+                        + "\\\"Not Found\\\",\\\"status\\\":404}\")")
+                .contains("Assertions.assertThatThrownBy(() -> handler.handle(exchange))"
+                        + ".isInstanceOf(StreamClosedException.class);")
+                .contains("assertThat(engine.activeSubscriptions()).isZero()")
+                .contains("private static EventDescriptor onStream(UUID stream)")
+                .doesNotContain("org.mockito");
+    }
+
+    @Test
+    @DisplayName("a realTimeApi entity without events ends its keep-alive streams by interrupt, never by a clock")
+    void realTimeEntityWithoutEventsEndsByInterrupt() {
+        DomainMetadata domain = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").realTimeApi(true).build();
+        String source = new KernelHandlerTestGenerator().generate(domain, "com.example").content();
+
+        assertThat(source)
+                .contains("void liveStreamSendsAKeepAliveAndClosesWhenInterrupted()")
+                .contains("void spectateStreamHoldsAFoundRowOpenUntilInterrupted()")
+                .contains("Thread.currentThread().interrupt();")
+                .contains("interrupted = Thread.interrupted();")
+                .contains("new OrderSpectateStreamHandler(service)")
+                .doesNotContain("onStream(")
+                .doesNotContain("Thread.sleep");
+    }
+
+    @Test
+    @DisplayName("a streaming action covers its refusal frames, the refused write and the triggered events")
+    void streamingActionCoversItsStream() {
+        ActionMetadata action = ActionMetadata.builder("settle").methodName("settle").streaming(true)
+                .params(List.of(ActionParamMetadata.builder("note", "String")
+                        .bindingSource(ParamSource.BODY).build()))
+                .build();
+        DomainMetadata domain = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").versioned(true)
+                .actions(List.of(action))
+                .events(List.of(DomainEventMetadata.builder("OrderSettled")
+                        .trigger(DomainEventMetadata.Trigger.ACTION).actionName("settle").build()))
+                .build();
+        String source = new KernelHandlerTestGenerator().generate(domain, "com.example").content();
+
+        assertThat(source)
+                .contains("void handleSettleStreamAnswersAMalformedIdWithABadRequestFrame()")
+                .contains("void handleSettleStreamAnswersAnAbsentRowWithANotFoundFrame()")
+                .contains("void handleSettleStreamAnswersAnUndecodableBodyWithABadRequestFrame()")
+                .contains("void handleSettleStreamAnswersAStaleVersionWithAConflictFrame()")
+                .contains("void handleSettleStreamStreamsEachTriggeredEventAndCloses()")
+                .contains("new OrderSettleStreamHandler(service, body, new OrderEventPublisher(engine), engine)")
+                .contains("body.next = new OrderSettleStreamHandler.SettleRequest(\"sample\");")
+                .contains("RecordingStreamExchange.post(\"/orders/00000000-0000-4000-8000-000000000001/actions/settle\", body)")
+                .contains(".extracting(StreamEvent::event).containsExactlyInAnyOrder(\"OrderSettled\")")
+                .contains("assertThat(engine.subscribed).isEmpty()")
+                .doesNotContain("void handleSettleStreamAnswersAVanishedRowWithANotFoundFrame()")
+                // Respond-once action cases are for the non-streaming actions only.
+                .doesNotContain("void handleSettleRespondsOkWithUpdatedEntity()");
+    }
+
+    @Test
+    @DisplayName("an entity with no stream handler gets no stream case")
+    void noStreamHandlerNoStreamCase() {
+        String source = new KernelHandlerTestGenerator().generate(ORDER, "com.example").content();
+
+        assertThat(source)
+                .doesNotContain("RecordingStreamExchange")
+                .doesNotContain("StreamHandler");
     }
 }

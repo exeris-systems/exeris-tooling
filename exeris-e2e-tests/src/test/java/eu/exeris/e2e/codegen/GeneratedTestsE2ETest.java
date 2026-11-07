@@ -104,6 +104,8 @@ class GeneratedTestsE2ETest {
         assertThat(generatedTests.resolve("com/shop/testsupport/RecordingHttpExchange.java")).exists();
         assertThat(generatedTests.resolve("com/shop/testsupport/RecordingPersistence.java")).exists();
         assertThat(generatedTests.resolve("com/shop/testsupport/RecordingRequestBody.java")).exists();
+        assertThat(generatedTests.resolve("com/shop/testsupport/RecordingStreamExchange.java")).exists();
+        assertThat(generatedTests.resolve("com/shop/ApplicationRoutePolicyTest.java")).exists();
         assertThat(generatedMain.resolve("com/shop/handler/OrderHandlerTest.java")).doesNotExist();
         assertThat(generatedMain.resolve("com/shop/service/OrderServiceTest.java")).doesNotExist();
         assertThat(generatedMain.resolve("com/shop/handler/OrderHandler.java")).exists();
@@ -187,7 +189,12 @@ class GeneratedTestsE2ETest {
                             // its handler, built over the nested empty blob store, keeps every CRUD
                             // status, the row delete included.
                             DiscoverySelectors.selectClass(
-                                    Class.forName("com.shop.handler.TicketHandlerTest", true, appLoader)))
+                                    Class.forName("com.shop.handler.TicketHandlerTest", true, appLoader)),
+                            // The route policy the generated Application folds: the only executed
+                            // proof that a policy decides on the path without its query string and
+                            // on HEAD as GET, behind the application's own policy.
+                            DiscoverySelectors.selectClass(
+                                    Class.forName("com.shop.ApplicationRoutePolicyTest", true, appLoader)))
                     .build();
 
             Launcher launcher = LauncherFactory.create();
@@ -248,8 +255,15 @@ class GeneratedTestsE2ETest {
             // a soft-deleted row's 404 on get and its absence from the list, and send: success,
             // missing row, a stale version's 409) + 21 TicketHandlerTest cases (the CRUD, list,
             // decode-failure and @Validation cases of a GLOBAL entity with one required field,
-            // its handler built over the empty blob store).
-            assertThat(summary.getTestsSucceededCount()).isEqualTo(257);
+            // its handler built over the empty blob store) + 12 stream cases in the handler tests:
+            // Voucher's live view over its two staged events, its spectate stream's 400 and 404
+            // frames and its row filter, and its settle stream's 400 and 404 frames, the 404 of a
+            // write that matched no row and the VoucherSettled frame of a committed one; Ticket's
+            // keep-alive live view and its spectate stream's 400 and 404 frames and the found row
+            // held open until interrupted + 6 ApplicationRoutePolicyTest cases (the query string,
+            // HEAD as GET, applicationPolicy() first, an overridden and the default
+            // unmatchedRoutes(), and Payment's declared scope answered through the fold).
+            assertThat(summary.getTestsSucceededCount()).isEqualTo(275);
         }
     }
 
@@ -743,7 +757,9 @@ class GeneratedTestsE2ETest {
 
                 import java.util.UUID;
 
-                @ExerisDomain(module = "billing", path = "/payments")
+                // Declared access: the generated route policy has a table, so the emitted
+                // ApplicationRoutePolicyTest runs its case for the routes the table describes.
+                @ExerisDomain(module = "billing", path = "/payments", permissions = {"payment:read"})
                 public class Payment {
 
                     private UUID id;
@@ -763,6 +779,8 @@ class GeneratedTestsE2ETest {
                 }
                 """);
         // A @Blob field: the facet is written onto the metadata before the pipeline reads it.
+        // realTimeApi with no @DomainEvent: the live view and the spectate stream that only keep
+        // the stream alive, which Voucher's events never reach.
         sources.put("com/shop/domain/Ticket.java",
                 """
                 package com.shop.domain;
@@ -773,7 +791,8 @@ class GeneratedTestsE2ETest {
 
                 import java.util.UUID;
 
-                @ExerisDomain(module = "sales", path = "/tickets", dataScope = ExerisDomain.DataScope.GLOBAL)
+                @ExerisDomain(module = "sales", path = "/tickets", dataScope = ExerisDomain.DataScope.GLOBAL,
+                        realTimeApi = true)
                 public class Ticket {
                     private UUID id;
                     @Field(label = "Code", required = true) private String code;
