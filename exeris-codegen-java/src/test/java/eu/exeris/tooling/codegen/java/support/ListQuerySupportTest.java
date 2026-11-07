@@ -1,5 +1,6 @@
 package eu.exeris.tooling.codegen.java.support;
 
+import eu.exeris.sdk.sourcemodel.ast.BlobMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
@@ -88,6 +89,9 @@ class ListQuerySupportTest {
                         FieldMetadata.simple("visits", "int"),
                         FieldMetadata.simple("aliases", "java.util.List<String>"),
                         FieldMetadata.simple("deletedBy", "String"),
+                        // A blob facet makes it no column, whatever its declared type says.
+                        FieldMetadata.builder("scan", "String").searchable(true)
+                                .blob(BlobMetadata.ofContentTypes(List.of("image/png"))).build(),
                         FieldMetadata.simple("search", "String")))
                 .build();
 
