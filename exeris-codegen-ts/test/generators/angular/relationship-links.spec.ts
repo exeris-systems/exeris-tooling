@@ -188,6 +188,21 @@ describe('foreignKeyPickers', () => {
     });
   });
 
+  it('marks the picker searchable when the target has a searchable property', () => {
+    const searchable = domain({
+      entityName: 'Category',
+      fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'title', type: 'String', searchable: true }],
+    });
+    const p = product([{ ...FK, displayField: 'title' }]);
+    expect(foreignKeyPickers(p, [p, searchable], true).get('categoryId')).toEqual({
+      target: 'Category',
+      serviceModule: 'category.service',
+      keyField: 'id',
+      labelField: 'title',
+      searchable: true,
+    });
+  });
+
   it('reads an option\'s value from the key the target names', () => {
     const renamed = domain({
       entityName: 'Category',

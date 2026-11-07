@@ -334,5 +334,11 @@
     "since": "0.11",
     "adr": "ADR-105",
     "justification": "The kernel application refuses a route that demands an identity to a caller without the bearer token, and reads identity from the Authorization header only. A page is guarded by the requirement of the backend route it calls first, so the frontend admits a navigation exactly where the backend admits the request. A live view whose stream routes demand an identity is opened with fetch, because a native EventSource cannot send the header, and a per-action stream client whose action route demands one adds the header to its POST; neither passes through the HttpClient interceptor. The stream clients keep their classes, members and types. app.routes.ts is a seed, so an existing app adds the guards by hand. An app whose entities and actions declare no access, or only PUBLIC, regenerates byte-identically. docs/migration/0.11.0/ts-13-route-guards-and-identity-live-views.md carries the step."
+  },
+  {
+    "signature": "<Model>Filter: - search; <Entity>Service.findAll first argument: + search?: string on an entity with a searchable property; <entity>-form.component.ts: a picker of a searchable target + <field>Search signal, + search input (data-testid field-<field>-search), options requested with search after a 250 ms pause",
+    "since": "0.11",
+    "adr": "ADR-096",
+    "justification": "ADR-096 Amendment 4: the list route reads search over the target's searchable String fields. The service offers it only where the route reads it, and the relationship picker of a searchable target sends the typed term, so it reaches rows beyond the first page. A field named search is reserved and is no longer a filter. An app whose picked targets have no searchable property regenerates its forms byte-identically. docs/migration/0.11.0/ts-17-relationship-picker-search.md carries the step."
   }
 ]

@@ -15,7 +15,7 @@ import { updateOmittedFields, updateVersionField } from '../api/type-gen.js';
 import { fieldRenderContext, resolveFieldRenders, toTitleCase, type FieldRenderModel } from './field-render.js';
 import { testIdSegment, tsSingleQuoted, tsTemplateText } from './ts-literal.js';
 import { entityExitRoute, entityViews, hasFormPage } from './entity-views.js';
-import { MAX_PAGE_SIZE } from './list-query.js';
+import { MAX_PAGE_SIZE, MAX_SEARCH_LENGTH } from './list-query.js';
 import { fileHeaderLines } from '../file-header.js';
 
 export { GeneratedFile };
@@ -107,8 +107,12 @@ export class FormGenerator implements CodeGenerator {
     lines.push("import { rxResource } from '@angular/core/rxjs-interop';");
     lines.push(`import { ${signalFormsImports(validation).join(', ')} } from '@angular/forms/signals';`);
     lines.push("import { ActivatedRoute, Router } from '@angular/router';");
-    if (blobFields.length > 0) {
-      lines.push("import { firstValueFrom } from 'rxjs';");
+    const rxjsImports = [
+      ...(blobFields.length > 0 ? ['firstValueFrom'] : []),
+      ...(pickerFields.some((r) => r.form.picker!.searchable) ? ['switchMap', 'timer'] : []),
+    ];
+    if (rxjsImports.length > 0) {
+      lines.push(`import { ${rxjsImports.join(', ')} } from 'rxjs';`);
     }
     lines.push(`import { ${modelName}, ${modelName}Create, ${modelName}Update, ${entityName}Service } from '../services/${kebabName}.service';`);
     lines.push("import { httpErrorMessage } from '../core/http-error';");
@@ -422,16 +426,29 @@ export class FormGenerator implements CodeGenerator {
       lines.push('  readonly form = form(this.formModel);');
     }
 
-    // A foreign-key select lists its target's records once, when the form is created: the first
-    // page of the largest size the list route serves. A target with more rows offers those first
-    // ones, and the value the control holds stays an option whether or not it is among them.
+    // A foreign-key select lists one page of its target's records, of the largest size the list
+    // route serves. A target with a searchable property is asked again for the term typed into the
+    // search box in front of the select, once typing pauses, so every row a term matches can be
+    // reached; a target without one is asked once, when the form is created, and offers its first
+    // rows. The value the control holds stays an option whether or not it is among them.
     for (const f of pickerFields) {
       const picker = f.form.picker!;
       const resource = `${pickerOptionsName(f.name)}Resource`;
       const keyArg = sharedPickerKey === undefined ? `, '${tsSingleQuoted(picker.keyField)}'` : '';
       const labelArg = `${keyArg}${picker.labelField ? `, (row) => row.${picker.labelField}` : ''}`;
+      const service = `this.${pickerServiceMember(picker.target)}`;
       lines.push('');
-      lines.push(`  private readonly ${resource} = rxResource({ stream: () => this.${pickerServiceMember(picker.target)}.findAll({ size: ${MAX_PAGE_SIZE} }) });`);
+      if (picker.searchable) {
+        lines.push(`  readonly ${pickerSearchName(f.name)} = signal('');`);
+        lines.push(`  private readonly ${resource} = rxResource({`);
+        lines.push(`    params: () => this.${pickerSearchName(f.name)}().trim(),`);
+        lines.push(`    stream: ({ params }) => timer(params ? ${PICKER_SEARCH_DEBOUNCE_MS} : 0).pipe(`);
+        lines.push(`      switchMap(() => ${service}.findAll({ size: ${MAX_PAGE_SIZE}, search: params.slice(0, ${MAX_SEARCH_LENGTH}) })),`);
+        lines.push('    ),');
+        lines.push('  });');
+      } else {
+        lines.push(`  private readonly ${resource} = rxResource({ stream: () => ${service}.findAll({ size: ${MAX_PAGE_SIZE} }) });`);
+      }
       lines.push(`  readonly ${pickerOptionsName(f.name)} = computed(() =>`);
       if (picker.target === entityName) {
         lines.push(`    pickerOptions(this.${resource}.hasValue() ? this.${resource}.value() : undefined${labelArg})`);
@@ -716,6 +733,10 @@ export class FormGenerator implements CodeGenerator {
       result.push('        </select>');
     } else if (control === 'picker') {
       result.push(`        <label for="${f.name}" class="exeris-label">${label} ${requiredMark}</label>`);
+      if (f.form.picker!.searchable) {
+        const search = pickerSearchName(f.name);
+        result.push(`        <input #${search}Input type="search" data-testid="field-${f.name}-search" aria-label="Search ${label.replaceAll('"', '&quot;')}" aria-controls="${f.name}" maxlength="${MAX_SEARCH_LENGTH}" (input)="${search}.set(${search}Input.value)" class="exeris-input mt-1">`);
+      }
       result.push(`        <select id="${f.name}" data-testid="field-${f.name}" ${binding} class="exeris-select mt-1" ${errorClass} [attr.aria-describedby]="${pickerTruncatedName(f.name)}() ? 'options-truncated-${f.name}' : null">`);
       result.push(f.form.required
         ? '          <option value="" disabled>Select...</option>'
@@ -731,7 +752,7 @@ export class FormGenerator implements CodeGenerator {
       result.push(`          <p role="alert" class="exeris-error-text" data-testid="options-error-${f.name}">{{ ${pickerErrorName(f.name)}() }}</p>`);
       result.push('        }');
       result.push(`        @if (${pickerTruncatedName(f.name)}()) {`);
-      result.push(`          <p id="options-truncated-${f.name}" class="exeris-help-text" data-testid="options-truncated-${f.name}">Showing the first ${MAX_PAGE_SIZE} options only.</p>`);
+      result.push(`          <p id="options-truncated-${f.name}" class="exeris-help-text" data-testid="options-truncated-${f.name}">${f.form.picker!.searchable ? `Showing the first ${MAX_PAGE_SIZE} matches; type to narrow.` : `Showing the first ${MAX_PAGE_SIZE} options only.`}</p>`);
       result.push('        }');
     } else if (control === 'checkbox') {
       result.push('        <div class="flex items-center gap-2">');
@@ -912,6 +933,14 @@ function pickerOptionsHelper(sharedKey: string | undefined): string[] {
     '  });',
     '}',
   ];
+}
+
+/** How long a foreign-key select's search box waits after a keystroke before it asks the route. */
+const PICKER_SEARCH_DEBOUNCE_MS = 250;
+
+/** The search term signal of a foreign-key select whose target is searchable. */
+function pickerSearchName(name: string): string {
+  return `${name}Search`;
 }
 
 /** The options signal of a foreign-key select. */

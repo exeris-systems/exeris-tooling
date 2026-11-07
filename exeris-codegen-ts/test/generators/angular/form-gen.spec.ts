@@ -1650,6 +1650,56 @@ describe('FormGenerator — a MANY_TO_ONE foreign key is picked from its target 
     expect(generateForm(order(false), CTX.config, [], [order(false), product])!.content).toContain('ProductService');
     expect(generateForm(order(false), CTX.config)!.content).not.toContain('ProductService');
   });
+
+  describe('a target with a searchable property', () => {
+    const searchableProduct = domain({
+      entityName: 'Product',
+      fields: [
+        field({ name: 'id', type: 'java.util.UUID' }),
+        field({ name: 'name', type: 'String', searchable: true }),
+      ],
+    });
+
+    it('asks the list route for the typed term once typing pauses, at the largest size', () => {
+      const content = emit(order(true), [order(true), searchableProduct]);
+      expect(content).toContain("import { switchMap, timer } from 'rxjs';");
+      expect(content).toContain(
+        "  readonly productIdSearch = signal('');\n"
+        + '  private readonly productIdOptionsResource = rxResource({\n'
+        + '    params: () => this.productIdSearch().trim(),\n'
+        + '    stream: ({ params }) => timer(params ? 250 : 0).pipe(\n'
+        + '      switchMap(() => this.productService.findAll({ size: 100, search: params.slice(0, 100) })),\n'
+        + '    ),\n'
+        + '  });\n',
+      );
+    });
+
+    it('puts a labelled search box in front of the select and says the matches are capped', () => {
+      const content = emit(order(true), [order(true), searchableProduct]);
+      const input = '<input #productIdSearchInput type="search" data-testid="field-productId-search" '
+        + 'aria-label="Search Product Id" aria-controls="productId" maxlength="100" '
+        + '(input)="productIdSearch.set(productIdSearchInput.value)" class="exeris-input mt-1">';
+      expect(content).toContain(input);
+      expect(content.indexOf(input)).toBeLessThan(content.indexOf('<select id="productId"'));
+      expect(content).toContain('Showing the first 100 matches; type to narrow.');
+      expect(content).not.toContain('Showing the first 100 options only.');
+    });
+
+    it('imports the rxjs operators beside firstValueFrom when the form uploads a blob', () => {
+      const withBlob = domain({
+        ...order(true),
+        fields: [...order(true).fields, field({ name: 'scan', type: 'String', blob: { contentTypes: [] } })],
+      });
+      expect(emit(withBlob, [withBlob, searchableProduct])).toContain("import { firstValueFrom, switchMap, timer } from 'rxjs';");
+    });
+
+    it('leaves a target with nothing searchable byte-identical to the first-page picker', () => {
+      const plain = emit(order(true), [order(true), product]);
+      expect(plain).not.toContain('Search');
+      expect(plain).not.toContain("from 'rxjs'");
+      expect(plain).toContain('private readonly productIdOptionsResource = rxResource({ stream: () => this.productService.findAll({ size: 100 }) });');
+    });
+  });
 });
 
 // ---------- @UIGroup field grouping ----------
