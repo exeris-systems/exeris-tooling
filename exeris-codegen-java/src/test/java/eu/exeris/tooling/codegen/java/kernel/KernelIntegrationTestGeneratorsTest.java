@@ -102,6 +102,25 @@ class KernelIntegrationTestGeneratorsTest {
         }
 
         @Test
+        @DisplayName("a failed boot is latched and rethrown, and releases the thread and the key server")
+        void failedBootIsLatched() {
+            DomainMetadata note = DomainMetadata.builder("Note", DOMAIN).path("/notes")
+                    .routeAccess(RouteAccess.AUTHENTICATED).build();
+
+            String boot = new KernelIntegrationSupportGenerator().generateAll(List.of(note), BASE)
+                    .getFirst().content();
+
+            assertThat(boot).contains("private static Throwable bootFailure;",
+                    "if (bootFailure != null) {",
+                    "throw new AssertionError(\"the application failed to boot earlier in this run\",",
+                    "bootFailure = e;",
+                    "discard();",
+                    "private static void discard() {",
+                    "keys.stop(0);");
+            assertThat(boot.indexOf("FAILURE.set(null)")).isLessThan(boot.indexOf("int port = reserveLoopbackPort()"));
+        }
+
+        @Test
         @DisplayName("a route that demands an identity adds the token class and the loopback key set")
         void securityAddsTheTokens() {
             DomainMetadata note = DomainMetadata.builder("Note", DOMAIN).path("/notes")
@@ -292,8 +311,12 @@ class KernelIntegrationTestGeneratorsTest {
                     "status(\"POST\", \"/notes/\" + KEY + \"/actions/archive\", \"{}\", "
                             + "IntegrationTokens.bearer(\"note:read\"), 403);",
                     "void notePeekActionAdmitsAnAnonymousCaller()",
-                    "void noteTouchActionAdmitAnyVerifiedCaller()",
+                    "void noteTouchActionAdmitsAnyVerifiedCaller()",
                     "void draftRoutesAdmitAnyVerifiedCaller()",
+                    "void noteRoutesRefuseACallerWithoutTheScope()",
+                    "void noteRoutesAdmitEachDeclaredScope()",
+                    "void noteArchiveActionRefusesACallerWithoutTheScope()",
+                    "void noteArchiveActionAdmitsEachDeclaredScope()",
                     "status(\"GET\", \"/notices/\" + KEY, null, null, 404);")
                     .doesNotContain("Watch", "memoRoutes");
         }
