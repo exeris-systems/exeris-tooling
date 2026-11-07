@@ -94,7 +94,7 @@ The constructor takes the kernel's `GraphEngine` and a `MemoryAllocator`; the no
 
 - **A graph sync the application calls for you.** See step 4.
 - **`@GraphQuery`.** `Product` declares a `neighbours` query, and nothing is generated from it.
-- **A wide `List<UUID>` column.** The relational table stores `relatedIds` as JSON text in a `related_ids VARCHAR(255)` column of `products`, so the column's width bounds how many keys one row can hold.
+- **A long indexed `List<UUID>` column.** The relational table stores `relatedIds` as JSON text in a `related_ids TEXT` column of `products`. A field without `@Field` is `searchable` and `filterable`, so the column is also indexed, and PostgreSQL refuses an index entry larger than 2,704 bytes: one row holds at most 69 keys. Annotating the field `@Field` drops the index and the bound, since the repository never queries the column.
 
 ## Where this does not apply
 

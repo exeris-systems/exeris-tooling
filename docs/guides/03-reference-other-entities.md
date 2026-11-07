@@ -116,7 +116,7 @@ The `issue` action reads `dueInDays` from the request body and declares `default
 ## Not available today
 
 - **`@Action(httpMethod = "GET")`.** `viewShared` declares it, and the route is `POST /invoices/{id}/actions/view-shared`: every action is served on `POST`. Under `-Aexeris.strict=true` the processor reports the attribute as `EXT-PROC-1201`.
-- **A `ONE_TO_MANY` collection.** `Invoice.lines` is a `List<InvoiceLine>` with `mappedBy = "invoiceId"`. The run writes it as a `lines VARCHAR(255)` column of `invoices`, holding the list as JSON, rather than reading the children from `invoice_lines`. Its `cascadeDelete = true` reaches no constraint: the foreign key is the child's, and it is `ON DELETE RESTRICT`.
+- **A `ONE_TO_MANY` collection.** `Invoice.lines` is a `List<InvoiceLine>` with `mappedBy = "invoiceId"`. The run writes it as a `lines TEXT` column of `invoices`, holding the list as JSON, rather than reading the children from `invoice_lines`. Its `cascadeDelete = true` reaches no constraint: the foreign key is the child's, and it is `ON DELETE RESTRICT`.
 
 ## Where this does not apply
 

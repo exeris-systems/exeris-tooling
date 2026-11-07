@@ -28,5 +28,11 @@
     "since": "0.11",
     "adr": "ADR-015",
     "justification": "The defaultValue of a body-bound action parameter was read by nothing, so an omitted member reached the entity method as 0, false or null, while the same attribute on a query parameter was applied. The record applies it, and the boxed component keeps an omitted value apart from an explicit zero. A caller that relied on the zero value sends it, and code that names the record sees the boxed accessor type; docs/migration/0.11.0/java-28-action-body-param-default.md carries the steps."
+  },
+  {
+    "signature": "V{tier}{nnnnnn}__create_{table}.sql (exeris-codegen-java): a List<X> field is declared TEXT instead of VARCHAR(255)",
+    "since": "0.11",
+    "adr": "ADR-015",
+    "justification": "A List field is stored as one JSON text value, and a VARCHAR(255) column held a List<UUID> of at most six keys. The column now has no declared width. The regenerated migration of an entity with a List field differs from one a database has applied; docs/migration/0.11.0/java-33-list-columns-are-text.md carries the steps."
   }
 ]
