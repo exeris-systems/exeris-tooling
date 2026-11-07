@@ -23,10 +23,14 @@ import eu.exeris.tooling.codegen.core.generator.GeneratorRegistry;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelApplicationGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelApplicationTestGenerator;
+import eu.exeris.tooling.codegen.java.kernel.KernelCrudIntegrationTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
 import eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator;
+import eu.exeris.tooling.codegen.java.kernel.KernelIntegrationScope;
+import eu.exeris.tooling.codegen.java.kernel.KernelIntegrationSupportGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelRepositoryGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelRepositoryTestGenerator;
+import eu.exeris.tooling.codegen.java.kernel.KernelRoutePolicyIntegrationTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelSagaTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelServiceTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.RequiredCompileArtifacts;
@@ -43,6 +47,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
@@ -97,6 +102,33 @@ public final class CodegenPipeline {
     private final KernelRepositoryTestGenerator repositoryTestGenerator = new KernelRepositoryTestGenerator();
     private final KernelSagaTestGenerator sagaTestGenerator = new KernelSagaTestGenerator();
     private final KernelApplicationTestGenerator applicationTestGenerator = new KernelApplicationTestGenerator();
+    private final KernelIntegrationSupportGenerator integrationSupportGenerator =
+            new KernelIntegrationSupportGenerator();
+    private final KernelCrudIntegrationTestGenerator crudIntegrationTestGenerator =
+            new KernelCrudIntegrationTestGenerator();
+    private final KernelRoutePolicyIntegrationTestGenerator routePolicyIntegrationTestGenerator =
+            new KernelRoutePolicyIntegrationTestGenerator();
+
+    /**
+     * The outcome of {@link #runIntegrationTests}: how many files it wrote, or why it wrote none.
+     *
+     * @param filesWritten   the number of files written; {@code 0} when withheld or when there is no
+     *                       domain metadata
+     * @param withheldReason why the build is outside what the integration tests boot, or
+     *                       {@code null} when they were written or there was nothing to write
+     * @since 0.11
+     */
+    public record IntegrationTestRun(int filesWritten, String withheldReason) {
+
+        /**
+         * Reports whether the channel was withheld from this build.
+         *
+         * @return {@code true} when {@link #withheldReason()} is set
+         */
+        public boolean withheld() {
+            return withheldReason != null;
+        }
+    }
 
     /**
      * Creates a pipeline over the given generators and metadata reader.
@@ -617,6 +649,80 @@ public final class CodegenPipeline {
     }
 
     /**
+     * Emits the generated integration tests (ADR-058 Amendment 1) into their own output root, and
+     * reports how many files it wrote, or why it wrote none.
+     *
+     * <p>A separate entry point and a separate root for the reason {@link #runTests} has them, and
+     * one more: the root has its own {@link OutputWriter} and manifest, so switching either test
+     * channel on or off never prunes the other's tree.
+     *
+     * <p>The tests boot the generated application on an in-memory H2 database, so they are emitted
+     * only for a build {@link KernelIntegrationScope#withheldReason} accepts. For any other build
+     * nothing is written and nothing is pruned, and the reason is logged as {@code EXT-GEN-3105}
+     * and returned. Zero domains is a no-op, as in {@link #runTests}.
+     *
+     * @param metadataDir         directory holding processor-emitted JSON
+     * @param itOutputDir         target root for the integration tests (created if absent);
+     *                            typically {@code src/test/generated-it/java}
+     * @param explicitBasePackage caller-supplied base package, or {@code null} to auto-detect it as
+     *                            {@link #run} does
+     * @return the files written, or the reason the channel was withheld
+     * @throws IOException if metadata or output cannot be read/written
+     * @throws eu.exeris.tooling.codegen.java.kernel.EntityPackageLayoutException
+     *         (unchecked, {@code EXT-PROC-1033}) if an entity's package does not end in
+     *         {@code .domain}; nothing is written
+     * @since 0.11
+     */
+    public IntegrationTestRun runIntegrationTests(Path metadataDir, Path itOutputDir, String explicitBasePackage)
+            throws IOException {
+        Objects.requireNonNull(metadataDir, "metadataDir");
+        Objects.requireNonNull(itOutputDir, "itOutputDir");
+
+        List<DomainMetadata> domains = loadMetadata(metadataDir);
+        if (domains.isEmpty()) {
+            LOG.log(Level.INFO, "No domain metadata in " + metadataDir
+                    + " — no integration tests to generate (existing ones left untouched)");
+            return new IntegrationTestRun(0, null);
+        }
+        KernelApplicationGenerator.requireDomainPackages(domains);
+
+        boolean composed = !loadCapabilities(metadataDir).isEmpty();
+        Optional<String> withheld = KernelIntegrationScope.withheldReason(domains, composed);
+        if (withheld.isPresent()) {
+            LOG.log(Level.WARNING, DiagnosticId.INTEGRATION_TESTS_WITHHELD.format(
+                    "No integration tests generated: " + withheld.get() + ". " + itOutputDir
+                            + " is left as it was."));
+            return new IntegrationTestRun(0, withheld.get());
+        }
+
+        String basePackage = explicitBasePackage != null ? explicitBasePackage : autoDetectBasePackage(domains);
+        Files.createDirectories(itOutputDir);
+        OutputWriter writer = new OutputWriter(itOutputDir);
+        int filesGenerated = 0;
+        for (GeneratedFile support : integrationSupportGenerator.generateAll(domains, basePackage)) {
+            writeFile(writer, support);
+            filesGenerated++;
+        }
+        for (DomainMetadata domain : domains) {
+            writeFile(writer, crudIntegrationTestGenerator.generate(domain, basePackage, domains));
+            filesGenerated++;
+        }
+        GeneratedFile routePolicy = routePolicyIntegrationTestGenerator.generate(domains, basePackage);
+        if (routePolicy != null) {
+            writeFile(writer, routePolicy);
+            filesGenerated++;
+        }
+
+        int pruned = writer.pruneOrphansAndWriteManifest();
+        if (pruned > 0) {
+            LOG.log(Level.INFO, "Pruned " + pruned + " orphaned generated integration-test file(s)");
+        }
+        LOG.log(Level.INFO, "Generated integration tests: files=" + filesGenerated
+                + " pruned=" + pruned + " output=" + itOutputDir);
+        return new IntegrationTestRun(filesGenerated, null);
+    }
+
+    /**
      * T50 / ADR-078. Reports which kernel SPIs the emitted application needs a provider for and
      * has none registered on {@code runtimeClasspath}.
      *
@@ -668,6 +774,28 @@ public final class CodegenPipeline {
     public List<RequiredCompileArtifacts.Requirement> requiredCompileArtifacts(Path metadataDir,
                                                                              boolean generatedTests)
             throws IOException {
+        return requiredCompileArtifacts(metadataDir, generatedTests, false);
+    }
+
+    /**
+     * Returns the artefacts the code {@link #run}, {@link #runTests} and
+     * {@link #runIntegrationTests} emit from {@code metadataDir} need from outside the JDK, as
+     * {@link #requiredCompileArtifacts(Path, boolean)} does, with the integration tests' own when
+     * they are emitted for this build.
+     *
+     * @param metadataDir      directory holding processor-emitted JSON
+     * @param generatedTests   whether the generated tests are emitted too
+     * @param integrationTests whether the generated integration tests are asked for; their needs are
+     *                         added only when the build is one they are emitted for
+     * @return main-source requirements first, then the tests', each listed once; empty when there
+     *         is no domain metadata
+     * @throws IOException if the metadata cannot be read
+     * @since 0.11
+     */
+    public List<RequiredCompileArtifacts.Requirement> requiredCompileArtifacts(Path metadataDir,
+                                                                             boolean generatedTests,
+                                                                             boolean integrationTests)
+            throws IOException {
         Objects.requireNonNull(metadataDir, "metadataDir");
         List<DomainMetadata> domains = loadMetadata(metadataDir);
         boolean composed = !loadCapabilities(metadataDir).isEmpty();
@@ -675,6 +803,14 @@ public final class CodegenPipeline {
                 new ArrayList<>(RequiredCompileArtifacts.forMainSources(domains, composed));
         if (generatedTests) {
             required.addAll(RequiredCompileArtifacts.forGeneratedTests(domains));
+        }
+        if (integrationTests && KernelIntegrationScope.withheldReason(domains, composed).isEmpty()) {
+            for (RequiredCompileArtifacts.Requirement requirement
+                    : RequiredCompileArtifacts.forGeneratedIntegrationTests(domains)) {
+                if (required.stream().noneMatch(r -> r.coordinate().equals(requirement.coordinate()))) {
+                    required.add(requirement);
+                }
+            }
         }
         return List.copyOf(required);
     }

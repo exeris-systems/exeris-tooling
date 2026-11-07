@@ -17,7 +17,8 @@ import java.lang.System.Logger.Level;
  *
  * <p>A thin shell: generation happens in {@link CodegenPipeline} and argument parsing in
  * {@link CliArgs}. The shell runs the pipeline the way {@code exeris:generate} does, main root
- * first and then, with {@code --tests}, the generated-test root, and translates the outcome into
+ * first, then, with {@code --tests}, the generated-test root and, with {@code --integration-tests},
+ * the generated integration-test root, and translates the outcome into
  * an exit status:
  * <ul>
  *   <li>{@code 0}: the run succeeded, including a run that found no metadata and owned no tree;</li>
@@ -37,7 +38,8 @@ import java.lang.System.Logger.Level;
  *     --metadata-dir=target/classes/exeris-metadata \
  *     --output-dir=src/main/generated/java \
  *     --base-package=com.example.shop \
- *     [--tests --test-output-dir=src/test/generated/java] [--allow-empty]
+ *     [--tests --test-output-dir=src/test/generated/java]
+ *     [--integration-tests --integration-test-output-dir=src/test/generated-it/java] [--allow-empty]
  *
  * java -jar exeris-codegen-cli-&lt;version&gt;.jar --print-catalogue
  * </pre>
@@ -123,15 +125,31 @@ public final class CodegenMain {
             return refusedOrFailed(e, err);
         }
 
-        if (!args.tests()) {
-            return EXIT_OK;
+        if (args.tests()) {
+            try {
+                pipeline.runTests(args.metadataDir(), args.testOutputDir(), args.basePackage());
+            } catch (IOException e) {
+                err.println(DiagnosticId.CLI_GENERATION_FAILED.format(
+                        "Test generation failed (testOutputDir=" + args.testOutputDir() + "): " + e));
+                return EXIT_FAILED;
+            } catch (RuntimeException e) {
+                return refusedOrFailed(e, err);
+            }
         }
+        return args.integrationTests() ? generateIntegrationTests(args, pipeline, err) : EXIT_OK;
+    }
+
+    /**
+     * Writes the generated integration tests. A build outside what they boot is not a failure: the
+     * pipeline logs {@code EXT-GEN-3105} and writes nothing, and the run succeeds.
+     */
+    private static int generateIntegrationTests(CliArgs args, CodegenPipeline pipeline, PrintStream err) {
         try {
-            pipeline.runTests(args.metadataDir(), args.testOutputDir(), args.basePackage());
+            pipeline.runIntegrationTests(args.metadataDir(), args.integrationTestOutputDir(), args.basePackage());
             return EXIT_OK;
         } catch (IOException e) {
-            err.println(DiagnosticId.CLI_GENERATION_FAILED.format(
-                    "Test generation failed (testOutputDir=" + args.testOutputDir() + "): " + e));
+            err.println(DiagnosticId.CLI_GENERATION_FAILED.format("Integration-test generation failed "
+                    + "(integrationTestOutputDir=" + args.integrationTestOutputDir() + "): " + e));
             return EXIT_FAILED;
         } catch (RuntimeException e) {
             return refusedOrFailed(e, err);
@@ -204,6 +222,10 @@ public final class CodegenMain {
         err.println("                            qualified name, without .domain)");
         err.println("  --tests                   Also write the generated tests (requires --test-output-dir)");
         err.println("  --test-output-dir=<path>  Root the generated tests are written to");
+        err.println("  --integration-tests       Also write the generated integration tests");
+        err.println("                            (requires --integration-test-output-dir)");
+        err.println("  --integration-test-output-dir=<path>");
+        err.println("                            Root the generated integration tests are written to");
         err.println("  --allow-empty             Permit pruning a previously generated tree when no");
         err.println("                            @ExerisDomain is found");
         err.println("  --print-catalogue         Write the generator catalogue to stdout and exit;");
