@@ -15,7 +15,8 @@
  * Tailwind plugins are accounted for the same way: the typography plugin is installed when an
  * emitted template names one of its `prose` classes, not when some block type or flag is set, so
  * any emitter that adopts `prose` brings the plugin with it and an app that never renders rich text
- * keeps the scaffold without it.
+ * keeps the scaffold without it. The Material Symbols font is accounted for alike: it is installed
+ * when an emitted template renders a declared icon name through the font's class.
  *
  * An app with no backend is a first-class shape (a `@View`-only front with authored content), not a
  * second backend target: the kernel stays the only server the emitted code can address. Without a
@@ -24,6 +25,12 @@
 
 import type { DomainMetadata } from '../models/domain-model.js';
 import type { RouteRequirementRow } from './route-requirements.js';
+
+/**
+ * The class the `material-symbols` package's `outlined.css` maps to the Material Symbols font. An
+ * emitted template names it on an element whose text is a Material icon name.
+ */
+export const MATERIAL_SYMBOLS_CLASS = 'material-symbols-outlined';
 
 /** The HTTP client entry point. Every emitter that reaches the kernel application imports it. */
 const HTTP_CLIENT_MODULE = '@angular/common/http';
@@ -47,6 +54,12 @@ export interface ScaffoldNeeds {
    * installs the plugin and loads it in `styles.css`; when false it does neither.
    */
   readonly typography: boolean;
+  /**
+   * An emitted template renders a declared Material icon name: a `class` attribute names the
+   * Material Symbols class. When true the scaffold installs the `material-symbols` font package and
+   * loads its stylesheet in `styles.css`; absent or false, it does neither.
+   */
+  readonly materialSymbols?: boolean;
   /**
    * The tree carries the bearer interceptor (`core/auth.interceptor.ts`), emitted when some route
    * demands identity. When true `app.config.ts` registers it through
@@ -79,14 +92,24 @@ const CLASS_ATTRIBUTE = /(?<![\w-])class="([^"]*)"/g;
 /** A typography plugin class, its variant prefixes removed: `prose`, `prose-invert`, `prose-lg`, … */
 const PROSE_CLASS = /^prose(?:-[a-z0-9-]+)?$/;
 
-/** Whether a file's static class attributes name a typography plugin class. */
-function usesTypography(content: string): boolean {
+/** Whether a file's static class attributes name a class `matches` accepts, variant prefixes removed. */
+function usesClass(content: string, matches: (className: string) => boolean): boolean {
   for (const match of content.matchAll(CLASS_ATTRIBUTE)) {
     for (const token of match[1].split(/\s+/)) {
-      if (PROSE_CLASS.test(token.slice(token.lastIndexOf(':') + 1))) return true;
+      if (matches(token.slice(token.lastIndexOf(':') + 1))) return true;
     }
   }
   return false;
+}
+
+/** Whether a file's static class attributes name a typography plugin class. */
+function usesTypography(content: string): boolean {
+  return usesClass(content, (className) => PROSE_CLASS.test(className));
+}
+
+/** Whether a file's static class attributes name the Material Symbols class. */
+export function usesMaterialSymbols(content: string): boolean {
+  return usesClass(content, (className) => className === MATERIAL_SYMBOLS_CLASS);
 }
 
 /** `@scope/name/sub` → `@scope/name`; `name/sub` → `name`; a relative specifier → null. */
@@ -104,8 +127,10 @@ export function deriveScaffoldNeeds(
   const packages = new Set<string>();
   let backend = domains.length > 0;
   let typography = false;
+  let materialSymbols = false;
   for (const file of files) {
     typography ||= usesTypography(file.content);
+    materialSymbols ||= usesMaterialSymbols(file.content);
     for (const match of file.content.matchAll(IMPORT_SPECIFIER)) {
       const specifier = match[1];
       if (specifier === HTTP_CLIENT_MODULE || specifier.startsWith(`${HTTP_CLIENT_MODULE}/`)) {
@@ -115,5 +140,5 @@ export function deriveScaffoldNeeds(
       if (pkg) packages.add(pkg);
     }
   }
-  return { backend, packages, typography };
+  return { backend, packages, typography, materialSymbols };
 }
