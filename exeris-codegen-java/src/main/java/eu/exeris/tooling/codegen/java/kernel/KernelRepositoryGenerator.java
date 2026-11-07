@@ -21,11 +21,12 @@ import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
 import eu.exeris.tooling.codegen.java.support.ListQuerySupport;
 import eu.exeris.tooling.codegen.java.support.ServerOwnedFields;
 import eu.exeris.tooling.codegen.java.support.SqlColumnTypes;
+import eu.exeris.tooling.codegen.java.support.SystemColumns;
+import eu.exeris.tooling.codegen.java.support.SystemColumns.Role;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import static eu.exeris.tooling.codegen.java.support.DataScopeSupport.isTenantPartitioned;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
-import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
@@ -127,6 +128,15 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      * {@link #classifyDomainType}.
      */
     private static final String INSTANT_TYPE = "Instant";
+
+    /**
+     * The system roles the repository reads and writes as system columns. The migration creates a
+     * column for every other active role too; a field the entity declares for one of those is a
+     * domain column of the layout, held in that column.
+     */
+    private static final List<Role> REPOSITORY_ROLES =
+            List.of(Role.TENANT_ID, Role.CREATED_AT, Role.UPDATED_AT, Role.DELETED, Role.VERSION);
+
     private static final ClassName INSTANT = ClassName.get("java.time", INSTANT_TYPE);
     private static final ClassName LOCAL_DATE = ClassName.get("java.time", "LocalDate");
     private static final ClassName LOCAL_DATE_TIME = ClassName.get("java.time", "LocalDateTime");
@@ -604,17 +614,12 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                                     String deleted, String version) {}
 
     private static SystemFieldNames resolveSystemFieldNames(DomainMetadata metadata) {
-        SystemFieldsMetadata sf = metadata.systemFields();
         return new SystemFieldNames(
-                resolve(sf == null ? null : sf.tenantIdField(), "tenantId"),
-                resolve(sf == null ? null : sf.createdAtField(), "createdAt"),
-                resolve(sf == null ? null : sf.updatedAtField(), "updatedAt"),
-                resolve(sf == null ? null : sf.softDeleteField(), "deleted"),
-                resolve(sf == null ? null : sf.versionField(), "version"));
-    }
-
-    private static String resolve(String override, String fallback) {
-        return (override != null && !override.isBlank()) ? override : fallback;
+                SystemColumns.field(metadata, Role.TENANT_ID),
+                SystemColumns.field(metadata, Role.CREATED_AT),
+                SystemColumns.field(metadata, Role.UPDATED_AT),
+                SystemColumns.field(metadata, Role.DELETED),
+                SystemColumns.field(metadata, Role.VERSION));
     }
 
     private static List<Column> buildColumnLayout(List<FieldMetadata> fields, DomainMetadata metadata,
@@ -628,18 +633,10 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         // field whose column collides with the PK or an active system column is dropped.
         Set<String> seen = new HashSet<>();
         Set<String> systemCols = new HashSet<>();
-        if (isTenantPartitioned(metadata)) {
-            systemCols.add(toSnakeCase(sys.tenantId()));
-        }
-        if (metadata.audited()) {
-            systemCols.add(toSnakeCase(sys.createdAt()));
-            systemCols.add(toSnakeCase(sys.updatedAt()));
-        }
-        if (metadata.softDelete()) {
-            systemCols.add(toSnakeCase(sys.deleted()));
-        }
-        if (metadata.versioned()) {
-            systemCols.add(toSnakeCase(sys.version()));
+        for (Role role : REPOSITORY_ROLES) {
+            if (role.isActive(metadata)) {
+                systemCols.add(SystemColumns.column(metadata, role));
+            }
         }
 
         cols.add(new Column(PrimaryKeys.column(metadata), PrimaryKeys.field(metadata), "UUID",

@@ -582,4 +582,109 @@ class KernelFlywayGeneratorTest {
         return generator.generate(DomainMetadata.builder("Order", "eu.exeris.app.domain")
                 .versioned(true).fields(List.of(fields)).build()).content();
     }
+    @Test
+    @DisplayName("A version field on an entity that is not versioned is a domain column; versioned, it is the system column once")
+    void versionFieldFollowsTheVersionedFlag() {
+        FieldMetadata version = FieldMetadata.builder("version", "Long").build();
+
+        assertThat(sqlOf(builder().fields(List.of(version))))
+                .contains("    version BIGINT\n")
+                .doesNotContain("DEFAULT 0");
+        String versioned = sqlOf(builder().versioned(true).fields(List.of(version)));
+        assertThat(versioned).contains("    version BIGINT DEFAULT 0");
+        assertThat(columnCount(versioned, "version")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("A createdAt field on an entity that is not audited is a domain column; audited, it is the system column once")
+    void createdAtFieldFollowsTheAuditedFlag() {
+        FieldMetadata createdAt = FieldMetadata.builder("createdAt", "Instant").build();
+
+        assertThat(sqlOf(builder().fields(List.of(createdAt))))
+                .contains("    created_at TIMESTAMPTZ\n")
+                .doesNotContain("CURRENT_TIMESTAMP");
+        String audited = sqlOf(builder().audited(true).fields(List.of(createdAt)));
+        assertThat(audited).contains("    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP");
+        assertThat(columnCount(audited, "created_at")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("A deleted field on an entity without soft delete is a domain column; with it, the system column once")
+    void deletedFieldFollowsTheSoftDeleteFlag() {
+        FieldMetadata deleted = FieldMetadata.builder("deleted", "boolean").required(true).build();
+
+        assertThat(sqlOf(builder().fields(List.of(deleted))))
+                .contains("    deleted BOOLEAN NOT NULL\n")
+                .doesNotContain("DEFAULT FALSE");
+        String softDeleted = sqlOf(builder().softDelete(true).fields(List.of(deleted)));
+        assertThat(softDeleted).contains("    deleted BOOLEAN DEFAULT FALSE");
+        assertThat(columnCount(softDeleted, "deleted")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("A tenantId field on a GLOBAL entity is a domain column: no owner column, index or policy")
+    void tenantIdFieldOnAGlobalEntityIsADomainColumn() {
+        String sql = sqlOf(builder().fields(List.of(FieldMetadata.builder("tenantId", "UUID").build())));
+
+        assertThat(sql)
+                .contains("    tenant_id UUID\n")
+                .doesNotContain("NOT NULL")
+                .doesNotContain("idx_orders_tenant")
+                .doesNotContain("ROW LEVEL SECURITY");
+    }
+
+    @Test
+    @DisplayName("A renamed version field follows the flag too: a domain column unversioned, the system column versioned")
+    void renamedVersionFieldFollowsTheVersionedFlag() {
+        SystemFieldsMetadata sf = SystemFieldsMetadata.builder().versionField("rev").build();
+        List<FieldMetadata> fields = List.of(FieldMetadata.builder("rev", "Long").build(),
+                FieldMetadata.builder("version", "String").build());
+
+        assertThat(sqlOf(builder().systemFields(sf).fields(fields)))
+                .contains("    rev BIGINT,")
+                .contains("    version VARCHAR(255)")
+                .doesNotContain("DEFAULT 0");
+        String versioned = sqlOf(builder().versioned(true).systemFields(sf).fields(fields));
+        assertThat(versioned)
+                .contains("    rev BIGINT DEFAULT 0")
+                // the canonical name is no role once the role is renamed: a field of its own
+                .contains("    version VARCHAR(255)");
+        assertThat(columnCount(versioned, "rev")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("An audit-by or soft-delete-aux field is the system column once under its flag, a domain column without")
+    void auxiliarySystemFieldsFollowTheirFlags() {
+        List<FieldMetadata> fields = List.of(FieldMetadata.builder("createdBy", "String").build(),
+                FieldMetadata.builder("deletedAt", "Instant").build());
+
+        assertThat(sqlOf(builder().fields(fields)))
+                .contains("    created_by VARCHAR(255),")
+                .contains("    deleted_at TIMESTAMPTZ\n");
+        String flagged = sqlOf(builder().audited(true).softDelete(true).fields(fields));
+        assertThat(columnCount(flagged, "created_by")).isEqualTo(1);
+        assertThat(columnCount(flagged, "deleted_at")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("A searchable field in an inactive system role is indexed like any domain field")
+    void inactiveSystemRoleFieldIsIndexed() {
+        String sql = sqlOf(builder().fields(List.of(
+                FieldMetadata.builder("version", "Long").searchable(true).build())));
+
+        assertThat(sql).contains("CREATE INDEX IF NOT EXISTS idx_orders_version ON orders(version);");
+    }
+
+    private static DomainMetadata.Builder builder() {
+        return DomainMetadata.builder("Order", "eu.exeris.app.domain");
+    }
+
+    private String sqlOf(DomainMetadata.Builder builder) {
+        return generator.generate(builder.build()).content();
+    }
+
+    /** How many column definitions of the CREATE TABLE are named {@code column}. */
+    private static long columnCount(String sql, String column) {
+        return sql.lines().filter(line -> line.startsWith("    " + column + " ")).count();
+    }
 }

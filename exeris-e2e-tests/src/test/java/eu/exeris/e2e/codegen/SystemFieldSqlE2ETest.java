@@ -25,9 +25,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * assert the emitted metadata JSON and generator tests run on hand-built metadata, which leaves
  * this integration seam uncovered by either.
  *
- * <p><b>The annotations rename a column; they do not add one.</b> Whether the audit, soft-delete
- * and version columns exist at all is decided by {@code @ExerisDomain(audited/softDelete/versioned)}
- * — so the fixture sets those flags, and the assertions are about which names the columns get.
+ * <p><b>The annotations rename a system column; they do not switch one on.</b> Whether the audit,
+ * soft-delete and version roles are active is decided by
+ * {@code @ExerisDomain(audited/softDelete/versioned)}: {@code Invoice} sets those flags, and the
+ * assertions on it are about which names the system columns get. {@code Customer} sets none of them
+ * and marks {@code @Version} and {@code @AuditCreatedAt} fields, which are then ordinary domain
+ * columns, created by the migration and named by the repository alike.
  */
 @Tag("e2e")
 @Tag("codegen")
@@ -39,6 +42,8 @@ class SystemFieldSqlE2ETest {
 
     private static String createInvoices;
     private static String tenantPolicyInvoices;
+    private static String createCustomers;
+    private static String customerRepository;
 
     @BeforeAll
     static void generateTheSchema() throws IOException {
@@ -51,6 +56,22 @@ class SystemFieldSqlE2ETest {
 
         createInvoices = migration(generated, "__create_invoices");
         tenantPolicyInvoices = migration(generated, "__tenant_policy_invoices");
+        createCustomers = migration(generated, "__create_customers");
+        customerRepository = Files.readString(
+                generated.resolve("com/shop/repository/CustomerRepository.java"));
+    }
+
+    @Test
+    @DisplayName("a @Version or @AuditCreatedAt field on an entity without the flag is a domain column the repository names")
+    void systemMarkerWithoutItsFlagIsADomainColumn() {
+        assertThat(createCustomers)
+                .contains("    version BIGINT")
+                .contains("    created_at TIMESTAMPTZ")
+                .doesNotContain("DEFAULT 0")
+                .doesNotContain("DEFAULT CURRENT_TIMESTAMP");
+        assertThat(customerRepository)
+                .contains("INSERT INTO customers (id, name, version, created_at)")
+                .doesNotContain(" AND version = ?");
     }
 
     @Test
@@ -174,6 +195,35 @@ class SystemFieldSqlE2ETest {
                     @AuditUpdatedBy private String touchedBy;
                     public String getTouchedBy() { return touchedBy; }
                     public void setTouchedBy(String touchedBy) { this.touchedBy = touchedBy; }
+                }
+                """);
+        sources.put("com/shop/domain/Customer.java",
+                """
+                package com.shop.domain;
+
+                import eu.exeris.sdk.annotation.ExerisDomain;
+                import eu.exeris.sdk.annotation.Field;
+                import eu.exeris.sdk.annotation.system.AuditCreatedAt;
+                import eu.exeris.sdk.annotation.system.Version;
+
+                @ExerisDomain(module = "billing", path = "/customers")
+                public class Customer {
+
+                    private java.util.UUID id;
+                    public java.util.UUID getId() { return id; }
+                    public void setId(java.util.UUID id) { this.id = id; }
+
+                    @Field(label = "Name")
+                    private String name;
+                    public String getName() { return name; }
+                    public void setName(String name) { this.name = name; }
+
+                    @Version private Long version;
+                    public Long getVersion() { return version; }
+                    public void setVersion(Long version) { this.version = version; }
+                    @AuditCreatedAt private java.time.Instant createdAt;
+                    public java.time.Instant getCreatedAt() { return createdAt; }
+                    public void setCreatedAt(java.time.Instant createdAt) { this.createdAt = createdAt; }
                 }
                 """);
         return sources;
