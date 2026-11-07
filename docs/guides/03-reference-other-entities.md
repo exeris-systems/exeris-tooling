@@ -88,7 +88,7 @@ entity.setCreatedAt(now);
 entity.setUpdatedAt(now);
 ```
 
-The time comes from the server whatever the request body carries. The migration also declares `created_by` and `updated_by` columns, which no generated code writes.
+The time comes from the server whatever the request body carries. The migration also declares `created_by` and `updated_by` columns. They are yours to fill: generated code has no principal to record, so it never sets an actor, and the [codegen-java module page](../modules/04-codegen-java.md#the-generated-application) says how a service of yours writes one.
 
 A marker switches no role on by itself. All three entities mark a `@Version` field without `versioned = true`, and `Customer` marks an `@AuditCreatedAt` field without `audited = true`. Each such field is an ordinary column: the migration declares it from the field's type (`version BIGINT`, and `Customer`'s `created_at TIMESTAMPTZ`), and the repository writes the entity's value into it, with no optimistic lock and no stamp. Declare the flag with the marker when you want the role.
 
