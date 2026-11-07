@@ -139,7 +139,7 @@ public class OpenApiGenerator {
             allTags.addAll(OpenApiTagsBuilder.buildTags(metadata));
             io.swagger.v3.oas.models.Paths entityPaths = OpenApiPathsBuilder.buildPaths(metadata, metadataList);
             entityPaths.forEach(allPaths::addPathItem);
-            Components entityComponents = OpenApiComponentsBuilder.buildComponents(metadata);
+            Components entityComponents = OpenApiComponentsBuilder.buildComponents(metadata, metadataList);
             if (entityComponents.getSchemas() != null) {
                 allSchemas.putAll(entityComponents.getSchemas());
             }
@@ -169,7 +169,7 @@ public class OpenApiGenerator {
         openAPI.setServers(buildServers());
         openAPI.setTags(OpenApiTagsBuilder.buildTags(metadata));
         openAPI.setPaths(OpenApiPathsBuilder.buildPaths(metadata, build));
-        openAPI.setComponents(OpenApiComponentsBuilder.buildComponents(metadata));
+        openAPI.setComponents(OpenApiComponentsBuilder.buildComponents(metadata, build));
         return openAPI;
     }
 

@@ -599,7 +599,8 @@ class KernelCodegenCompileTest {
 
     /**
      * The same corpus holding each reference as the referenced row's key compiles, main and test
-     * trees, with a foreign key for each {@code @Relationship MANY_TO_ONE}.
+     * trees, with a foreign key for each {@code @Relationship MANY_TO_ONE}. {@code Invoice.lines}
+     * is the inverse of {@code InvoiceLine.invoiceId}: the repository neither binds nor reads it.
      */
     @Test
     @DisplayName("the key-holding form of the refused entity references compiles, main and test trees")
@@ -620,7 +621,10 @@ class KernelCodegenCompileTest {
                 .contains("FOREIGN KEY (invoice_id) REFERENCES invoices(id)");
         assertThat(Files.readString(generatedMain.resolve("com/shop/repository/InvoiceRepository.java")))
                 .contains("entity.setCustomerId(")
-                .contains("entity.setLines(parseList(");
+                .doesNotContain("setLines(")
+                .doesNotContain("parseList(");
+        assertThat(Files.readString(generatedMain.resolve("com/shop/handler/InvoiceHandler.java")))
+                .contains("entity.setLines(null);");
         assertThat(Files.readString(generatedMain.resolve("com/shop/repository/ProductRepository.java")))
                 .contains("entity.setCategoryId(");
 
@@ -642,9 +646,20 @@ class KernelCodegenCompileTest {
      * reference an entity through {@code @Relationship MANY_TO_ONE}, and {@code Product} its
      * {@code Category} through {@code @GraphEdge}. With {@code keyed}, each reference is held as the
      * referenced row's {@code UUID} key; without, as a field typed as the referenced entity. Either
-     * way {@code Invoice} holds its lines as a {@code List<InvoiceLine>}, a JSON column.
+     * way {@code Invoice} declares its lines as the inverse collection {@code List<InvoiceLine>}
+     * whose {@code mappedBy} names {@code InvoiceLine}'s reference to it.
      */
     private static Map<String, String> entityReferenceCorpus(boolean keyed) {
+        return entityReferenceCorpus(keyed, "relationshipType = Relationship.RelationshipType.ONE_TO_MANY,"
+                + " mappedBy = \"invoice\"");
+    }
+
+    /**
+     * {@link #entityReferenceCorpus(boolean)} with {@code Invoice.lines} declared by
+     * {@code linesRelationship}: the attributes of its {@code @Relationship} after
+     * {@code targetEntity} and {@code displayField}.
+     */
+    private static Map<String, String> entityReferenceCorpus(boolean keyed, String linesRelationship) {
         Map<String, String> sources = new LinkedHashMap<>();
         for (String entity : List.of("Customer", "Category")) {
             sources.put("com/shop/domain/" + entity + ".java",
@@ -677,12 +692,12 @@ class KernelCodegenCompileTest {
                 "Customer", "customer", keyed)
                 .replace("    public UUID getId()", """
                     @Relationship(targetEntity = InvoiceLine.class, displayField = "description",
-                            relationshipType = Relationship.RelationshipType.ONE_TO_MANY, mappedBy = "invoice")
+                            %s)
                     private java.util.List<InvoiceLine> lines;
 
                     public java.util.List<InvoiceLine> getLines() { return lines; }
                     public void setLines(java.util.List<InvoiceLine> lines) { this.lines = lines; }
-                    public UUID getId()"""));
+                    public UUID getId()""".formatted(linesRelationship)));
         sources.put("com/shop/domain/InvoiceLine.java", referencing("InvoiceLine", "invoice-lines",
                 "description",
                 "@Relationship(targetEntity = Invoice.class, displayField = \"number\",\n"
@@ -986,6 +1001,44 @@ class KernelCodegenCompileTest {
                 }
                 """);
         return sources;
+    }
+
+    /**
+     * A {@code List} of entities that is no resolvable inverse collection is read from no table: a
+     * {@code ONE_TO_MANY} without {@code mappedBy}, and one whose {@code mappedBy} names no
+     * {@code MANY_TO_ONE} back to the owner. The run is refused with {@code EXT-GEN-3003} before
+     * anything is written, naming the remedy.
+     */
+    @Test
+    @DisplayName("EXT-GEN-3003: a List of entities that is no resolvable inverse is refused through the real chain, "
+            + "nothing written")
+    void unresolvableEntityCollectionIsRefused(@TempDir Path workspace) throws IOException {
+        String field = "com.shop.domain.Invoice.lines : java.util.List<com.shop.domain.InvoiceLine> (";
+        assertCollectionRefused(workspace.resolve("no-mapped-by"),
+                "relationshipType = Relationship.RelationshipType.ONE_TO_MANY",
+                field + "a collection of the entity InvoiceLine, which no column stores; read it from InvoiceLine's"
+                        + " rows with @Relationship(targetEntity = InvoiceLine.class, relationshipType = ONE_TO_MANY,"
+                        + " mappedBy = \"invoiceId\"), or hold their keys: List<UUID> invoiceLineIds)");
+        assertCollectionRefused(workspace.resolve("dangling"),
+                "relationshipType = Relationship.RelationshipType.ONE_TO_MANY, mappedBy = \"order\"",
+                field + "mappedBy \"order\" names no MANY_TO_ONE of InvoiceLine that references Invoice; declare"
+                        + " @Relationship(targetEntity = Invoice.class) UUID invoiceId on InvoiceLine)");
+    }
+
+    private static void assertCollectionRefused(Path workspace, String linesRelationship, String expected)
+            throws IOException {
+        Path entityClasses = workspace.resolve("target/classes");
+        Path generatedMain = workspace.resolve("src/main/generated/java");
+        ProcessorCompiler.compile(workspace.resolve("src/main/java"), entityClasses, null,
+                entityReferenceCorpus(true, linesRelationship));
+
+        CodegenPipeline pipeline = CodegenPipeline.createDefault();
+        Path metadataDir = entityClasses.resolve("exeris-metadata");
+        assertThatThrownBy(() -> pipeline.run(metadataDir, generatedMain, "com.shop"))
+                .isInstanceOfSatisfying(UnpersistableFieldTypeException.class,
+                        e -> assertThat(e.fields()).containsExactly(expected))
+                .hasMessageStartingWith("[Exeris] EXT-GEN-3003: ");
+        assertThat(generatedMain).doesNotExist();
     }
 
     /**

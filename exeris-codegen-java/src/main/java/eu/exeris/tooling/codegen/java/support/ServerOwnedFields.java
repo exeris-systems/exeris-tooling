@@ -50,6 +50,11 @@ import java.util.TreeSet;
  * decoding ({@link #resetOnCreate}, {@link #resetOnUpdate}). It is in no update set, since no
  * {@code UPDATE} statement names it.
  *
+ * <p>An inverse collection ({@link InverseCollections}) is in neither body either: its rows are
+ * held by the target entity's table and written through the target's own routes, it is no column,
+ * and the create and update handlers reset it to {@code null} after decoding, after the
+ * {@code @Blob} fields. It is in no update set, since no {@code UPDATE} statement names it.
+ *
  * <p>The version and a UNIVERSE entity's shared scope are in no update set: every update writes
  * both, the version as the value the caller passes plus one. The shared scope is in
  * {@link #notInCreateBody}, since the create stamps it from the bound scope, as the version is,
@@ -75,7 +80,7 @@ public final class ServerOwnedFields {
     public static Set<String> notInUpdateBody(DomainMetadata metadata) {
         Set<String> names = systemFieldsNotWritten(metadata);
         names.addAll(fixedOnRequestUpdate(metadata));
-        BlobFields.of(metadata).forEach(field -> names.add(field.name()));
+        heldOutsideTheRow(metadata).forEach(field -> names.add(field.name()));
         return Collections.unmodifiableSet(names);
     }
 
@@ -83,8 +88,9 @@ public final class ServerOwnedFields {
      * The fields the create request body does not carry: every field that plays a system role (the
      * key, the owner, a UNIVERSE entity's shared scope, and the audit, version and soft-delete
      * fields the entity's flags switch on), the read-only fields, the fields marked
-     * {@code @Field(inCreate = false)} and the {@code @Blob} fields. The server sets all but the
-     * last: the repository fills the key, the owner and the shared scope, stamps the audit times, starts the
+     * {@code @Field(inCreate = false)}, the {@code @Blob} fields and the inverse collections. The
+     * server sets all but the last two: the repository fills the key, the owner and the shared
+     * scope, stamps the audit times, starts the
      * version and the soft-delete flag ({@link #resetOnCreate}).
      *
      * @param metadata the entity
@@ -94,7 +100,7 @@ public final class ServerOwnedFields {
         Set<String> names = new TreeSet<>(ListQuerySupport.systemFieldNames(metadata));
         if (metadata.hasFields()) {
             for (FieldMetadata field : metadata.fields()) {
-                if (field.readOnly() || !field.inCreate() || field.hasBlob()) {
+                if (field.readOnly() || !field.inCreate() || !StoredFields.isColumn(metadata, field)) {
                     names.add(field.name());
                 }
             }
@@ -118,7 +124,8 @@ public final class ServerOwnedFields {
      * service sets; a version, a soft-delete flag or an actor the service sets afterwards is kept,
      * and the actors and the deletion time and actor are no column of the insert. The actors and
      * the deletion time and actor are reset only when the entity declares them as fields. The
-     * {@code @Blob} fields follow, reset to {@code null} ({@link #resetOnUpdate}).
+     * {@code @Blob} fields and the inverse collections follow, reset to {@code null}
+     * ({@link #resetOnUpdate}).
      *
      * @param metadata the entity
      * @return the resets, in a fixed order
@@ -145,14 +152,23 @@ public final class ServerOwnedFields {
 
     /**
      * The properties the update handler resets on the decoded entity, before the service sees it:
-     * the {@code @Blob} fields, to {@code null}. The generated application never fills one, so the
-     * entity it answers with carries {@code null} whatever the body named.
+     * the {@code @Blob} fields, then the inverse collections, to {@code null}. The generated
+     * application never fills one, so the entity it answers with carries {@code null} whatever the
+     * body named.
      *
      * @param metadata the entity
-     * @return the resets, in declaration order
+     * @return the resets: the {@code @Blob} fields, then the inverse collections, each in
+     *         declaration order
      */
     public static List<Reset> resetOnUpdate(DomainMetadata metadata) {
-        return BlobFields.of(metadata).stream().map(field -> new Reset(field.name(), NULL)).toList();
+        return heldOutsideTheRow(metadata).stream().map(field -> new Reset(field.name(), NULL)).toList();
+    }
+
+    /** The fields no column stores: the {@code @Blob} fields, then the inverse collections. */
+    private static List<FieldMetadata> heldOutsideTheRow(DomainMetadata metadata) {
+        List<FieldMetadata> fields = new ArrayList<>(BlobFields.of(metadata));
+        fields.addAll(InverseCollections.of(metadata));
+        return fields;
     }
 
     private static void addIfDeclared(List<Reset> resets, DomainMetadata metadata, String name) {
@@ -233,7 +249,7 @@ public final class ServerOwnedFields {
         if (metadata.hasFields()) {
             for (FieldMetadata field : metadata.fields()) {
                 if (field.required() && field.readOnly() && !systemRoles.contains(field.name())
-                        && !PRIMITIVE_TYPES.contains(field.type()) && BlobFields.isColumn(field)) {
+                        && !PRIMITIVE_TYPES.contains(field.type()) && StoredFields.isColumn(metadata, field)) {
                     fields.add(field);
                 }
             }

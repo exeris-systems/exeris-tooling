@@ -5,8 +5,12 @@ import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ParamSource;
+import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 import eu.exeris.tooling.codegen.java.support.BlobFields;
+import eu.exeris.tooling.codegen.java.support.ColumnNaming;
 import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
+import eu.exeris.tooling.codegen.java.support.ForeignKeys;
+import eu.exeris.tooling.codegen.java.support.InverseCollections;
 import eu.exeris.tooling.codegen.java.support.ListQuerySupport;
 import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
 import eu.exeris.tooling.codegen.java.support.ServerOwnedFields;
@@ -15,7 +19,9 @@ import io.swagger.v3.oas.models.media.Schema;
 
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -25,6 +31,7 @@ import java.util.Set;
 public final class OpenApiComponentsBuilder {
 
     private static final String OBJECT = "object";
+    private static final String ARRAY = "array";
     private static final String STRING = "string";
     private static final String INTEGER = "integer";
     private static final String INT32 = "int32";
@@ -34,17 +41,30 @@ public final class OpenApiComponentsBuilder {
     private OpenApiComponentsBuilder() {}
 
     /**
-     * Builds the components one entity contributes: the schemas of the entity itself, its create
-     * and update DTOs, its list-page envelope, and the request body of each action that takes
-     * parameters; and the bearer security scheme when some route of the entity demands an identity.
+     * Builds the components one entity contributes, as a build of its own: an inverse collection
+     * names no list route its rows are read from ({@link #buildComponents(DomainMetadata, List)}).
      *
      * @param metadata the entity to describe
      * @return the components, with schemas in that order and the actions in declaration order
      */
     public static Components buildComponents(DomainMetadata metadata) {
+        return buildComponents(metadata, List.of(metadata));
+    }
+
+    /**
+     * Builds the components one entity contributes: the schemas of the entity itself, its create
+     * and update DTOs, its list-page envelope, and the request body of each action that takes
+     * parameters; and the bearer security scheme when some route of the entity demands an identity.
+     * The build resolves the list route each inverse collection's rows are read from.
+     *
+     * @param metadata the entity to describe
+     * @param build    every entity of the build, {@code metadata} included
+     * @return the components, with schemas in that order and the actions in declaration order
+     */
+    public static Components buildComponents(DomainMetadata metadata, List<DomainMetadata> build) {
         Components components = new Components();
         Map<String, Schema> schemas = new LinkedHashMap<>();
-        schemas.put(metadata.entityName(), buildEntitySchema(metadata));
+        schemas.put(metadata.entityName(), buildEntitySchema(metadata, build));
         schemas.put(metadata.entityName() + "CreateDto", buildCreateDtoSchema(metadata));
         schemas.put(metadata.entityName() + "UpdateDto", buildUpdateDtoSchema(metadata));
         schemas.put(pageSchemaName(metadata.entityName()), buildPageSchema(metadata));
@@ -80,7 +100,7 @@ public final class OpenApiComponentsBuilder {
         return owned;
     }
 
-    private static Schema<?> buildEntitySchema(DomainMetadata metadata) {
+    private static Schema<?> buildEntitySchema(DomainMetadata metadata, List<DomainMetadata> build) {
         Schema<Object> schema = new Schema<>();
         OpenApiSchemas.typed(schema, OBJECT);
         schema.setDescription(metadata.description() != null
@@ -94,6 +114,11 @@ public final class OpenApiComponentsBuilder {
             for (FieldMetadata field : metadata.fields()) {
                 if (field.hasBlob()) {
                     properties.put(field.name(), buildBlobFieldSchema(metadata, field));
+                    continue;
+                }
+                Optional<RelationshipMetadata> inverse = InverseCollections.relationship(metadata, field);
+                if (inverse.isPresent()) {
+                    properties.put(field.name(), buildInverseCollectionSchema(metadata, field, inverse.get(), build));
                     continue;
                 }
                 Schema<?> fieldSchema = buildFieldSchema(field);
@@ -132,6 +157,30 @@ public final class OpenApiComponentsBuilder {
     }
 
     /**
+     * An inverse collection as the entity's JSON carries it: always {@code null}, since its rows are
+     * held by the target's table and the generated application never fills it, and so
+     * {@code readOnly}. The description names the target's list route and the filter that lists the
+     * rows of one entity: the back-reference's key parameter ({@code <base>Id}).
+     */
+    private static Schema<?> buildInverseCollectionSchema(DomainMetadata metadata, FieldMetadata field,
+                                                          RelationshipMetadata inverse, List<DomainMetadata> build) {
+        Optional<DomainMetadata> target = ForeignKeys.entityOf(inverse.targetEntity(), build);
+        String targetName = target.map(DomainMetadata::entityName).orElse(inverse.targetEntity());
+        Schema<Object> schema = OpenApiSchemas.typed(new Schema<>(), ARRAY);
+        schema.setTypes(new LinkedHashSet<>(List.of(ARRAY, "null")));
+        schema.setItems(new Schema<>().$ref("#/components/schemas/" + targetName));
+        schema.setReadOnly(true);
+        String route = target
+                .flatMap(domain -> ForeignKeys.backReference(metadata, inverse, build)
+                        .map(back -> "GET " + domain.effectivePath() + "?"
+                                + ColumnNaming.foreignKeyBase(back.name()) + "Id={id}"))
+                .orElse("the " + targetName + " list route");
+        schema.setDescription((field.description() != null ? field.description() + ". " : "")
+                + "Always null: the rows are listed on " + route);
+        return schema;
+    }
+
+    /**
      * An audited entity's stamp: a {@code date-time} the server sets, so {@code readOnly}. A field
      * the entity declares under the role's name keeps its own type and description.
      */
@@ -156,7 +205,7 @@ public final class OpenApiComponentsBuilder {
         schema.setDescription("One page of " + metadata.entityName());
         Map<String, Schema> properties = new LinkedHashMap<>();
         Schema<Object> content = new Schema<>();
-        OpenApiSchemas.typed(content, "array");
+        OpenApiSchemas.typed(content, ARRAY);
         content.setItems(new Schema<>().$ref("#/components/schemas/" + metadata.entityName()));
         content.setDescription("The rows of this page, in the query's order");
         properties.put("content", content);
