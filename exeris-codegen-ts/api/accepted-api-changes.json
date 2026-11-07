@@ -340,5 +340,11 @@
     "since": "0.11",
     "adr": "ADR-092",
     "justification": "The kernel application treats a role whose flag is off as an ordinary column, and the request types follow it, so the views must offer the field the request types carry: a form that rendered no control for a flagless @Version or @AuditCreatedAt field sent a body without it, and the server stored null. The views now classify system fields by the same rule as the request types (src/core/system-columns.ts, the twin of the Java SystemColumns), and no longer leave out tenantId, createdAt, updatedAt, version or deleted by name. An entity whose flags are all on regenerates byte-identically apart from deletedAt and deletedBy on a softDelete entity, which leave the form and the views. docs/migration/0.11.0/ts-15-system-marker-without-flag-in-request-types.md carries the step."
+  },
+  {
+    "signature": "<Entity>, <Entity>Create, <Entity>Update, <Entity>Schema, <Entity>CreateSchema, <Entity>UpdateSchema: a List field of a ONE_TO_MANY relationship with mappedBy leaves the types and schemas; the target's type and schema are no longer imported for it",
+    "since": "0.11",
+    "adr": "ADR-092",
+    "justification": "The rows of a mappedBy collection are held by the target's table: the generated server answers the field as null and takes it from neither request body, and the emitted Zod member, .optional(), rejected that null. The member is omitted from the entity interface, the request types and the Zod schemas, and the list and detail view show no field for it, as for a @Blob field. The detail view's related-records panel, which reads the rows through the target's service filtered by the back-reference's key, is unchanged. An entity without such a field regenerates byte-identically. docs/migration/0.11.0/ts-16-inverse-collection-omitted.md carries the step."
   }
 ]
