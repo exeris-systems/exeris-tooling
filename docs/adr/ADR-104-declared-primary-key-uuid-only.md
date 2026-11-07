@@ -10,6 +10,7 @@ slug: adr/ADR-104
 # ADR-104 — The generated code identifies a row by the primary key the entity names, and that key is a UUID
 
 - **Status:** ACCEPTED (2026-10-08) · accepted-on-merge per the per-repo pattern (ADR-047 / ADR-058)
+  · amended 2026-11-07 (Amendment 1 — the migration step is in the MIGRATION guide's 0.10.0 train)
 - **Deciders:** the founder; `exeris-tooling` (processor refusals, emitter order)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / codegen — per-repo; the SDK Javadoc that describes today's behaviour is
@@ -225,3 +226,14 @@ the processor refuses any other type. The route path variable stays `{id}`.**
    J5-3 is released, and names obligation 12's refusals so the reader half of exeris-sdk#187 item 1
    reads the same marker attributes the processor does.
 6. Migration owner: `exeris-tooling`, target 0.10.0, release-plan wave J5.
+
+## Amendment 1 — the migration step is in the MIGRATION guide's 0.10.0 train (2026-11-07)
+
+**Status:** Accepted *(replaces the location that Engineering Protocol step 3 gives the migration
+step; no decision changes; the rest of the ADR is unchanged)*
+
+The 0.10.0 release inlined every fragment under `docs/migration/0.10.0/` into the 0.10.0 train of
+`docs/MIGRATION-0.x-to-1.0.md` and deleted the files, as the release does with every train
+([migration fragments](../migration/README.md)). The step that records the two refusals is
+[`@ExerisDomain(primaryKeyField)` renames the primary key, and the key must be a `UUID`
+(`EXT-PROC-1018`, `EXT-PROC-1019`)](../MIGRATION-0.x-to-1.0.md#exerisdomainprimarykeyfield-renames-the-primary-key-and-the-key-must-be-a-uuid-ext-proc-1018-ext-proc-1019).

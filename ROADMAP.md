@@ -2448,27 +2448,20 @@ Each now has the status the code settles, and every other mention in this file a
       `KernelProviders.eventStreamReader()` returns an `Optional` — a broker may not support replay —
       so emitted code must handle absence rather than assume a binding.
 
-      **`@Schedule` has its subsystem and still cannot be transcribed yet** — noted 2026-08-27, when
-      SDK 0.11.0 landed the annotation (ADR-072). `CommunitySchedulingSubsystem` is bootable, so the
-      table row above is right about capability and incomplete about readiness. `JobScheduler.submit(…)`
-      captures the ambient `PrincipalContext` and `StorageContext` and **fails a job closed at dispatch**
-      when neither is bound (kernel `spi/scheduling/JobScheduler.java:14-17` at `v0.11.0`), and a
-      declared schedule has no submission event, hence no principal to capture. So a naive transcription
-      emits a job that fails on every fire. The answer is a kernel-side system principal for declared
-      jobs, or an SDK attribute naming the identity to run as — an authorization decision in a
-      design-time annotation, and the worse option on its face. Owner: kernel; consumer: this repo. See
-      [`docs/adr/ADR-072.link.md`](docs/adr/ADR-072.link.md).
+      **`@Schedule` has its subsystem and is refused at build time** (`EXT-PROC-1030`, row J9 of
+      [`docs/0.11.0-release-plan.md`](docs/0.11.0-release-plan.md)). `CommunitySchedulingSubsystem`
+      is bootable, so the table row above is right about capability and incomplete about readiness.
+      `JobScheduler.submit(…)` captures the ambient `PrincipalContext` and `StorageContext` and
+      **fails a job closed at dispatch** when neither is bound, and a declared schedule has no
+      submission event, hence no principal to capture. Kernel ADR-057 Amendment A1 issues no service
+      principal at 1.0, so the processor refuses every `@Schedule` instead of emitting a job that
+      fails on every fire. See [`docs/adr/ADR-072.link.md`](docs/adr/ADR-072.link.md).
 
-      **This does not move the count, and mints no K-number.** The two exclusions are different kinds.
-      `@Blob` is excluded because the platform cannot host it: `Application.main()` boots subsystems by
-      name and there is no name to declare, which no amount of design in this repo fixes. `@Schedule`
-      has its subsystem and is gated on a design question — the same bucket the behavioural family
-      sits in (`@Derived`, `@Rule`, `@EventHandler`, `@Projection`, listed above as "design-gated, not
-      capability-gated"), and those count toward the 50. An ask this repo may be able to discharge
-      itself is not a kernel ask. The likeliest discharge is the seam ADR-070 already built —
-      `RuntimeComponents` is where a consumer supplies construction-time collaborators, and the
-      identity a declared job runs as is one — but that is a slice to design, not a decision to record
-      here.
+      **Neither mints a K-number.** The two exclusions are different kinds. `@Blob` was excluded
+      because the platform could not host it: `Application.main()` boots subsystems by name, and
+      until kernel 0.12 there was no name to declare, which no design in this repo could fix.
+      `@Schedule` has its subsystem and is gated on the identity a declared job runs as, which the
+      kernel answers at 1.0 by issuing none.
 
       **So the 1.0 target is 51 of 51.** `@Blob` was the single exclusion and its kernel gate is
       answered at 0.12. Reachable is not covered — an annotation counts when it reaches emitted

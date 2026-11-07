@@ -306,10 +306,13 @@ To own the code outright, run `mvn exeris:detach`. It moves the generated source
 
 ### Check the generated tree out with LF line endings
 
-Both generators write every file with LF line endings on every platform, so the same metadata yields
-the same bytes everywhere. A checkout that converts to CRLF (`core.autocrlf=true` on Windows) shows
-every regenerated file as changed, by line endings alone. Pin the generated roots to LF in the
-application's `.gitattributes`:
+The Java generators write every file with LF line endings on every platform, over an existing file
+too, so the same metadata yields the same bytes everywhere. A checkout that converts to CRLF
+(`core.autocrlf=true` on Windows) shows every regenerated Java file as changed, by line endings
+alone. The TypeScript generator writes a new file as LF, leaves a file that differs from its output
+only in line endings as it is, and rewrites a CRLF file as CRLF, so its tree keeps whatever endings
+the checkout gave it. Pin the generated roots to LF in the application's `.gitattributes`, so both
+trees hold LF in the working copy as in the repository:
 
 ```
 src/main/generated/** text eol=lf

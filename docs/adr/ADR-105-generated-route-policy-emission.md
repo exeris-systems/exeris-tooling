@@ -10,6 +10,7 @@ slug: adr/ADR-105
 # ADR-105 — The generated application compiles the declared route access into the kernel's route policy
 
 - **Status:** ACCEPTED (2026-10-08) · accepted-on-merge per the per-repo pattern (ADR-047 / ADR-058)
+  · amended 2026-11-07 (Amendment 1 — the migration step is in the MIGRATION guide's 0.10.0 train)
 - **Deciders:** the founder; `exeris-tooling` (policy emitter, `Application` seam, Angular guards)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / codegen — per-repo; the SDK work it needs is an `exeris-sdk` issue
@@ -324,3 +325,14 @@ answered. The first declared permission changes exactly the routes it covers.
 6. **Upstream asks.** exeris-sdk#161 widened (reader, two Javadoc sentences, parity cases);
    exeris-kernel, non-blocking, a template-keyed policy builder (obligation 5).
 7. Migration owner: `exeris-tooling`, target 0.10.0, release-plan wave J3.
+
+## Amendment 1 — the migration step is in the MIGRATION guide's 0.10.0 train (2026-11-07)
+
+**Status:** Accepted *(replaces the location that Engineering Protocol step 2 gives the migration
+fragment; no decision changes; the rest of the ADR is unchanged)*
+
+The 0.10.0 release inlined every fragment under `docs/migration/0.10.0/` into the 0.10.0 train of
+`docs/MIGRATION-0.x-to-1.0.md` and deleted the files, as the release does with every train
+([migration fragments](../migration/README.md)). The step that records the hooks is [The generated
+`Application` binds a route policy and gains three
+hooks](../MIGRATION-0.x-to-1.0.md#the-generated-application-binds-a-route-policy-and-gains-three-hooks).
