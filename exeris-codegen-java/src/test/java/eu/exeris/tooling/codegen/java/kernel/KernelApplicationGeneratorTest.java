@@ -1413,6 +1413,45 @@ class KernelApplicationGeneratorTest {
         }
     }
 
+    @Test
+    @DisplayName("the RuntimeComponents subclassing example calls the service constructor the "
+            + "default factory calls, with and without an event publisher")
+    void componentsSnippetCallsTheEmittedServiceConstructor() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata plain = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").build();
+
+        for (DomainMetadata order : List.of(plain, orderWithEventsAndSaga())) {
+            String components = components(gen.generateAll(List.of(order), "com.example.foundation"));
+
+            String snippetArguments = arguments(components, "new MyOrderService(");
+            assertThat(snippetArguments)
+                    .as("example for %s", order.hasEvents() ? "an entity with events" : "a plain entity")
+                    .isEqualTo(arguments(components, "return new OrderService("))
+                    .isEqualTo("orderRepository()");
+            assertThat(new KernelServiceGenerator().generate(order).content())
+                    .contains("public OrderService(OrderRepository repository)");
+        }
+    }
+
+    /** The argument list of the first call that starts with {@code call}, up to its closing parenthesis. */
+    private static String arguments(String source, String call) {
+        int start = source.indexOf(call);
+        assertThat(start).as("call %s is emitted", call).isGreaterThan(-1);
+        int open = start + call.length();
+        int depth = 1;
+        int end = open;
+        while (depth > 0) {
+            char c = source.charAt(end++);
+            if (c == '(') {
+                depth++;
+            } else if (c == ')') {
+                depth--;
+            }
+        }
+        return source.substring(open, end - 1);
+    }
+
     /** Extracts the numeric version from a {@code "V<n>__…"} migration filename. */
     private static long versionNumber(String className) {
         return Long.parseLong(className.substring(1, className.indexOf("__")));

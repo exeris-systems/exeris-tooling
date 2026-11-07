@@ -84,7 +84,7 @@ entity.setCreatedAt(now);
 entity.setUpdatedAt(now);
 ```
 
-The time comes from the server whatever the request body carries. The migration also declares `created_by` and `updated_by` columns, which no generated code writes.
+The time comes from the server whatever the request body carries. The migration also declares `created_by` and `updated_by` columns. They are yours to fill: generated code has no principal to record, so it never sets an actor, and the [codegen-java module page](../modules/04-codegen-java.md#the-generated-application) says how a service of yours writes one.
 
 A marker switches no role on by itself. All three entities mark a `@Version` field without `versioned = true`, and `Customer` marks an `@AuditCreatedAt` field without `audited = true`. Each such field is an ordinary column: the migration declares it from the field's type (`version BIGINT`, and `Customer`'s `created_at TIMESTAMPTZ`), and the repository writes the entity's value into it, with no optimistic lock and no stamp. Declare the flag with the marker when you want the role.
 
@@ -116,7 +116,7 @@ The `issue` action reads `dueInDays` from the request body and declares `default
 ## Not available today
 
 - **`@Action(httpMethod = "GET")`.** `viewShared` declares it, and the route is `POST /invoices/{id}/actions/view-shared`: every action is served on `POST`. Under `-Aexeris.strict=true` the processor reports the attribute as `EXT-PROC-1201`.
-- **A `ONE_TO_MANY` collection.** `Invoice.lines` is a `List<InvoiceLine>` with `mappedBy = "invoiceId"`. The run writes it as a `lines VARCHAR(255)` column of `invoices`, holding the list as JSON, rather than reading the children from `invoice_lines`. Its `cascadeDelete = true` reaches no constraint: the foreign key is the child's, and it is `ON DELETE RESTRICT`.
+- **A `ONE_TO_MANY` collection.** `Invoice.lines` is a `List<InvoiceLine>` with `mappedBy = "invoiceId"`. The run writes it as a `lines TEXT` column of `invoices`, holding the list as JSON, rather than reading the children from `invoice_lines`. Its `cascadeDelete = true` reaches no constraint: the foreign key is the child's, and it is `ON DELETE RESTRICT`.
 
 ## Where this does not apply
 

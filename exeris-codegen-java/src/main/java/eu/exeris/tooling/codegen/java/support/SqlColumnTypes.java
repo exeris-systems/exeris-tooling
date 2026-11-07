@@ -19,13 +19,17 @@ public final class SqlColumnTypes {
 
     /**
      * The SQL type of a domain column. Matched on the simple name, so both spellings of a type map
-     * alike; anything unrecognised, a {@code List<X>} (stored as JSON text) and an enum included,
-     * is {@code VARCHAR(255)}.
+     * alike. A {@code List<X>} is stored as JSON text and is {@code TEXT}, so its length is bounded
+     * by the database's text limit rather than by a declared width; anything else unrecognised, an
+     * enum included, is {@code VARCHAR(255)}.
      *
      * @param javaType a {@code FieldMetadata.type()} value
      * @return the SQL type, as the migration declares it
      */
     public static String of(String javaType) {
+        if (javaType != null && DomainTypeKind.listElementType(javaType) != null) {
+            return "TEXT";
+        }
         return switch (simpleName(javaType)) {
             case "String" -> "VARCHAR(255)";
             case "UUID" -> "UUID";

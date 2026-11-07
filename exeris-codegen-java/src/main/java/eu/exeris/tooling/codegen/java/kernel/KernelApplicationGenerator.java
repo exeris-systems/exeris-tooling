@@ -931,8 +931,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("    MyComponents(TransactionalExecutor tx) { super(tx); }\n")
                 .addJavadoc("\n")
                 .addJavadoc("    @Override protected OrderService createOrderService() {\n")
-                .addJavadoc("        return new MyOrderService(orderRepository(),\n")
-                .addJavadoc("                new OrderEventPublisher(KernelProviders.eventEngine()));\n")
+                .addJavadoc("        return new MyOrderService($L);\n", serviceArguments("orderRepository"))
                 .addJavadoc("    }\n")
                 .addJavadoc("}\n")
                 .addJavadoc("}\n")
@@ -987,7 +986,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             addComponent(type, repoType, repoName,
                     CodeBlock.of("new $T($L())", repoType, TX_EXECUTOR_NAME));
             addComponent(type, serviceType, serviceName,
-                    CodeBlock.of("new $T($L())", serviceType, repoName));
+                    CodeBlock.of("new $T($L)", serviceType, serviceArguments(repoName)));
 
             // T48 (ADR-070's own rule, applied to the one component that had been left out):
             // the publisher joins the seam, so a consumer can override how it is built — and
@@ -1347,6 +1346,16 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("on a stream thread.\n")
                 .initializer(scopeList(readers, Phase.REQUEST))
                 .build();
+    }
+
+    /**
+     * The arguments a generated service is constructed with: its repository, read through the
+     * accessor, and nothing else, whatever the entity declares. The default factory and the
+     * subclassing example in the {@code RuntimeComponents} Javadoc both read it, so the example
+     * calls the constructor the service declares.
+     */
+    private static CodeBlock serviceArguments(String repositoryAccessor) {
+        return CodeBlock.of("$L()", repositoryAccessor);
     }
 
     /**
