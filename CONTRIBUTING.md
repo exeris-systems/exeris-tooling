@@ -39,10 +39,11 @@ Maven 3.9+ for Java modules; Node 18+ for `exeris-codegen-ts`.
 ### PostgreSQL suite
 
 The `@Tag("postgres")` classes in `exeris-e2e-tests` need a real PostgreSQL: H2 implements no
-row-level security, and reports a foreign-key violation with another SQL state and constraint-name case.
-They are the shared-scope access matrix, the field-type matrix, the booted tenant-isolation test and the
-booted foreign-key refusal test (422 for a missing referenced row, 409 for a delete of a referenced
-one). The default build excludes the tag. The `e2e-postgres` profile selects it and nothing else, and
+row-level security, reports a foreign-key violation with another SQL state and constraint-name case,
+and does not run the Community SQL graph's `jsonb` and `ON CONFLICT` statements. They are the
+shared-scope access matrix, the field-type matrix, the booted tenant-isolation test, the booted
+foreign-key refusal test (422 for a missing referenced row, 409 for a delete of a referenced one) and
+the booted graph-sync test (each write projected into `graph_nodes` and the edge table). The default build excludes the tag. The `e2e-postgres` profile selects it and nothing else, and
 the `e2e-postgres` CI job runs it on JDK 25. Without `-Dexeris.e2e.postgres.url` the profile fails at
 `validate`, and a `postgres` class selected some other way fails rather than skipping.
 
@@ -57,9 +58,10 @@ docker stop exeris-e2e-pg
 ```
 
 The login must be allowed to create schemas and roles. Each class creates its own schema and drops
-it afterwards. `SharedScopePostgresE2ETest`, `TenantIsolationPostgresBootE2ETest` and
-`ForeignKeyRefusalPostgresBootE2ETest` also create a `NOSUPERUSER NOBYPASSRLS` role to act as and drop
-it afterwards; `PostgresTypeMatrixE2ETest` creates no role.
+it afterwards. `SharedScopePostgresE2ETest`, `TenantIsolationPostgresBootE2ETest`,
+`ForeignKeyRefusalPostgresBootE2ETest` and `GraphSyncPostgresBootE2ETest` also create a
+`NOSUPERUSER NOBYPASSRLS` role to act as and drop it afterwards; `PostgresTypeMatrixE2ETest` creates
+no role.
 
 ### SDK examples gate
 
