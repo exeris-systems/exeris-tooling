@@ -494,8 +494,8 @@ class GenerateMojoTest {
         }
 
         @Test
-        @DisplayName("a withheld build is warned with EXT-GEN-3105 naming the reason, and the root stays registered")
-        void withheldIsWarned(@TempDir Path tmp) throws Exception {
+        @DisplayName("a withheld build leaves EXT-GEN-3105 to the pipeline, and the root stays registered")
+        void withheldIsWarnedOnce(@TempDir Path tmp) throws Exception {
             GenerateMojo mojo = mojo(tmp, new ArrayList<>());
             mojo.generateIntegrationTests = true;
             mojo.integrationTestPipeline = (m, o, b) ->
@@ -504,9 +504,7 @@ class GenerateMojoTest {
 
             mojo.execute();
 
-            assertThat(warnings).singleElement(InstanceOfAssertFactories.STRING)
-                    .startsWith("[Exeris] EXT-GEN-3105: ")
-                    .contains("com.shop.domain.Order has data scope TENANT");
+            assertThat(warnings).noneMatch(line -> line.contains("EXT-GEN-3105"));
             assertThat(mojo.project.getTestCompileSourceRoots())
                     .contains(mojo.integrationTestOutputDir.getAbsolutePath());
         }

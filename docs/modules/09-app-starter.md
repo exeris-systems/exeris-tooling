@@ -29,7 +29,7 @@ None of the three inherits `exeris-tooling-root` or `exeris-tooling-parent`, so 
 
 ### `exeris-app-bom`
 
-Every tooling, kernel and SDK version in it is a literal property: `exeris.tooling.version`, `exeris.kernel.version`, `exeris.sdk.version` and `jackson3.version`, never `${project.version}` or anything derived from it, because the parent passes them on by inheritance and an inherited value is interpolated in the consumer's model. The kernel, SDK and Jackson values equal the same properties in `exeris-tooling-bom`, the versions this release's suites ran against. `tools/release-readiness/release-readiness.sh` fails a release where they differ or where an Exeris version is a `-SNAPSHOT`.
+Every version in it is a literal property: `exeris.tooling.version`, `exeris.kernel.version`, `exeris.sdk.version`, `jackson3.version` and `h2.version`, never `${project.version}` or anything derived from it, because the parent passes them on by inheritance and an inherited value is interpolated in the consumer's model. The kernel, SDK, Jackson and H2 values equal the same properties in `exeris-tooling-bom`, the versions this release's suites ran against. `tools/release-readiness/release-readiness.sh` fails a release where they differ or where an Exeris version is a `-SNAPSHOT`.
 
 It manages `com.h2database:h2` at `h2.version`, for the generated integration tests ([ADR-091](../adr/ADR-091-opt-in-application-starter.md) Amendment 7), and nothing else: no JavaPoet, swagger, Jackson 2, compile-testing, JUnit or AssertJ.
 

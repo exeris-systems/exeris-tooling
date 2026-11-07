@@ -388,7 +388,8 @@ public class GenerateMojo extends AbstractMojo {
     /**
      * ADR-058 Amendment 1. Runs after the unit-test channel and registers its own test compile
      * source root, unconditionally for the reason {@link #generateTests()} gives — including when
-     * the build is outside the channel's scope, which leaves a committed tree as it was.
+     * the build is outside the channel's scope, which leaves a committed tree as it was. The pipeline
+     * itself warns {@code EXT-GEN-3105} for such a build, so the warning reads the same from the CLI.
      */
     private void generateIntegrationTests() throws MojoExecutionException, MojoFailureException {
         if (!generateIntegrationTests) {
@@ -397,12 +398,8 @@ public class GenerateMojo extends AbstractMojo {
         try {
             getLog().info("Generating integration tests for the generated application: metadata="
                     + metadataDir + " → output=" + integrationTestOutputDir);
-            CodegenPipeline.IntegrationTestRun run = integrationTestPipeline.runIntegrationTests(
+            integrationTestPipeline.runIntegrationTests(
                     metadataDir.toPath(), integrationTestOutputDir.toPath(), basePackage);
-            if (run.withheld()) {
-                getLog().warn(DiagnosticId.INTEGRATION_TESTS_WITHHELD.format("No integration tests generated: "
-                        + run.withheldReason() + ". " + integrationTestOutputDir + " is left as it was."));
-            }
         } catch (EntityPackageLayoutException e) {
             throw new MojoFailureException(e.getMessage(), e);
         } catch (IOException e) {
@@ -414,8 +411,9 @@ public class GenerateMojo extends AbstractMojo {
     }
 
     /**
-     * Warns, with {@code EXT-PLUG-2004}, for each artefact the emitted code imports that this
-     * module's collected dependencies do not put on the classpath that compiles it.
+     * Warns, with {@code EXT-PLUG-2004}, for each artefact the emitted code needs that this
+     * module's collected dependencies do not put on its classpath: what it imports, on the classpath
+     * that compiles it, and H2, which the generated integration tests load at test runtime.
      *
      * <p>Runs only where this module compiles the generated tree, which is what registering it as
      * a source root means: with {@code exeris.addCompileSourceRoot=false} another module compiles
