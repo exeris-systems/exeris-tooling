@@ -1,6 +1,7 @@
 package eu.exeris.tooling.codegen.maven;
 
 import eu.exeris.tooling.codegen.core.capability.CapabilityGraphException;
+import eu.exeris.tooling.codegen.java.CodegenPipeline;
 import eu.exeris.tooling.codegen.java.EmptyMetadataException;
 import eu.exeris.tooling.codegen.java.kernel.RequiredCompileArtifacts.Classpath;
 import eu.exeris.tooling.codegen.java.kernel.RequiredCompileArtifacts.Requirement;
@@ -57,6 +58,8 @@ class GenerateMojoTest {
         // Test emission is stubbed out by default so the existing tests stay about main emission;
         // the T2 channel's own control flow is exercised in the GeneratedTests nested class.
         mojo.testPipeline = (m, o, b) -> { };
+        mojo.integrationTestOutputDir = tmp.resolve("src/test/generated-it/java").toFile();
+        mojo.integrationTestPipeline = (m, o, b) -> new CodegenPipeline.IntegrationTestRun(0, null);
         return mojo;
     }
 
@@ -439,6 +442,129 @@ class GenerateMojoTest {
     }
 
     @org.junit.jupiter.api.Nested
+    @DisplayName("generated integration tests (ADR-058 Amendment 1)")
+    class GeneratedIntegrationTests {
+
+        private List<String> warnings(GenerateMojo mojo) {
+            List<String> warnings = new ArrayList<>();
+            mojo.setLog(new SystemStreamLog() {
+                @Override
+                public void warn(CharSequence content) {
+                    warnings.add(content.toString());
+                }
+            });
+            return warnings;
+        }
+
+        @Test
+        @DisplayName("off by default: nothing runs and no root is registered")
+        void offByDefault(@TempDir Path tmp) throws Exception {
+            GenerateMojo mojo = mojo(tmp, new ArrayList<>());
+            mojo.integrationTestPipeline = (m, o, b) -> {
+                throw new AssertionError("integration tests must not be generated unless asked for");
+            };
+
+            mojo.execute();
+
+            assertThat(mojo.project.getTestCompileSourceRoots())
+                    .doesNotContain(mojo.integrationTestOutputDir.getAbsolutePath());
+        }
+
+        @Test
+        @DisplayName("exeris.integrationTests=true emits into its own root and registers it for test-compile only")
+        void emitsAndRegistersItsOwnRoot(@TempDir Path tmp) throws Exception {
+            List<Path> calls = new ArrayList<>();
+            GenerateMojo mojo = mojo(tmp, new ArrayList<>());
+            mojo.generateIntegrationTests = true;
+            mojo.integrationTestPipeline = (m, o, b) -> {
+                calls.add(o);
+                return new CodegenPipeline.IntegrationTestRun(4, null);
+            };
+            List<String> warnings = warnings(mojo);
+
+            mojo.execute();
+
+            assertThat(calls).containsExactly(mojo.integrationTestOutputDir.toPath());
+            assertThat(mojo.project.getTestCompileSourceRoots())
+                    .contains(mojo.integrationTestOutputDir.getAbsolutePath())
+                    .doesNotContain(mojo.testOutputDir.getAbsolutePath());
+            assertThat(mojo.project.getCompileSourceRoots())
+                    .doesNotContain(mojo.integrationTestOutputDir.getAbsolutePath());
+            assertThat(warnings).noneMatch(line -> line.contains("EXT-GEN-3105"));
+        }
+
+        @Test
+        @DisplayName("a withheld build is warned with EXT-GEN-3105 naming the reason, and the root stays registered")
+        void withheldIsWarned(@TempDir Path tmp) throws Exception {
+            GenerateMojo mojo = mojo(tmp, new ArrayList<>());
+            mojo.generateIntegrationTests = true;
+            mojo.integrationTestPipeline = (m, o, b) ->
+                    new CodegenPipeline.IntegrationTestRun(0, "entity com.shop.domain.Order has data scope TENANT");
+            List<String> warnings = warnings(mojo);
+
+            mojo.execute();
+
+            assertThat(warnings).singleElement(InstanceOfAssertFactories.STRING)
+                    .startsWith("[Exeris] EXT-GEN-3105: ")
+                    .contains("com.shop.domain.Order has data scope TENANT");
+            assertThat(mojo.project.getTestCompileSourceRoots())
+                    .contains(mojo.integrationTestOutputDir.getAbsolutePath());
+        }
+
+        @Test
+        @DisplayName("exeris.codegen.skip runs nothing and still registers the committed root")
+        void skipStillRegistersTheRoot(@TempDir Path tmp) throws Exception {
+            GenerateMojo mojo = mojo(tmp, new ArrayList<>());
+            mojo.generateIntegrationTests = true;
+            mojo.skip = true;
+            mojo.integrationTestPipeline = (m, o, b) -> {
+                throw new AssertionError("nothing runs when the whole pipeline is skipped");
+            };
+
+            mojo.execute();
+
+            assertThat(mojo.project.getTestCompileSourceRoots())
+                    .containsExactly(mojo.integrationTestOutputDir.getAbsolutePath());
+        }
+
+        @Test
+        @DisplayName("the classpath check is asked for the integration tests' needs")
+        void classpathCheckIsAskedForTheirNeeds(@TempDir Path tmp) throws Exception {
+            List<Boolean> asked = new ArrayList<>();
+            GenerateMojo mojo = mojo(tmp, new ArrayList<>());
+            mojo.generateIntegrationTests = true;
+            mojo.importRequirements = (m, tests, its) -> {
+                asked.add(its);
+                return List.of(new Requirement("com.h2database", "h2", Classpath.TEST, "the integration tests"));
+            };
+            List<String> warnings = warnings(mojo);
+
+            mojo.execute();
+
+            assertThat(asked).containsExactly(true);
+            assertThat(warnings).singleElement(InstanceOfAssertFactories.STRING)
+                    .startsWith("[Exeris] EXT-PLUG-2004: ")
+                    .contains("tests need 1 artefact(s)", "  - com.h2database:h2, needed by the integration tests");
+        }
+
+        @Test
+        @DisplayName("an IO failure is an execution error carrying EXT-PLUG-2005")
+        void ioFailureIsAnExecutionError(@TempDir Path tmp) {
+            GenerateMojo mojo = mojo(tmp, new ArrayList<>());
+            mojo.generateIntegrationTests = true;
+            mojo.integrationTestPipeline = (m, o, b) -> {
+                throw new IOException("disk full");
+            };
+
+            assertThatThrownBy(mojo::execute)
+                    .isInstanceOf(MojoExecutionException.class)
+                    .hasMessageStartingWith("[Exeris] EXT-PLUG-2005: ")
+                    .hasMessageContaining("Integration-test generation failed")
+                    .hasRootCauseMessage("disk full");
+        }
+    }
+
+    @org.junit.jupiter.api.Nested
     @DisplayName("compile classpath check (T30, EXT-PLUG-2004)")
     class CompileClasspathCheck {
 
@@ -496,7 +622,7 @@ class GenerateMojoTest {
         void starterBuildIsSilent(@TempDir Path tmp) throws Exception {
             GenerateMojo mojo = mojo(tmp, new ArrayList<>());
             mojo.project.setArtifacts(starterArtifacts());
-            mojo.importRequirements = (m, tests) -> List.of(SPI, CORE, CONDUCTOR, JACKSON);
+            mojo.importRequirements = (m, tests, its) -> List.of(SPI, CORE, CONDUCTOR, JACKSON);
             Recorded log = record(mojo);
 
             mojo.execute();
@@ -515,7 +641,7 @@ class GenerateMojoTest {
             artifacts.add(artifact("eu.exeris", "exeris-kernel-community", Artifact.SCOPE_RUNTIME));
             artifacts.add(artifact("tools.jackson.core", "jackson-databind", Artifact.SCOPE_RUNTIME));
             mojo.project.setArtifacts(artifacts);
-            mojo.importRequirements = (m, tests) -> List.of(SPI, CORE, JACKSON);
+            mojo.importRequirements = (m, tests, its) -> List.of(SPI, CORE, JACKSON);
             Recorded log = record(mojo);
 
             mojo.execute();
@@ -536,7 +662,7 @@ class GenerateMojoTest {
             artifacts.add(artifact("eu.exeris", "exeris-kernel-spi", Artifact.SCOPE_PROVIDED));
             artifacts.add(artifact("eu.exeris", "exeris-kernel-core", Artifact.SCOPE_SYSTEM));
             mojo.project.setArtifacts(artifacts);
-            mojo.importRequirements = (m, tests) -> List.of(SPI, CORE, CONDUCTOR, JACKSON);
+            mojo.importRequirements = (m, tests, its) -> List.of(SPI, CORE, CONDUCTOR, JACKSON);
             Recorded log = record(mojo);
 
             mojo.execute();
@@ -556,7 +682,7 @@ class GenerateMojoTest {
             Set<Artifact> artifacts = starterArtifacts();
             artifacts.add(artifact("org.junit.jupiter", "junit-jupiter-api", Artifact.SCOPE_TEST));
             mojo.project.setArtifacts(artifacts);
-            mojo.importRequirements = (m, tests) -> {
+            mojo.importRequirements = (m, tests, its) -> {
                 askedForTests.add(tests);
                 return List.of(SPI, CORE, JUNIT, ASSERTJ);
             };
@@ -580,7 +706,7 @@ class GenerateMojoTest {
             artifacts.add(artifact("org.junit.jupiter", "junit-jupiter-api", Artifact.SCOPE_RUNTIME));
             artifacts.add(artifact("org.assertj", "assertj-core", null));
             mojo.project.setArtifacts(artifacts);
-            mojo.importRequirements = (m, tests) -> List.of(JUNIT, ASSERTJ);
+            mojo.importRequirements = (m, tests, its) -> List.of(JUNIT, ASSERTJ);
             Recorded log = record(mojo);
 
             mojo.execute();
@@ -592,7 +718,7 @@ class GenerateMojoTest {
         @DisplayName("no requirement (no metadata yet) checks nothing and says nothing")
         void nothingRequiredIsSilent(@TempDir Path tmp) throws Exception {
             GenerateMojo mojo = mojo(tmp, new ArrayList<>());
-            mojo.importRequirements = (m, tests) -> List.of();
+            mojo.importRequirements = (m, tests, its) -> List.of();
             Recorded log = record(mojo);
 
             mojo.execute();
@@ -606,14 +732,14 @@ class GenerateMojoTest {
         void notRunWhereThisModuleDoesNotCompileTheTree(@TempDir Path tmp) throws Exception {
             GenerateMojo elsewhere = mojo(tmp, new ArrayList<>());
             elsewhere.addCompileSourceRoot = false;
-            elsewhere.importRequirements = (m, tests) -> {
+            elsewhere.importRequirements = (m, tests, its) -> {
                 throw new AssertionError("another module compiles the tree");
             };
             elsewhere.execute();
 
             GenerateMojo skipped = mojo(tmp, new ArrayList<>());
             skipped.skip = true;
-            skipped.importRequirements = (m, tests) -> {
+            skipped.importRequirements = (m, tests, its) -> {
                 throw new AssertionError("nothing runs when the pipeline is skipped");
             };
             skipped.execute();
@@ -625,7 +751,7 @@ class GenerateMojoTest {
         @DisplayName("metadata that cannot be read for the check is an execution error carrying EXT-PLUG-2002")
         void unreadableMetadataIsAnExecutionError(@TempDir Path tmp) {
             GenerateMojo mojo = mojo(tmp, new ArrayList<>());
-            mojo.importRequirements = (m, tests) -> {
+            mojo.importRequirements = (m, tests, its) -> {
                 throw new IOException("gone");
             };
 
