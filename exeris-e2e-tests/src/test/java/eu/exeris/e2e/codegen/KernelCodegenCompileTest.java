@@ -882,6 +882,104 @@ class KernelCodegenCompileTest {
                 """);
     }
 
+    /**
+     * EXT-PROC-1034 for an inverse collection: {@code Invoice.lines}, the {@code ONE_TO_MANY} with
+     * {@code mappedBy} over {@code InvoiceLine.invoiceId}, declares a setter and no getter. The
+     * processor accepts it, as it accepts a {@code @Blob} field with a setter only, and the main and
+     * test trees generated from it compile: the handlers reset the collection and nothing generated
+     * reads it.
+     */
+    @Test
+    @DisplayName("EXT-PROC-1034: an inverse collection with a setter and no getter compiles, main and test trees")
+    void inverseCollectionNeedsOnlyItsSetter(@TempDir Path workspace) throws IOException {
+        Path entityClasses = workspace.resolve("target/classes");
+        Path generatedMain = workspace.resolve("src/main/generated/java");
+        Path generatedTests = workspace.resolve("src/test/generated/java");
+        ProcessorCompiler.compile(workspace.resolve("src/main/java"), entityClasses, null,
+                setterOnlyInverseCorpus());
+
+        CodegenPipeline pipeline = CodegenPipeline.createDefault();
+        Path metadataDir = entityClasses.resolve("exeris-metadata");
+        pipeline.run(metadataDir, generatedMain, "com.minimal");
+        pipeline.runTests(metadataDir, generatedTests, "com.minimal");
+
+        assertThat(Files.readString(generatedMain.resolve("com/minimal/handler/InvoiceHandler.java")))
+                .as("non-vacuous: the handler resets the inverse collection")
+                .contains("entity.setLines(null)");
+
+        List<String> files = new ArrayList<>();
+        for (Path root : List.of(generatedMain, generatedTests)) {
+            try (Stream<Path> tree = Files.walk(root)) {
+                tree.filter(p -> p.toString().endsWith(".java")).map(Path::toString).sorted().forEach(files::add);
+            }
+        }
+        EmittedJavac.Result result = EmittedJavac.compile(files, workspace.resolve("target/app-classes"),
+                System.getProperty("java.class.path") + File.pathSeparator + entityClasses);
+        assertThat(result.clean())
+                .as("javac output:%n%s", result.render())
+                .isTrue();
+    }
+
+    private static Map<String, String> setterOnlyInverseCorpus() {
+        return Map.of("com/minimal/domain/Invoice.java", """
+                package com.minimal.domain;
+
+                import eu.exeris.sdk.annotation.ExerisDomain;
+                import eu.exeris.sdk.annotation.Field;
+                import eu.exeris.sdk.annotation.Relationship;
+
+                import java.util.List;
+                import java.util.UUID;
+
+                @ExerisDomain(module = "minimal", path = "/invoices")
+                public class Invoice {
+
+                    private UUID id;
+
+                    @Field(label = "Number", required = true)
+                    private String number;
+
+                    @Relationship(targetEntity = InvoiceLine.class, displayField = "description", cascadeDelete = true,
+                            relationshipType = Relationship.RelationshipType.ONE_TO_MANY, mappedBy = "invoiceId")
+                    private List<InvoiceLine> lines;
+
+                    public UUID getId() { return id; }
+                    public void setId(UUID id) { this.id = id; }
+                    public String getNumber() { return number; }
+                    public void setNumber(String number) { this.number = number; }
+                    public void setLines(List<InvoiceLine> lines) { this.lines = lines; }
+                }
+                """, "com/minimal/domain/InvoiceLine.java", """
+                package com.minimal.domain;
+
+                import eu.exeris.sdk.annotation.ExerisDomain;
+                import eu.exeris.sdk.annotation.Field;
+                import eu.exeris.sdk.annotation.Relationship;
+
+                import java.util.UUID;
+
+                @ExerisDomain(module = "minimal", path = "/invoice-lines")
+                public class InvoiceLine {
+
+                    private UUID id;
+
+                    @Field(label = "Description", required = true)
+                    private String description;
+
+                    @Relationship(targetEntity = Invoice.class, displayField = "number",
+                            relationshipType = Relationship.RelationshipType.MANY_TO_ONE)
+                    private UUID invoiceId;
+
+                    public UUID getId() { return id; }
+                    public void setId(UUID id) { this.id = id; }
+                    public String getDescription() { return description; }
+                    public void setDescription(String description) { this.description = description; }
+                    public UUID getInvoiceId() { return invoiceId; }
+                    public void setInvoiceId(UUID invoiceId) { this.invoiceId = invoiceId; }
+                }
+                """);
+    }
+
     @Test
     @DisplayName("J2a: an entity carrying @Graph, @GraphProperty and @UIGroup compiles end to end")
     void entityWithGraphPropertiesAndUiGroupsCompilesEndToEnd(@TempDir Path workspace) throws IOException {

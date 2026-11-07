@@ -22,10 +22,13 @@ A regenerated tree now holds an inverse collection outside the owner's row:
   inverse no longer imports Jackson;
 - `{Entity}Handler` resets it to `null` after decoding a create or an update, after the `@Blob`
   fields, so a value a client sends never reaches the service;
-- the OpenAPI document declares it `readOnly`, an array of the target or `null`, with the
+- the OpenAPI document declares it `readOnly`, an array or `null` with no `items` (the entity's own
+  document defines no schema of the target), with the
   description `Always null: the rows are listed on GET /invoice-lines?invoiceId={id}`, and leaves it
   out of the create and update schemas. The rows are read from the target's list route with the
-  back-reference's key filter, which every list route already serves.
+  back-reference's key filter, which every list route already serves;
+- the processor requires its setter and no getter (`EXT-PROC-1034`), as for a `@Blob` field: the
+  handlers reset it, and nothing generated reads it.
 
 `mappedBy` is matched against the target's `MANY_TO_ONE` relationships back to the owner, by
 relationship name, field name, or key base: `invoiceId` and `invoice` both name
