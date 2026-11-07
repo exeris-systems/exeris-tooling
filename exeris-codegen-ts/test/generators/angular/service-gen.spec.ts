@@ -207,14 +207,40 @@ describe('ServiceGenerator Filter interface generation', () => {
     expect(content).toContain('  customerId?: string;');
   });
 
-  it('declares no search filter: the list route has no search parameter', () => {
+  it('offers search on findAll for a searchable entity and sends it trimmed, never blank', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
-      fields: [field({ name: 'name', type: 'String', searchable: true, filterable: true })],
+      fields: [
+        field({ name: 'name', type: 'String', searchable: true, filterable: true }),
+        field({ name: 'code', type: 'String', searchable: true }),
+      ],
     }), CTX)!.content;
 
-    expect(content).toContain('export interface OrderFilter {');
-    expect(content).not.toContain('search');
+    expect(content).toContain(
+      'findAll(pageRequest: PageRequest & { sort?: OrderSortField; search?: string } = {}, filter: OrderFilter = {}): Observable<Page<Order>> {',
+    );
+    expect(content).toContain('   * `search` matches a row when any of code, name contains it, ignoring case; a');
+    expect(content).toContain('    const search = pageRequest.search?.trim();');
+    expect(content).toContain("    if (search) params = params.set('search', search);");
+    // The shared PageRequest carries no search: it is part of the searchable entity's request only.
+    const pageRequest = content.match(/export interface PageRequest \{\n([\s\S]*?)\n\}/)![1];
+    expect(pageRequest).not.toContain('search');
+  });
+
+  it('offers no search for an entity with nothing searchable, and a field named search is no filter', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [
+        field({ name: 'name', type: 'String', filterable: true }),
+        field({ name: 'search', type: 'String', filterable: true }),
+        field({ name: 'status', type: 'com.example.Status', enumType: 'com.example.Status', searchable: true }),
+      ],
+    }), CTX)!.content;
+
+    expect(content).toContain('export interface OrderFilter {\n  name?: string;\n}');
+    expect(content).toContain('findAll(pageRequest: PageRequest & { sort?: OrderSortField } = {}, filter: OrderFilter = {})');
+    expect(content).not.toContain("'search'");
+    expect(content).not.toContain('search?:');
   });
 
   it('the sort keys are the sortable non-system, non-List fields, sorted by name', () => {
