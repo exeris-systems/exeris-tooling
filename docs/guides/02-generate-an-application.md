@@ -156,7 +156,7 @@ The step methods are `protected` on the flow class and do not call the entity's 
 
 ### 7. Run the emitted tests
 
-With `exeris.tests=true`, `runTests` writes tests for the handler, service and repository of each entity and for each saga flow, into `src/test/generated/java`, with recording doubles of the kernel SPI interfaces in the base package's `testsupport` package ([ADR-058](../adr/ADR-058-generated-test-emission-channel.md)). For `Order` the run writes `OrderHandlerTest`, `OrderServiceTest`, `OrderRepositoryTest` and `OrderFulfilmentFlowTest`. They need JUnit 5 and AssertJ in your test scope and nothing else.
+With `exeris.tests=true`, `runTests` writes tests for the handler, service and repository of each entity, for each saga flow and for the route policy the generated `Application` binds, into `src/test/generated/java`, with recording doubles of the kernel SPI interfaces in the base package's `testsupport` package ([ADR-058](../adr/ADR-058-generated-test-emission-channel.md)). For `Order` the run writes `OrderHandlerTest`, `OrderServiceTest`, `OrderRepositoryTest` and `OrderFulfilmentFlowTest`, and the base package gets one `ApplicationRoutePolicyTest`. They need JUnit 5 and AssertJ in your test scope and nothing else.
 
 ### 8. Commit the tree, or detach it
 

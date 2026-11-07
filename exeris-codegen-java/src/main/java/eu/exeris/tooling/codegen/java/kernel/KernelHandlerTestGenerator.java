@@ -67,6 +67,9 @@ import java.util.Optional;
  * write naming a missing row answered {@code 422} with a problem body naming the relationship, and
  * an entity another references gets a delete of a still-referenced row answered {@code 409}.
  *
+ * <p>Stream handlers: an entity with a live view, a spectate stream or a streaming action gets the
+ * cases {@link KernelHandlerStreamTests} emits, over the same service double.
+ *
  * <h2>The service double</h2>
  * <p>A nested {@code Stub<Entity>Service} subclasses the generated service and overrides the three
  * methods under test. Subclassing rather than mocking is what keeps the dependency contract at
@@ -179,8 +182,13 @@ public final class KernelHandlerTestGenerator {
                 .addJavadoc("routes, the guard paths of {@code handleCreate} /\n")
                 .addJavadoc("{@code handleUpdate} that reject before the body is read, the status\n")
                 .addJavadoc("each kind of decode failure owes, and the {@code @Validation} guards\n")
-                .addJavadoc("past a successful decode.\n")
-                .addJavadoc("<p>Requires JUnit 5 and AssertJ on the test classpath, and nothing else.\n")
+                .addJavadoc("past a successful decode.\n");
+        if (KernelHandlerStreamTests.any(metadata)) {
+            type.addJavadoc("<p>Also covers the entity's stream handlers: the frames each emits, a\n")
+                    .addJavadoc("refusal as a {@code stream-error} frame, and the stream closed with its\n")
+                    .addJavadoc("subscriptions dropped.\n");
+        }
+        type.addJavadoc("<p>Requires JUnit 5 and AssertJ on the test classpath, and nothing else.\n")
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n");
 
         ClassName bodyType = ClassName.get(
@@ -244,6 +252,14 @@ public final class KernelHandlerTestGenerator {
                     exchangeType, bodyType, stubType, basePath, tenantScoped)) {
                 type.addMethod(actionCase);
             }
+        }
+        if (KernelHandlerStreamTests.any(metadata)) {
+            String support = KernelTestSupportGenerator.supportPackage(basePackage);
+            type.addMethods(KernelHandlerStreamTests.cases(new KernelHandlerStreamTests.Scaffold(metadata,
+                    entityType, packageName,
+                    ClassName.get(support, KernelTestSupportGenerator.RECORDING_STREAM_EXCHANGE),
+                    ClassName.get(support, KernelTestSupportGenerator.RECORDING_EVENT_ENGINE),
+                    bodyType, stubType, basePath, tenantScoped)));
         }
         if (tenantScoped) {
             type.addMethod(MethodSpec.methodBuilder(AS_TENANT)

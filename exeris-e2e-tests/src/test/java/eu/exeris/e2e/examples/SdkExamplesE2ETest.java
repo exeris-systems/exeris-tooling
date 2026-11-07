@@ -93,8 +93,13 @@ class SdkExamplesE2ETest {
             "ordering", List.of("Order"),
             "presentation", List.of("Employee"));
 
-    /** The test cases the emitted tests of the application run, every one of which must pass. */
-    private static final long GENERATED_TEST_CASES = 338;
+    /**
+     * The test cases the emitted tests of the application run, every one of which must pass. The
+     * five {@code ApplicationRoutePolicyTest} cases are among them; no example entity declares
+     * access or a stream, so the route-policy test has no generated-table case and no handler test
+     * a stream case.
+     */
+    private static final long GENERATED_TEST_CASES = 343;
 
     @TempDir
     static Path scratch;

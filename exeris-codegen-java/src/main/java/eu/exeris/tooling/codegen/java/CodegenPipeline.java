@@ -22,6 +22,7 @@ import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.GeneratorRegistry;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelApplicationGenerator;
+import eu.exeris.tooling.codegen.java.kernel.KernelApplicationTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
 import eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelRepositoryGenerator;
@@ -95,6 +96,7 @@ public final class CodegenPipeline {
     private final KernelServiceTestGenerator serviceTestGenerator = new KernelServiceTestGenerator();
     private final KernelRepositoryTestGenerator repositoryTestGenerator = new KernelRepositoryTestGenerator();
     private final KernelSagaTestGenerator sagaTestGenerator = new KernelSagaTestGenerator();
+    private final KernelApplicationTestGenerator applicationTestGenerator = new KernelApplicationTestGenerator();
 
     /**
      * Creates a pipeline over the given generators and metadata reader.
@@ -589,6 +591,8 @@ public final class CodegenPipeline {
             writeFile(writer, support);
             filesGenerated++;
         }
+        writeFile(writer, applicationTestGenerator.generate(domains, basePackage));
+        filesGenerated++;
 
         for (DomainMetadata domain : domains) {
             writeFile(writer, handlerTestGenerator.generate(domain, basePackage, domains));
