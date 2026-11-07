@@ -40,5 +40,11 @@
     "since": "0.11",
     "adr": "ADR-015",
     "justification": "An inverse collection was stored as a JSON column of the owner's table, a copy that no constraint, tenant scope or write of the target kept in step, and its cascadeDelete reached no constraint. Its rows are now the target's rows: no column, index, bind or read; the handler resets it to null after decoding; OpenAPI marks it readOnly and names the child list route its rows are read from; the processor requires its setter only (EXT-PROC-1034). A List of entities that no mappedBy ties to a key of the target is refused before any write. docs/migration/0.11.0/java-29-inverse-collection-holds-no-column.md carries the steps."
+  },
+  {
+    "signature": "<Entity>Service (exeris-codegen-java): <Entity>Service(<Entity>Repository) -> <Entity>Service(<Entity>Repository, <Entity>GraphSync) for a @Graph entity that is not TENANT or UNIVERSE, whose save/update/updateFromRequest call syncToGraph and delete calls deleteFromGraph after the repository returns; + RuntimeComponents.create<Entity>GraphSync()/<entity>GraphSync() for every @Graph entity; + GraphKernelProviders.GRAPH_ENGINE in COMPOSITION_SCOPES; + <Entity>GraphSync.registerDescriptors(), called first by RuntimeLifecycle.run()",
+    "since": "0.11",
+    "adr": "ADR-070",
+    "justification": "The generated graph sync was built, registered and called by nothing, so a booted application's graph stayed empty and, on the Community SQL graph, had no tables. The service is the one seam every generated write passes through, so it now projects each write after the repository returns, and the composition root builds the graph sync and registers its descriptors at boot (ADR-070 Amendment 4). A consumer subclass or override that constructed the service with its repository alone passes the graph sync as well, and a graph failure now fails the write route; docs/migration/0.11.0/java-30-graph-sync-wired.md carries the steps."
   }
 ]

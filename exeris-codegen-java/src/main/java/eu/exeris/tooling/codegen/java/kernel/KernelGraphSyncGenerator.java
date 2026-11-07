@@ -11,6 +11,7 @@ import com.palantir.javapoet.TypeSpec;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
 import eu.exeris.tooling.codegen.java.support.DomainTypeKind;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
@@ -40,14 +41,17 @@ import java.util.stream.Collectors;
  *   <li>A {@code public static final}
  *       {@code eu.exeris.kernel.spi.graph.model.GraphNodeDescriptor}
  *       {@code NODE_DESCRIPTOR} constant listing the {@code @GraphProperty} names, or
- *       {@code GraphNodeDescriptor.create(label, sourceTable)} without any — pass it to
- *       {@code GraphEngine.registerNodes(...)} at bootstrap.</li>
+ *       {@code GraphNodeDescriptor.create(label, sourceTable)} without any.</li>
  *   <li>One {@code public static final}
  *       {@code eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor}
  *       constant per declared {@link GraphEdgeMetadata}: the full constructor when the edge
  *       declares a direction, {@code bidirectional} or a static weight, else
- *       {@code GraphEdgeDescriptor.create(sourceLabel, edgeType, targetLabel)}.
- *       Pass them to {@code GraphEngine.registerEdges(...)} at bootstrap.</li>
+ *       {@code GraphEdgeDescriptor.create(sourceLabel, edgeType, targetLabel)}.</li>
+ *   <li>{@code registerDescriptors()} — registers the node descriptor, then the edge descriptors
+ *       in declaration order, with the engine. The generated {@code RuntimeLifecycle.run()} calls
+ *       it at boot, where a relational graph engine creates the node and edge tables and from
+ *       then on cascades a node delete through the registered edges. It is a method rather than
+ *       a constructor side effect, so constructing a graph sync touches no storage.</li>
  *   <li>{@code syncToGraph(entity)} — opens a {@code GraphSession} via
  *       try-with-resources, calls {@code session.upsertNode(NODE_LABEL, id, properties)}
  *       with the encoded {@code @GraphProperty} values, or {@code null} without any, then
@@ -74,6 +78,10 @@ import java.util.stream.Collectors;
  * deleted. Edges that share a relation type share their stored relationship set and are
  * synchronised together. Any other field type is refused with {@code EXT-GEN-3003}
  * ({@code unwritableEdgeFields}).
+ * <p>
+ * The generated {@code RuntimeComponents} builds one graph sync per graph entity
+ * ({@code create<Entity>GraphSync()}), and the generated service calls it after each write of an
+ * entity that {@link #syncedByService} admits.
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
  *
@@ -199,6 +207,7 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
         }
         builder.addMethod(constructor.build());
 
+        builder.addMethod(buildRegisterDescriptors(graph, hasEdges));
         builder.addMethod(buildSyncToGraph(entityType, metadata, graph, hasEdges, hasProperties));
         builder.addMethod(buildDeleteFromGraph());
         if (hasEdges) {
@@ -213,6 +222,62 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
 
         return new GeneratedFile(packageName, className,
                 KernelScaffold.render(packageName, builder.build()), ArtifactType.GRAPH_SYNC);
+    }
+
+    /**
+     * Whether the generated service calls the entity's graph sync after each write: the entity
+     * carries graph metadata and is not tenant-partitioned. The Community graph cannot scope a
+     * traversal to the acting tenant on a request thread, where no {@code PersistenceEngine} is
+     * bound, and it writes nodes into one table that carries no tenant, so a tenant-partitioned
+     * entity's graph sync is built but left to the consumer to call.
+     *
+     * @param metadata the entity
+     * @return {@code true} when the service takes and calls a {@code <Entity>GraphSync}
+     */
+    public static boolean syncedByService(DomainMetadata metadata) {
+        return metadata.hasGraphMetadata() && !DataScopeSupport.isTenantPartitioned(metadata);
+    }
+
+    /**
+     * The emitted {@code <Entity>GraphSync} type of a graph entity.
+     *
+     * @param metadata an entity with graph metadata
+     * @return the class name in the entity's {@code .graph} package
+     */
+    public static ClassName graphSyncType(DomainMetadata metadata) {
+        return ClassName.get(metadata.packageName().replace(".domain", ".graph"),
+                metadata.entityName() + "GraphSync");
+    }
+
+    /**
+     * Whether the entity's graph sync is constructed with a {@code MemoryAllocator} beside its
+     * {@code GraphEngine}: it encodes {@code @GraphProperty} values into a loaned buffer.
+     *
+     * @param metadata an entity with graph metadata
+     * @return {@code true} when the constructor takes {@code (GraphEngine, MemoryAllocator)}
+     */
+    public static boolean takesAllocator(DomainMetadata metadata) {
+        GraphMetadata graph = metadata.graphMetadata();
+        return graph != null && graph.properties() != null && !graph.properties().isEmpty();
+    }
+
+    private static MethodSpec buildRegisterDescriptors(GraphMetadata graph, boolean hasEdges) {
+        MethodSpec.Builder method = MethodSpec.methodBuilder("registerDescriptors")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(TypeName.VOID)
+                .addJavadoc("Registers {@link #NODE_DESCRIPTOR}")
+                .addJavadoc(hasEdges ? ", then every edge descriptor in declaration order,\n" : "\n")
+                .addJavadoc("with the graph engine. A relational engine creates the backing tables when a\n")
+                .addJavadoc("persistence engine is bound, and cascades a node delete only through registered\n")
+                .addJavadoc("edges, so this runs once at boot, before the first sync.\n")
+                .addStatement("graphEngine.registerNodes($T.of(NODE_DESCRIPTOR))", LIST);
+        if (hasEdges) {
+            CodeBlock edges = graph.edges().stream()
+                    .map(edge -> CodeBlock.of("$L", edgeConstant(edge)))
+                    .collect(CodeBlock.joining(", "));
+            method.addStatement("graphEngine.registerEdges($T.of($L))", LIST, edges);
+        }
+        return method.build();
     }
 
     private FieldSpec buildEdgeDescriptor(String sourceLabel, GraphEdgeMetadata edge) {

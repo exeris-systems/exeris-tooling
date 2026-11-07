@@ -339,4 +339,31 @@ class KernelGraphSyncGeneratorTest {
     private static FieldMetadata field(String name, String type) {
         return FieldMetadata.builder(name, type).build();
     }
+
+    @Test
+    @DisplayName("registerDescriptors registers the node, then the edges in declaration order; "
+            + "an entity without edges registers its node only")
+    void registerDescriptorsRegistersNodeThenEdges() {
+        DomainMetadata withEdges = DomainMetadata.builder("Order", "com.example.domain")
+                .graphMetadata(new GraphMetadata("Order", List.of(),
+                        List.of(new GraphEdgeMetadata("ownerId", "User", "OWNED_BY"),
+                                new GraphEdgeMetadata("parentOrderId", "Order", "FOLLOWS")),
+                        List.of()))
+                .build();
+        DomainMetadata nodeOnly = DomainMetadata.builder("Order", "com.example.domain")
+                .graphMetadata(new GraphMetadata("Order", List.of(), List.of(), List.of()))
+                .build();
+
+        String edges = new KernelGraphSyncGenerator().generate(withEdges).content().replaceAll("\\s+", " ");
+        String node = new KernelGraphSyncGenerator().generate(nodeOnly).content().replaceAll("\\s+", " ");
+
+        assertThat(edges).contains("public void registerDescriptors() { "
+                + "graphEngine.registerNodes(List.of(NODE_DESCRIPTOR)); "
+                + "graphEngine.registerEdges(List.of(OWNER_ID_EDGE, PARENT_ORDER_ID_EDGE)); }");
+        assertThat(node).contains("public void registerDescriptors() { "
+                + "graphEngine.registerNodes(List.of(NODE_DESCRIPTOR)); }")
+                .doesNotContain("registerEdges");
+        // Construction registers nothing: the constructor only assigns.
+        assertThat(edges).contains("public OrderGraphSync(GraphEngine graphEngine) { this.graphEngine = graphEngine; }");
+    }
 }
