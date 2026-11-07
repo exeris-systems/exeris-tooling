@@ -58,6 +58,15 @@ The repositories turn a violation of these constraints into typed exceptions, wh
 
 `InvoiceRepository` also gains `findByCustomerId(UUID)`. Each exception's row, and the condition under which it is written, is in the [generator catalogue](../generators.md#main-root-entity-scope).
 
+`Customer` declares `name` with `@Field(searchable = true)`, so `GET /customers?search=kow` returns the customers whose name contains `kow` in any case, and the generated invoice form puts a search box in front of its customer select that asks the route for the matching customers. The match is `LOWER(name) LIKE LOWER(?)`, which the btree index on `name` does not serve. On PostgreSQL, a table large enough to need an index for it takes a trigram index in a migration of your own; the generated migrations do not create one, because it needs an extension:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX idx_customers_name_trgm ON customers USING gin (lower(name) gin_trgm_ops);
+```
+
+The parameter's rules are in [ADR-096](../adr/ADR-096-generated-list-route-query-and-page-envelope.md), Amendment 4.
+
 ### 3. Scope the rows to a tenant
 
 All three entities declare `dataScope = ExerisDomain.DataScope.TENANT` and mark their owning-tenant field with `@TenantId`. That adds a `tenant_id UUID NOT NULL` column, row-level security on the table, and a second migration that replaces the policy.

@@ -104,7 +104,7 @@ Trade-off: committed, regenerated output makes every emitter change a diff in ev
 | [ADR-070](../adr/ADR-070-generated-composition-root-seam.md) | `RuntimeComponents`, `RuntimeLifecycle` and the edge handler |
 | [ADR-105](../adr/ADR-105-generated-route-policy-emission.md) | `GeneratedRoutePolicy` and the three policy hooks |
 | [ADR-076](../adr/ADR-076-write-rejection-status.md), [ADR-090](../adr/ADR-090-reject-mismatched-tenant.md) | Write rejections and their statuses; server-owned columns kept on update |
-| [ADR-096](../adr/ADR-096-generated-list-route-query-and-page-envelope.md) | The list route's query and page envelope |
+| [ADR-096](../adr/ADR-096-generated-list-route-query-and-page-envelope.md) | The list route's query, its search over the searchable `String` fields (Amendment 4) and page envelope |
 | [ADR-044](../adr/ADR-044-tooling-sse-stream-emitter-shape.md), [ADR-075](../adr/ADR-075-generated-event-publisher-caller.md) | Stream handlers; who calls the event publisher |
 | [ADR-079](../adr/ADR-079-emitted-openapi-authentication-claim.md) | What the OpenAPI document claims about authentication |
 | [ADR-104](../adr/ADR-104-declared-primary-key-uuid-only.md), [ADR-108](../adr/ADR-108-blob-field-routes.md) | The declared `UUID` key; `@Blob` field routes |

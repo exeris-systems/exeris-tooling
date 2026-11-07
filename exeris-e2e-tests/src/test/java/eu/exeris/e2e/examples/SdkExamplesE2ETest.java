@@ -99,7 +99,7 @@ class SdkExamplesE2ETest {
      * access or a stream, so the route-policy test has no generated-table case and no handler test
      * a stream case.
      */
-    private static final long GENERATED_TEST_CASES = 343;
+    private static final long GENERATED_TEST_CASES = 352;
 
     @TempDir
     static Path scratch;

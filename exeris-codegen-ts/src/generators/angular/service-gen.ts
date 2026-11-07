@@ -11,7 +11,7 @@ import type { GeneratorConfig } from '../../config.js';
  import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
 import { enumTypeOf } from './field-render.js';
-import { filterProperties, sortableProperties, type ListQueryProperty } from './list-query.js';
+import { filterProperties, searchableProperties, sortableProperties, type ListQueryProperty } from './list-query.js';
 import { fileHeaderLines } from '../file-header.js';
 import { tsSingleQuoted } from './ts-literal.js';
 import {
@@ -105,6 +105,9 @@ export class ServiceGenerator implements CodeGenerator {
     const filterableFields = filterProperties(metadata, (field) => enumTypeOf(field, context.enums ?? []) !== undefined)
       .map((property) => ({ name: property.name, filterType: this.filterType(property, enumTypes, context) }));
     const sortFields = sortableProperties(metadata, (field) => enumTypeOf(field, context.enums ?? []) !== undefined).map((property) => property.name);
+    // The route refuses a non-blank search on an entity with nothing searchable, so the request type
+    // offers `search` only where the server reads it.
+    const searchFields = searchableProperties(metadata).map((property) => property.name);
 
     // T1: actions are served at POST {base}/{id}/actions/{kebab(name)} (matches the
     // OpenAPI path + the kernel route), and the server responds with the updated
@@ -145,6 +148,7 @@ export class ServiceGenerator implements CodeGenerator {
       softDelete: metadata.softDelete,
       filterableFields,
       sortFields,
+      searchFields,
       actions,
       systemFields,
       enumTypes,
@@ -154,7 +158,7 @@ export class ServiceGenerator implements CodeGenerator {
   }
 
   private renderService(data: Record<string, unknown>): string {
-    const { entityName, apiBasePath, apiPath, softDelete, filterableFields, sortFields, actions, enumTypes, entityImports, blobFields } = data as {
+    const { entityName, apiBasePath, apiPath, softDelete, filterableFields, sortFields, searchFields, actions, enumTypes, entityImports, blobFields } = data as {
       entityName: string;
       apiBasePath: string;
       apiPath: string;
@@ -162,6 +166,7 @@ export class ServiceGenerator implements CodeGenerator {
       softDelete: boolean;
       filterableFields: Array<{ name: string; filterType: string }>;
       sortFields: string[];
+      searchFields: string[];
       actions: Array<{
         name: string;
         description: string;
@@ -269,12 +274,25 @@ export class ServiceGenerator implements CodeGenerator {
     lines.push(`  private readonly http = inject(HttpClient);`);
     lines.push(`  private readonly baseUrl = '${apiBasePath}${apiPath}';`);
     lines.push(``);
-    lines.push(`  /** One page of rows: the route pages, sorts and filters them, and answers the page envelope. */`);
-    lines.push(`  findAll(pageRequest: PageRequest & { sort?: ${modelName}SortField } = {}, filter: ${modelName}Filter = {}): Observable<Page<${modelName}>> {`);
+    if (searchFields.length > 0) {
+      lines.push(`  /**`);
+      lines.push(`   * One page of rows: the route pages, sorts and filters them, and answers the page envelope.`);
+      lines.push(`   * \`search\` matches a row when any of ${searchFields.join(', ')} contains it, ignoring case; a`);
+      lines.push(`   * blank term is not sent.`);
+      lines.push(`   */`);
+      lines.push(`  findAll(pageRequest: PageRequest & { sort?: ${modelName}SortField; search?: string } = {}, filter: ${modelName}Filter = {}): Observable<Page<${modelName}>> {`);
+    } else {
+      lines.push(`  /** One page of rows: the route pages, sorts and filters them, and answers the page envelope. */`);
+      lines.push(`  findAll(pageRequest: PageRequest & { sort?: ${modelName}SortField } = {}, filter: ${modelName}Filter = {}): Observable<Page<${modelName}>> {`);
+    }
     lines.push(`    let params = new HttpParams();`);
     lines.push(`    if (pageRequest.page !== undefined) params = params.set('page', String(pageRequest.page));`);
     lines.push(`    if (pageRequest.size !== undefined) params = params.set('size', String(pageRequest.size));`);
     lines.push(`    if (pageRequest.sort) params = params.set('sort', \`\${pageRequest.sort},\${pageRequest.direction ?? 'asc'}\`);`);
+    if (searchFields.length > 0) {
+      lines.push(`    const search = pageRequest.search?.trim();`);
+      lines.push(`    if (search) params = params.set('search', search);`);
+    }
     lines.push(`    for (const [key, value] of Object.entries(filter)) {`);
     lines.push(`      if (value !== undefined && value !== null && value !== '') {`);
     lines.push(`        params = params.set(key, String(value));`);

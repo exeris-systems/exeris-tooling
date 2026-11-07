@@ -371,6 +371,29 @@ class OpenApiPathsBuilderTest {
     }
 
     @Test
+    @DisplayName("the list operation declares search between page and size, bounded and naming the "
+            + "searched properties, only when something is searchable")
+    void listOperationDeclaresSearchWhenSearchable() {
+        DomainMetadata metadata = DomainMetadata.builder("Customer", "com.example.domain")
+                .path("/customers")
+                .fields(List.of(
+                        eu.exeris.sdk.sourcemodel.ast.FieldMetadata.builder("name", "String").searchable(true).build(),
+                        eu.exeris.sdk.sourcemodel.ast.FieldMetadata.builder("email", "String").searchable(true).build()))
+                .build();
+
+        Operation list = OpenApiPathsBuilder.buildPaths(metadata).get("/customers").getGet();
+
+        assertThat(list.getParameters()).extracting(p -> p.getName()).containsExactly("page", "search", "size");
+        Parameter search = list.getParameters().get(1);
+        assertThat(search.getIn()).isEqualTo("query");
+        assertThat(search.getRequired()).isFalse();
+        assertThat(search.getSchema().getType()).isEqualTo("string");
+        assertThat(search.getSchema().getMaxLength()).isEqualTo(100);
+        assertThat(search.getDescription())
+                .isEqualTo("Case-insensitive substring match against any of: email, name. A blank value is no search.");
+    }
+
+    @Test
     @DisplayName("the list operation declares no parameter and no sort value for a type nothing "
             + "recognises, and a string parameter for an enum")
     void listOperationSkipsUnrecognisedTypes() {

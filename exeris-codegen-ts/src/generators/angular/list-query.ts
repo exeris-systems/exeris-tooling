@@ -1,6 +1,7 @@
 /**
  * The list route's query contract (ADR-096) as the front sends it: the parameter names, the page
- * size bounds, the page envelope, and which properties of an entity the route sorts and filters on.
+ * size and search term bounds, the page envelope, and which properties of an entity the route
+ * sorts, filters and searches on.
  *
  * The server half is `ListQuerySupport` in `exeris-codegen-java`; both are pinned to
  * `exeris-e2e-tests/src/test/resources/contract/list-query.json`. The rules here read the same
@@ -22,14 +23,18 @@ export const PAGE_PARAM = 'page';
 export const SIZE_PARAM = 'size';
 /** `<property>,<asc|desc>`. */
 export const SORT_PARAM = 'sort';
+/** One term matched case-insensitively as a substring against every searchable property. */
+export const SEARCH_PARAM = 'search';
 
 /** The page size the route serves when the request names none, and the size the list starts at. */
 export const DEFAULT_PAGE_SIZE = 20;
 /** The largest page size the route serves; a larger one is refused, not clamped. */
 export const MAX_PAGE_SIZE = 100;
+/** The longest search term the route serves, in UTF-16 code units after trimming; a longer one is refused. */
+export const MAX_SEARCH_LENGTH = 100;
 
-/** The parameter names that are never a filter. */
-export const RESERVED_PARAMS: readonly string[] = [PAGE_PARAM, SIZE_PARAM, SORT_PARAM];
+/** The parameter names that are never a filter, sorted. */
+export const RESERVED_PARAMS: readonly string[] = [PAGE_PARAM, SEARCH_PARAM, SIZE_PARAM, SORT_PARAM];
 
 /** The page envelope's members, in declaration order. */
 export const PAGE_ENVELOPE: readonly string[] = [
@@ -55,6 +60,9 @@ export const SORTABLE_SCALAR_TYPES: readonly string[] = [
   'java.time.LocalDate', 'java.time.LocalDateTime', 'java.time.OffsetDateTime',
   'java.time.ZonedDateTime', 'java.util.UUID', 'long', 'short',
 ];
+
+/** The metadata type strings a searchable property has, both spellings. */
+export const SEARCHABLE_SCALAR_TYPES: readonly string[] = ['String', 'java.lang.String'];
 
 /**
  * How the list route treats a metadata type string — the classification of `DomainTypeKind` in
@@ -129,7 +137,7 @@ function enumCandidate(type: string, kind: ListQueryKind): boolean {
   return kind === 'other' || (kind === 'unstorable' && !type.includes('<') && !type.endsWith('[]'));
 }
 
-/** One property the list route sorts or filters on. */
+/** One property the list route sorts, filters or searches on. */
 export interface ListQueryProperty {
   /** The query-parameter name of a filter, or the property a sort names. */
   readonly name: string;
@@ -218,6 +226,23 @@ export function sortableProperties(
     if (field.sortable && (SCALAR_SORT_KINDS.has(kind) || enumeration)
         && !system.has(field.name) && !found.has(field.name)) {
       found.set(field.name, { name: field.name, type: field.type, kind, field, ...(enumeration ? { enumeration } : {}) });
+    }
+  }
+  return [...found.values()].sort(byName);
+}
+
+/**
+ * The properties `search` is matched against: every field the metadata marks searchable whose type
+ * is `String` in either spelling, except a system field or a blob. An empty list means the route
+ * refuses a non-blank `search`, so the front sends none. `ListQuerySupport.searchable`.
+ */
+export function searchableProperties(metadata: DomainMetadata): ListQueryProperty[] {
+  const system = listQuerySystemFieldNames(metadata);
+  const found = new Map<string, ListQueryProperty>();
+  for (const field of metadata.fields ?? []) {
+    const kind = listQueryKind(field.type);
+    if (field.searchable && kind === 'string' && !system.has(field.name) && !found.has(field.name)) {
+      found.set(field.name, { name: field.name, type: field.type, kind, field });
     }
   }
   return [...found.values()].sort(byName);

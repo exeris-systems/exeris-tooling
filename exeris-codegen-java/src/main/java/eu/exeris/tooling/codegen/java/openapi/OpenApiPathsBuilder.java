@@ -126,9 +126,10 @@ public final class OpenApiPathsBuilder {
 
     /**
      * The list operation: the query parameters {@code <Entity>ListQuery.parse} reads — {@code page},
-     * {@code size}, {@code sort} over the entity's sortable properties, and one equality filter per
-     * filter property — and the {@code <Entity>Page} envelope. {@code sort} is declared only when
-     * something is sortable, since the route refuses it otherwise. {@code 400} is what the handler
+     * {@code search} over the entity's searchable properties, {@code size}, {@code sort} over the
+     * entity's sortable properties, and one equality filter per filter property — and the
+     * {@code <Entity>Page} envelope. {@code search} and {@code sort} are each declared only when
+     * something is searchable or sortable, since the route refuses them otherwise. {@code 400} is what the handler
      * answers for every parameter the query refuses.
      */
     private static Operation buildListOperation(DomainMetadata metadata) {
@@ -141,6 +142,15 @@ public final class OpenApiPathsBuilder {
         op.addParametersItem(queryParam(ListQuerySupport.PAGE, "Zero-based page index",
                 OpenApiSchemas.typed(new Schema<Integer>(), "integer").format("int32")
                         .minimum(BigDecimal.ZERO)._default(0)));
+        List<ListQuerySupport.Property> searchable = ListQuerySupport.searchable(metadata);
+        if (!searchable.isEmpty()) {
+            op.addParametersItem(queryParam(ListQuerySupport.SEARCH,
+                    "Case-insensitive substring match against any of: "
+                            + String.join(", ", searchable.stream().map(ListQuerySupport.Property::name).toList())
+                            + ". A blank value is no search.",
+                    OpenApiSchemas.typed(new Schema<String>(), STRING_TYPE)
+                            .maxLength(ListQuerySupport.MAX_SEARCH_LENGTH)));
+        }
         op.addParametersItem(queryParam(ListQuerySupport.SIZE, "Page size",
                 OpenApiSchemas.typed(new Schema<Integer>(), "integer").format("int32")
                         .minimum(BigDecimal.ONE).maximum(BigDecimal.valueOf(ListQuerySupport.MAX_SIZE))

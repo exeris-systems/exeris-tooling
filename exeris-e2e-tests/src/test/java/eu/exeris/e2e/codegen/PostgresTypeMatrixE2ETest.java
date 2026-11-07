@@ -73,8 +73,9 @@ import static org.assertj.core.api.Assertions.catchThrowable;
  * operation a cell: {@code insert} ({@code save}), {@code insertNull} ({@code save} with the field
  * null, then {@code findById} reads it back null — wrapper types only), {@code read}
  * ({@code findById}, value compared), {@code update}, {@code finder} ({@code findByProbe}, or its
- * absence for a {@code List}), {@code filter} and {@code sort} ({@code findPage}, and whether the type
- * is offered at all is asserted, not skipped). When {@code save} fails, the row is seeded through an
+ * absence for a {@code List}), {@code filter}, {@code sort} and {@code search} ({@code findPage}, and
+ * whether the type is offered at all is asserted, not skipped; {@code search} matches part of the
+ * value in another case). When {@code save} fails, the row is seeded through an
  * untyped SQL literal so the remaining cells are still measured. Every cell must be {@code OK}.
  *
  * <p>{@code -Dexeris.e2e.postgres.matrixReport=<file>} also writes the matrix as a Markdown table,
@@ -92,7 +93,7 @@ class PostgresTypeMatrixE2ETest {
     private static final String OK = "OK";
     private static final String NOT_OFFERED = "-";
     private static final List<String> OPERATIONS =
-            List.of("insert", "insertNull", "read", "update", "finder", "filter", "sort");
+            List.of("insert", "insertNull", "read", "update", "finder", "filter", "sort", "search");
 
     @TempDir
     static Path workspace;
@@ -245,6 +246,9 @@ class PostgresTypeMatrixE2ETest {
         if (probe.sortable()) {
             expected.put("sort", OK);
         }
+        if ("String".equals(probe.type())) {
+            expected.put("search", OK);
+        }
 
         Object repo = repository(tree, executor, probe.entity());
         Class<?> entityType = tree.loader().loadClass(BASE_PACKAGE + ".domain." + probe.entity());
@@ -330,6 +334,20 @@ class PostgresTypeMatrixE2ETest {
         row.put("sort", !sortable ? NOT_OFFERED : cell(() -> {
             page(repo, queryType, "sort=probe,desc");
             page(repo, queryType, "sort=probe,asc");
+        }));
+        @SuppressWarnings("unchecked")
+        boolean searchable = ((List<Object>) queryType.getField("SEARCHABLE").get(null)).contains("probe");
+        row.put("search", !searchable ? NOT_OFFERED : cell(() -> {
+            String part = probe.queryValue().apply(current).substring(1).toUpperCase(Locale.ROOT);
+            List<?> content = (List<?>) get(page(repo, queryType, "search=" + URLEncoder.encode(
+                    part, StandardCharsets.UTF_8)), "content");
+            if (content.stream().noneMatch(e -> id.equals(get(e, "getId")))) {
+                throw new AssertionError("search for " + part + " did not return the row (" + content.size()
+                        + " rows)");
+            }
+            if (!((List<?>) get(page(repo, queryType, "search=%25"), "content")).isEmpty()) {
+                throw new AssertionError("search for % matched a row without one");
+            }
         }));
     }
 

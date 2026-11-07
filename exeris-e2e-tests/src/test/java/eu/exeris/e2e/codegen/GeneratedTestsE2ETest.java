@@ -262,8 +262,10 @@ class GeneratedTestsE2ETest {
             // keep-alive live view and its spectate stream's 400 and 404 frames and the found row
             // held open until interrupted + 6 ApplicationRoutePolicyTest cases (the query string,
             // HEAD as GET, applicationPolicy() first, an overridden and the default
-            // unmatchedRoutes(), and Payment's declared scope answered through the fold).
-            assertThat(summary.getTestsSucceededCount()).isEqualTo(275);
+            // unmatchedRoutes(), and Payment's declared scope answered through the fold) + 6 search
+            // refusals, one per handler test: every String field here carries @Field without
+            // searchable, so no entity is searchable and each refuses a non-blank search.
+            assertThat(summary.getTestsSucceededCount()).isEqualTo(281);
         }
     }
 

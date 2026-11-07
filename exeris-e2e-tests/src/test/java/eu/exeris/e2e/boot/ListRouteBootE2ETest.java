@@ -23,7 +23,7 @@ import java.util.regex.Pattern;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The list route pages, sorts and filters in the database, on a <b>real</b> kernel boot.
+ * The list route pages, sorts, filters and searches in the database, on a <b>real</b> kernel boot.
  *
  * <p>Generator tests assert the emitted SQL fragments and the compile gate proves they compile; only
  * a statement run against an engine shows that the assembled {@code WHERE}, {@code ORDER BY} and
@@ -31,12 +31,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the envelope reaches the wire with the member names the front reads. So the whole path runs:
  *
  * <pre>
- *   @ExerisDomain + @Field(sortable / filterable) source
+ *   @ExerisDomain + @Field(sortable / filterable / searchable) source
  *        → javac + ExerisDomainProcessor      (real metadata: the processor's reading of the flags)
  *        → CodegenPipeline.run                (list query, page, repository, handler, router)
  *        → javac over the emitted tree + a consumer-style Application subclass
  *        → KernelBootstrap                    (http + persistence on in-memory H2, PostgreSQL mode)
- *        → a real socket                      (GET /lamps?…)
+ *        → a real socket                      (GET /lamps?…, GET /memos?search=…)
  * </pre>
  *
  * <p>The table is created by the harness, not by the emitted migration: the kernel applies its own
@@ -47,11 +47,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @Tag("e2e")
 @Tag("boot")
-@DisplayName("The list route pages, sorts and filters on a real kernel boot")
+@DisplayName("The list route pages, sorts, filters and searches on a real kernel boot")
 class ListRouteBootE2ETest {
 
     private static final String BASE_PACKAGE = "eu.exeris.e2e.listing";
     private static final Pattern LABEL = Pattern.compile("\"label\":\"([^\"]*)\"");
+    private static final Pattern TITLE = Pattern.compile("\"title\":\"([^\"]*)\"");
+    private static final String OK = "HTTP/1.1 200";
 
     @TempDir
     static Path workspace;
@@ -161,6 +163,58 @@ class ListRouteBootE2ETest {
     }
 
     @Test
+    @DisplayName("search matches any searchable column case-insensitively, never a column that is not "
+            + "searchable, never a soft-deleted row, and the count is the matched rows")
+    void searchMatchesCaseInsensitively() {
+        String response = memos("?search=KOW&sort=title,asc");
+
+        assertThat(response).startsWith(OK);
+        // Kowalski in the title, KOWALCZYK in the body; kowabunga sits in the unsearchable code
+        // column and kowloon in a deleted row.
+        assertThat(titles(response)).containsExactly("Kowalski report", "notes");
+        assertThat(response).contains("\"totalElements\":2");
+    }
+
+    @Test
+    @DisplayName("search combines with a filter, a sort and paging, and the totals count the matches")
+    void searchWithFilterSortAndPaging() {
+        String filtered = memos("?search=kow&kind=TASK");
+        assertThat(titles(filtered)).containsExactly("notes");
+        assertThat(filtered).contains("\"totalElements\":1");
+
+        String paged = memos("?search=kow&sort=title,asc&size=1&page=1");
+        assertThat(titles(paged)).containsExactly("notes");
+        assertThat(paged).contains("\"totalElements\":2").contains("\"totalPages\":2")
+                .contains("\"last\":true");
+    }
+
+    @Test
+    @DisplayName("%, _ and \\ in the term match only themselves")
+    void likeMetacharactersAreLiteral() {
+        String percent = memos("?search=50%25");
+        assertThat(titles(percent)).containsExactly("50% off");
+        assertThat(percent).contains("\"totalElements\":1");
+
+        String underscore = memos("?search=_");
+        assertThat(titles(underscore)).containsExactly("50 percent off");
+        assertThat(underscore).contains("\"totalElements\":1");
+
+        String backslash = memos("?search=a%5Cb");
+        assertThat(titles(backslash)).containsExactly("path a\\\\b");
+        assertThat(backslash).contains("\"totalElements\":1");
+    }
+
+    @Test
+    @DisplayName("a blank search is no search; a long or repeated one is refused")
+    void blankLongAndRepeatedSearch() {
+        assertThat(memos("?search=%20%20")).startsWith(OK).contains("\"totalElements\":6");
+        assertThat(memos("?search=")).startsWith(OK).contains("\"totalElements\":6");
+        assertThat(memos("?search=" + "x".repeat(100))).startsWith(OK).contains("\"totalElements\":0");
+        assertThat(memos("?search=" + "x".repeat(101))).startsWith("HTTP/1.1 400");
+        assertThat(memos("?search=a&search=b")).startsWith("HTTP/1.1 400");
+    }
+
+    @Test
     @DisplayName("the body decodes into the generated page record, entities and all — what the "
             + "generated client receives")
     void bodyDecodesIntoThePageRecord() throws Exception {
@@ -186,13 +240,25 @@ class ListRouteBootE2ETest {
         return RawHttp.request(booted.port(), "GET", "/lamps" + query);
     }
 
+    private static String memos(String query) {
+        return RawHttp.request(booted.port(), "GET", "/memos" + query);
+    }
+
     private static List<String> labels(String response) {
-        List<String> labels = new ArrayList<>();
-        Matcher m = LABEL.matcher(response);
+        return matches(LABEL, response);
+    }
+
+    private static List<String> titles(String response) {
+        return matches(TITLE, response);
+    }
+
+    private static List<String> matches(Pattern pattern, String response) {
+        List<String> values = new ArrayList<>();
+        Matcher m = pattern.matcher(response);
         while (m.find()) {
-            labels.add(m.group(1));
+            values.add(m.group(1));
         }
-        return labels;
+        return values;
     }
 
     private static Map<String, String> domainSources() {
@@ -243,13 +309,64 @@ class ListRouteBootE2ETest {
                     public void setLit(boolean lit) { this.lit = lit; }
                 }
                 """);
+        sources.put("eu/exeris/e2e/listing/domain/MemoKind.java",
+                """
+                package eu.exeris.e2e.listing.domain;
+
+                public enum MemoKind { NOTE, TASK }
+                """);
+        sources.put("eu/exeris/e2e/listing/domain/Memo.java",
+                """
+                package eu.exeris.e2e.listing.domain;
+
+                import eu.exeris.sdk.annotation.ExerisDomain;
+                import eu.exeris.sdk.annotation.Field;
+
+                import java.util.UUID;
+
+                @ExerisDomain(module = "listing", path = "/memos", softDelete = true)
+                public class Memo {
+
+                    private UUID id;
+
+                    @Field(label = "Title", sortable = true, searchable = true)
+                    private String title;
+
+                    // No @Field: the processor records it searchable.
+                    private String body;
+
+                    // @Field without searchable: never matched by search.
+                    @Field(label = "Code")
+                    private String code;
+
+                    @Field(label = "Kind", filterable = true)
+                    private MemoKind kind;
+
+                    private boolean deleted;
+
+                    public UUID getId() { return id; }
+                    public void setId(UUID id) { this.id = id; }
+                    public String getTitle() { return title; }
+                    public void setTitle(String title) { this.title = title; }
+                    public String getBody() { return body; }
+                    public void setBody(String body) { this.body = body; }
+                    public String getCode() { return code; }
+                    public void setCode(String code) { this.code = code; }
+                    public MemoKind getKind() { return kind; }
+                    public void setKind(MemoKind kind) { this.kind = kind; }
+                    public boolean isDeleted() { return deleted; }
+                    public void setDeleted(boolean deleted) { this.deleted = deleted; }
+                }
+                """);
         return sources;
     }
 
     /**
-     * {@code POST /seed} creates the table the emitted repository reads and writes six lamps through
-     * the emitted repository's own {@code save}, so the rows are stored the way the application
-     * stores them. Ids are fixed and ascending in label order, so id order is predictable.
+     * {@code POST /seed} creates the tables the emitted repositories read and writes six lamps and
+     * seven memos through the emitted repositories' own {@code save}, so the rows are stored the way
+     * the application stores them; the seventh memo is then deleted through {@code deleteById},
+     * which on a soft-delete entity sets its flag. Lamp ids are fixed and ascending in label order,
+     * so id order is predictable.
      */
     private static Map<String, String> harnessSources() {
         Map<String, String> sources = new LinkedHashMap<>();
@@ -273,6 +390,8 @@ class ListRouteBootE2ETest {
 
                 import eu.exeris.e2e.listing.domain.Lamp;
                 import eu.exeris.e2e.listing.domain.LampStatus;
+                import eu.exeris.e2e.listing.domain.Memo;
+                import eu.exeris.e2e.listing.domain.MemoKind;
                 import eu.exeris.kernel.core.http.routing.HttpRouter;
                 import eu.exeris.kernel.spi.http.HttpMethod;
                 import eu.exeris.kernel.spi.http.HttpStatus;
@@ -302,8 +421,30 @@ class ListRouteBootE2ETest {
                             seed(4, "d", 40, LampStatus.OFF, false);
                             seed(5, "e", 50, LampStatus.ON, true);
                             seed(6, "two words", 5, LampStatus.OFF, false);
+                            executor.executeManaged(conn -> conn.executeUpdate(
+                                    "CREATE TABLE memos (id UUID PRIMARY KEY, title VARCHAR(255), "
+                                            + "body VARCHAR(255), code VARCHAR(255), kind VARCHAR(32), "
+                                            + "deleted BOOLEAN)"));
+                            memo(1, "Kowalski report", "quarterly", "q1", MemoKind.NOTE);
+                            memo(2, "notes", "Mr KOWALCZYK called", null, MemoKind.TASK);
+                            memo(3, "50% off", null, null, MemoKind.NOTE);
+                            memo(4, "50 percent off", "_x", null, MemoKind.NOTE);
+                            memo(5, "path a\\\\b", "", null, MemoKind.TASK);
+                            memo(6, "other", "nothing", "kowabunga", MemoKind.NOTE);
+                            memo(7, "kowloon trip", "", null, MemoKind.NOTE);
+                            memoRepository().deleteById(UUID.fromString("00000000-0000-4000-8000-000000000107"));
                             exchange.respond(HttpStatus.NO_CONTENT);
                         });
+                    }
+
+                    private void memo(int n, String title, String body, String code, MemoKind kind) {
+                        Memo memo = new Memo();
+                        memo.setId(UUID.fromString("00000000-0000-4000-8000-000000000" + (100 + n)));
+                        memo.setTitle(title);
+                        memo.setBody(body);
+                        memo.setCode(code);
+                        memo.setKind(kind);
+                        memoRepository().save(memo);
                     }
 
                     private void seed(int n, String label, int watts, LampStatus status, boolean lit) {

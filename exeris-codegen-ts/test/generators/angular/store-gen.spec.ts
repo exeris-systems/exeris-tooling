@@ -269,7 +269,7 @@ describe('StoreGenerator action surface', () => {
     expect(content).toContain('async clearFilter(): Promise<void> {');
   });
 
-  it('has no search: the list route reads no search parameter', () => {
+  it('has no search: the store pages the list page, which offers no search box', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [field({ name: 'name', type: 'String', searchable: true, filterable: true })],

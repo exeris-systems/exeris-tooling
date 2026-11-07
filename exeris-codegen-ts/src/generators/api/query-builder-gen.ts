@@ -7,7 +7,8 @@
  * - Pagination support
  * - Sorting support
  *
- * The parameters are the list route's (ADR-096): its sort keys and equality filters, and no search.
+ * The parameters are the list route's (ADR-096): its sort keys and equality filters. Its `search` is
+ * offered by the entity's service.
  */
 
 import type { DomainMetadata, FieldMetadata, CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
