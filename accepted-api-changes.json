@@ -52,5 +52,11 @@
     "since": "0.11",
     "adr": "ADR-015",
     "justification": "A List field is stored as one JSON text value, and a VARCHAR(255) column held a List<UUID> of at most six keys. The column now has no declared width. The regenerated migration of an entity with a List field differs from one a database has applied; docs/migration/0.11.0/java-33-list-columns-are-text.md carries the steps."
+  },
+  {
+    "signature": "<Entity>ListQuery (exeris-codegen-java): + String search (last component), + SEARCHABLE, + MAX_SEARCH_LENGTH, five-component constructor kept; GET {base}: 'search' reserved, so a field named search is no longer a filter; + search query parameter, 400 when longer than 100 characters or non-blank on an entity with nothing searchable; OpenAPI list operation + search when searchable",
+    "since": "0.11",
+    "adr": "ADR-096",
+    "justification": "ADR-096 Amendment 4: the list route matches one case-insensitive term as a substring against the String fields @Field(searchable) marks, and every String field without @Field. A record pattern or deconstruction of <Entity>ListQuery breaks on the sixth component, while code calling the five-component constructor compiles unchanged. A field named search, which was an equality filter, is no longer one. docs/migration/0.11.0/java-31-list-route-search.md carries the steps."
   }
 ]

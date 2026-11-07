@@ -37,6 +37,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Kernel Repository Generator.
@@ -603,6 +604,10 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             repo.addMethod(buildSortColumn(ctx));
         }
         repo.addMethod(buildBindListFilter(ctx));
+        if (!ListQuerySupport.searchable(metadata).isEmpty()) {
+            repo.addMethod(buildBindSearch(ctx))
+                    .addMethod(buildContainsPattern());
+        }
 
         repo.addMethod(buildSave(ctx))
                 .addMethod(buildUpdate(ctx, false));
@@ -813,17 +818,19 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     /**
-     * The list route's query: one page of the rows the {@code <Entity>ListQuery} filters select, in
-     * its sort order, and the number of rows matched — two statements inside one
+     * The list route's query: one page of the rows the {@code <Entity>ListQuery} filters and search
+     * term select, in its sort order, and the number of rows matched — two statements inside one
      * {@code executor.query}, so both read through the same connection.
      *
      * <p><b>Nothing from the request reaches the SQL as text.</b> The statement is assembled from
      * fragments emitted here: a predicate per non-null filter component, each a fixed
      * {@code <column> = ?} (the placeholder cast to the column's type for a value bound as text,
-     * as the writes do), the {@code ORDER BY} column from {@code sortColumn}'s fixed table, and
-     * {@code LIMIT ? OFFSET ?}. Filter values, the limit and the offset are bound. The predicates are
-     * appended and bound by walking the filter components in the same emitted order, so bind index
-     * <em>i</em> is predicate <em>i</em> by construction.
+     * as the writes do), then, when the query has a search term, one fixed
+     * {@code (LOWER(<column>) LIKE LOWER(?) ESCAPE '\' OR …)} over the searchable columns, the
+     * {@code ORDER BY} column from {@code sortColumn}'s fixed table, and {@code LIMIT ? OFFSET ?}.
+     * Filter values, the search pattern, the limit and the offset are bound. The predicates are
+     * appended and bound in the same emitted order — filters, then search — so bind index
+     * <em>i</em> is placeholder <em>i</em> by construction.
      *
      * <p>{@code id} closes every {@code ORDER BY}, so rows that tie on the sort column keep one order
      * from page to page and a row cannot appear on two pages or on none.
@@ -843,10 +850,11 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .addModifiers(Modifier.PUBLIC)
                 .returns(pageType)
                 .addParameter(queryType, "query")
-                .addJavadoc("One page of rows matching {@code query}'s filters, in its sort order, with the\n")
-                .addJavadoc("total number of matching rows.\n")
+                .addJavadoc("One page of rows matching {@code query}'s filters and search term, in its sort\n")
+                .addJavadoc("order, with the total number of matching rows.\n")
                 .addJavadoc("\n")
-                .addJavadoc("@param query the page, sort and filters; already validated by its constructor\n")
+                .addJavadoc("@param query the page, sort, filters and search term; already validated by its\n")
+                .addJavadoc("             constructor\n")
                 .addJavadoc("@return the page\n")
                 .addStatement("$T filter = query.filter()", filterType)
                 .addStatement("$T<String> predicates = new $T<>()", LIST_TYPE, ARRAY_LIST);
@@ -859,6 +867,12 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                             + SqlColumnTypes.placeholder(filter.kind(), filter.javaType()))
                     .endControlFlow();
         }
+        List<ListQuerySupport.Property> searchable = ListQuerySupport.searchable(metadata);
+        if (!searchable.isEmpty()) {
+            method.beginControlFlow("if (query.search() != null)")
+                    .addStatement("predicates.add($S)", searchPredicate(searchable))
+                    .endControlFlow();
+        }
         method.addStatement("String where = predicates.isEmpty() ? $S : $S + String.join($S, predicates)",
                 "", " WHERE ", " AND ");
         if (ListQuerySupport.sortable(metadata).isEmpty()) {
@@ -869,6 +883,9 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                     " ORDER BY " + PrimaryKeys.column(metadata), " ORDER BY ",
                     " DESC, " + PrimaryKeys.column(metadata), " ASC, " + PrimaryKeys.column(metadata));
         }
+        String binds = searchable.isEmpty()
+                ? "bindListFilter(stmt, filter)"
+                : "bindSearch(stmt, query.search(), bindListFilter(stmt, filter))";
         method.addStatement("String countSql = $S + where", "SELECT COUNT(*) FROM " + ctx.table())
                 .addStatement("String pageSql = $S + where + order + $S",
                         "SELECT " + selectCols + " FROM " + ctx.table(), " LIMIT ? OFFSET ?")
@@ -876,14 +893,14 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                         return executor.query(conn -> {
                             long total;
                             try ($T stmt = conn.prepare(countSql)) {
-                                bindListFilter(stmt, filter);
+                                $L;
                                 try ($T qr = stmt.executeQuery()) {
                                     total = qr.next() ? qr.row().getLong(0) : 0L;
                                 }
                             }
                             $T<$T> content = new $T<>();
                             try ($T stmt = conn.prepare(pageSql)) {
-                                int next = bindListFilter(stmt, filter);
+                                int next = $L;
                                 stmt.bindInt(next, query.size());
                                 stmt.bindLong(next + 1, (long) query.page() * query.size());
                                 try ($T qr = stmt.executeQuery()) {
@@ -894,10 +911,61 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                             }
                             return $T.of(content, total, query.page(), query.size());
                         })""",
-                        PERSISTENCE_STATEMENT, QUERY_RESULT,
+                        PERSISTENCE_STATEMENT, binds, QUERY_RESULT,
                         LIST_TYPE, ctx.entityType(), ARRAY_LIST,
-                        PERSISTENCE_STATEMENT, QUERY_RESULT, pageType);
+                        PERSISTENCE_STATEMENT, binds, QUERY_RESULT, pageType);
         return method.build();
+    }
+
+    /**
+     * {@code (LOWER(a) LIKE LOWER(?) ESCAPE '\' OR LOWER(b) LIKE LOWER(?) ESCAPE '\')}: a row
+     * matches when any searchable column contains the bound pattern, both sides folded by the
+     * engine's {@code LOWER}. One placeholder per column, in property-name order — the order
+     * {@code bindSearch} binds them in. The shape is the expression a consumer's index on
+     * {@code lower(<column>)} serves.
+     */
+    static String searchPredicate(List<ListQuerySupport.Property> searchable) {
+        return searchable.stream()
+                .map(property -> "LOWER(" + property.column() + ") LIKE LOWER(?) ESCAPE '\\'")
+                .collect(Collectors.joining(" OR ", "(", ")"));
+    }
+
+    /**
+     * Binds the search pattern once per searchable column from {@code index}, when there is a term,
+     * and returns the next free index — the placeholders {@code findPage} appended after the filters.
+     */
+    private MethodSpec buildBindSearch(Context ctx) {
+        int columns = ListQuerySupport.searchable(ctx.metadata()).size();
+        return MethodSpec.methodBuilder("bindSearch")
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(TypeName.INT)
+                .addParameter(PERSISTENCE_STATEMENT, "stmt")
+                .addParameter(String.class, "search")
+                .addParameter(TypeName.INT, "index")
+                .beginControlFlow("if (search == null)")
+                .addStatement("return index")
+                .endControlFlow()
+                .addStatement("String pattern = containsPattern(search)")
+                .beginControlFlow("for (int i = 0; i < $L; i++)", columns)
+                .addStatement("stmt.bindString(index + i, pattern)")
+                .endControlFlow()
+                .addStatement("return index + $L", columns)
+                .build();
+    }
+
+    /**
+     * {@code %<term>%} with the term's {@code LIKE} metacharacters escaped by {@code \}, so a
+     * {@code %} or {@code _} the caller typed matches only itself. The backslash is escaped first,
+     * so no escape is doubled; every replacement is a literal one.
+     */
+    private static MethodSpec buildContainsPattern() {
+        return MethodSpec.methodBuilder("containsPattern")
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(String.class)
+                .addParameter(String.class, "term")
+                .addStatement("return $S + term.replace($S, $S).replace($S, $S).replace($S, $S) + $S",
+                        "%", "\\", "\\\\", "%", "\\%", "_", "\\_", "%")
+                .build();
     }
 
     /**

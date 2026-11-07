@@ -16,6 +16,7 @@ slug: adr/ADR-096
   `BigDecimal` or `LocalDate` filter binds through a cast placeholder)
   · amended 2026-11-07 (Amendment 3 — a system role's field is excluded only while the entity's flag
   switches the role on)
+  · amended 2026-11-07 (Amendment 4 — the list route reads `search`)
 - **Deciders:** the founder (server-side paging in 0.9.0; parameter strictness; system fields;
   size bounds)
 - **Repo:** `exeris-tooling`
@@ -363,3 +364,97 @@ and the list view's sort and filter controls follow.
   version and creation-time columns and filters on its version.
 - `system-columns.spec.ts` and `list-query-contract.spec.ts` (exeris-codegen-ts) — the TypeScript
   roles, sort keys and filters follow the same flags.
+
+## Amendment 4 — The list route reads `search` (2026-11-07)
+
+**Status:** Accepted *(adds one parameter to the grammar of obligation 2; supersedes the sentence
+"`search` is not a parameter of this route" in obligation 3 and the "Search" item of What is NOT in
+scope; adds `search` to the reserved names and the searchable set to obligation 5; extends the
+`WHERE` of obligation 6, the types of obligation 8, the contract file of obligation 9 and the
+operation of obligation 10. Paging, sort, the envelope, tenant visibility and every other
+obligation are unchanged.)*
+
+A relationship picker in the generated form requests one page of the target's list route at the
+maximum size, so a target with more than `MAX_SIZE` rows offers only its first page. Equality
+filters cannot reach a row by part of its name. The route therefore reads one free-text term.
+
+From this amendment:
+
+- **The parameter.**
+  - `search=<term>`, at most once per request. The value is percent-decoded like every other
+    parameter and stripped of leading and trailing whitespace (`String.strip`).
+  - A value that is empty after stripping means no search, the same as an absent parameter.
+  - The route answers `400` before the service is reached when the stripped term is longer than
+    `100` characters (`<Entity>ListQuery.MAX_SEARCH_LENGTH`), or when a non-blank term is sent to
+    an entity with no searchable property.
+  - `search` joins `page`, `size` and `sort` among the reserved names. A field named `search` is
+    not a filter.
+- **Which properties.** A property is searchable when the metadata marks the field searchable
+  (`@Field(searchable = true)`, and every field without `@Field`, which the processor and the SDK
+  reader both record as searchable) and its type is `String` in either spelling. The system fields
+  of obligation 5 and fields that are no column are never searchable. No other type is searchable:
+  an enum is filtered by its constant, and a UUID, a number or a date is not text a person types a
+  part of. `ListQuerySupport.searchable` is the one table for every Java artefact, sorted by name,
+  and `list-query.ts` `searchableProperties` applies the same rule.
+- **The match.** A row matches when any searchable column contains the term, compared
+  case-insensitively. The repository appends one fixed predicate to the `WHERE` of obligation 6,
+  after the filter predicates and joined to them with `AND`:
+  `(LOWER(<col1>) LIKE LOWER(?) ESCAPE '\' OR LOWER(<col2>) LIKE LOWER(?) ESCAPE '\' …)`.
+  The columns are in property-name order. The term is bound once per column as `%<term>%`, after
+  `\`, `%` and `_` in it are escaped with `\`. A `%` or `_` in the term therefore matches only
+  itself, and no request text is placed in the statement. A `NULL` column does not match. The term
+  is a single phrase and is not split on spaces.
+- **Case folding** is the engine's `LOWER` on both sides, under the database's character type. It
+  is exact for ASCII; for other characters the database decides. The generated code performs no
+  case conversion of its own.
+- **Count, paging and sort.** The count and the page read the same `WHERE`, so `totalElements` and
+  `totalPages` count the rows the search and the filters matched. The order is obligation 6's
+  `sort` with the primary key as the tiebreak. There is no relevance order.
+- **Visibility.** The search binds no tenant and no shared scope. It reads what the session's
+  row-level-security policy shows, under the soft-delete predicate, exactly as obligation 7 states
+  for the list.
+- **Indexes.** The generated migration emits no index for the match. A substring match cannot use
+  the btree index the migration already writes on a searchable column. The index that can serve
+  it, a trigram index on `lower(<column>)`, needs a database extension a generated migration cannot
+  portably create. The predicate's shape above is part of this contract so that an application's
+  own `CREATE INDEX … USING gin (lower(<column>) gin_trgm_ops)` serves it.
+- **Types (obligation 8).**
+  - `<Entity>ListQuery` gains a last component `String search` (`null` meaning no search) and the
+    constants `SEARCHABLE` and `MAX_SEARCH_LENGTH`.
+  - A constructor without `search` remains and passes `null`.
+  - `toQueryString()` writes `search` when it is set, and the generated client sends it.
+- **OpenAPI (obligation 10).** The list operation declares `search` (`string`, `maxLength: 100`,
+  naming the searched properties) between `page` and `size` when the entity has a searchable
+  property, and omits it otherwise.
+- **The front.** The TypeScript service offers `search` on `findAll` only for an entity with a
+  searchable property, and sends it trimmed and only when it is not blank. The relationship picker
+  of a searchable target puts a search box in front of its select and sends the typed term through
+  `search` at the maximum page size, 250 ms after typing pauses, so it reaches any row a term
+  matches. A target with no searchable property keeps the first-page picker. No list page offers a
+  search box. These are `exeris-codegen-ts` changes classified under ADR-092.
+
+`contract/list-query.json` (obligation 9) gains `search` in `reserved`, a `parameters.search` entry
+(meaning, `maxLength`, the match and the escaped characters), the `properties.searchable` rule,
+`searchableScalarTypes` (`String`, `java.lang.String`) and the three new `400` cases.
+`ListQueryContractE2ETest` and `list-query-contract.spec.ts` hold both emitters to it.
+
+**Reversed by:** a consumer whose search a single case-insensitive substring cannot serve (word or
+relevance matching, a non-`String` property), or a measured search whose scan cost on its data
+volume breaks its latency budget with an index on `lower(<column>)` in place. Either supersedes this
+amendment's match and index clauses.
+
+Verification:
+
+- `ListQuerySupportTest` pins the searchable set and the reserved names.
+- `KernelListQueryGeneratorTest` pins the parse, the strip, the bound and the refusals.
+- `KernelRepositoryGeneratorTest` pins the predicate, its place after the filters and the bind order.
+- `OpenApiPathsBuilderTest` pins the parameter.
+- The emitted handler and repository tests (ADR-058) carry a search case and a refusal per entity,
+  run by `GeneratedTestsE2ETest` and `SdkExamplesE2ETest`.
+- `ListRouteBootE2ETest` matches case-insensitively and matches `%`, `_` and `\` literally on H2. It
+  combines search with a filter, sort and paging, counts the matched rows, excludes a soft-deleted
+  row and a column that is not searchable, and drives the refusals.
+- `PostgresTypeMatrixE2ETest` and `TenantIsolationPostgresBootE2ETest` (opt-in) repeat the match on
+  PostgreSQL 16 and show that a search does not return a row the tenant policy hides.
+- `list-query-contract.spec.ts`, `service-gen.spec.ts` and `form-gen.spec.ts` hold the service and
+  the picker to the contract file.

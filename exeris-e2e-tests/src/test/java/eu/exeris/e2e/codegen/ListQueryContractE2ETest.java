@@ -52,9 +52,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * this test proves the Java side states exactly it — the generated list query (by running it), the
  * generated page record, the OpenAPI document and the support constants every Java emitter reads.
  *
- * <p>The emitted tree is built through the real processor, so the sortable and filterable sets
- * asserted here are the processor's reading of {@code @Field(sortable / filterable)} and of
- * {@code @Relationship}, not hand-built metadata.
+ * <p>The emitted tree is built through the real processor, so the sortable, filterable and
+ * searchable sets asserted here are the processor's reading of
+ * {@code @Field(sortable / filterable / searchable)} and of {@code @Relationship}, not hand-built
+ * metadata.
  */
 @Tag("e2e")
 @Tag("codegen")
@@ -105,7 +106,13 @@ class ListQueryContractE2ETest {
                 .isEqualTo(ListQuerySupport.MAX_SIZE)
                 .isEqualTo(queryType.getField("MAX_SIZE").getInt(null));
         assertThat(strings(contract.get("reserved"))).isEqualTo(ListQuerySupport.RESERVED)
-                .containsExactly(ListQuerySupport.PAGE, ListQuerySupport.SIZE, ListQuerySupport.SORT);
+                .containsExactly(ListQuerySupport.PAGE, ListQuerySupport.SEARCH, ListQuerySupport.SIZE,
+                        ListQuerySupport.SORT);
+        assertThat(contract.at("/parameters/search/maxLength").asInt())
+                .isEqualTo(ListQuerySupport.MAX_SEARCH_LENGTH)
+                .isEqualTo(queryType.getField("MAX_SEARCH_LENGTH").getInt(null));
+        assertThat(strings(contract.get("searchableScalarTypes")))
+                .isEqualTo(ListQuerySupport.searchableScalarTypes());
         assertThat(strings(contract.get("filterableScalarTypes")))
                 .isEqualTo(ListQuerySupport.filterableScalarTypes());
         assertThat(strings(contract.get("sortableScalarTypes")))
@@ -130,13 +137,28 @@ class ListQueryContractE2ETest {
                 // the field and the relationship; price and status: @Field(filterable); grade: an
                 // enum without @Field. name is sortable only, note neither.
                 .containsExactly("active", "customerId", "grade", "price", "status");
+        // name: @Field(searchable); note: @Field without it; the rest are no String or system fields.
+        assertThat((List<Object>) queryType.getField("SEARCHABLE").get(null)).containsExactly("name");
+    }
+
+    @Test
+    @DisplayName("the repository matches the contract's predicate shape and escapes exactly its characters")
+    void searchMatchesTheContract() throws Exception {
+        assertThat(contract.at("/parameters/search/match").asString())
+                .isEqualTo("LOWER(column) LIKE LOWER('%' || escaped term || '%') ESCAPE '\\'");
+        assertThat(strings(contract.at("/parameters/search/escaped"))).containsExactly("\\", "%", "_");
+        String repository = Files.readString(app.generatedRoot()
+                .resolve("eu/exeris/e2e/catalog/repository/ProductRepository.java"));
+        assertThat(repository)
+                .contains("(LOWER(name) LIKE LOWER(?) ESCAPE '\\\\')")
+                .contains("term.replace(\"\\\\\", \"\\\\\\\\\").replace(\"%\", \"\\\\%\").replace(\"_\", \"\\\\_\")");
     }
 
     @Test
     @DisplayName("parse reads the format the contract states, and toQueryString writes it back")
     void parseAndWriteBack() throws Exception {
         Object query = parse("page=2&size=5&sort=price,desc&status=ACTIVE&active=true"
-                + "&customerId=" + CUSTOMER_ID + "&price=9.50");
+                + "&customerId=" + CUSTOMER_ID + "&price=9.50&search=%20Lamp%2050%25%20%26%20more+");
 
         assertThat(component(query, "page")).isEqualTo(2);
         assertThat(component(query, "size")).isEqualTo(5);
@@ -147,6 +169,8 @@ class ListQueryContractE2ETest {
         assertThat(component(filter, "active")).isEqualTo(true);
         assertThat(component(filter, "customerId")).hasToString(CUSTOMER_ID);
         assertThat(component(filter, "price")).isEqualTo(new BigDecimal("9.50"));
+        // Percent-decoded, then stripped.
+        assertThat(component(query, "search")).isEqualTo("Lamp 50% & more");
 
         String written = (String) queryType.getMethod("toQueryString").invoke(query);
         assertThat(parse(written)).isEqualTo(query);
@@ -155,6 +179,12 @@ class ListQueryContractE2ETest {
         assertThat(component(defaults, "page")).isEqualTo(contract.at("/parameters/page/default").asInt());
         assertThat(component(defaults, "size")).isEqualTo(contract.at("/parameters/size/default").asInt());
         assertThat(component(defaults, "sort")).isNull();
+        assertThat(component(defaults, "search")).isNull();
+        // A blank term is no search.
+        assertThat(component(parse("search=%20%20"), "search")).isNull();
+        assertThat(component(parse("search="), "search")).isNull();
+        String longest = "x".repeat(contract.at("/parameters/search/maxLength").asInt());
+        assertThat(component(parse("search=" + longest), "search")).isEqualTo(longest);
         // The bare property sorts ascending; the direction is case-insensitive.
         assertThat(component(parse("sort=name"), "descending")).isEqualTo(false);
         assertThat(component(parse("sort=name,DESC"), "descending")).isEqualTo(true);
@@ -162,10 +192,10 @@ class ListQueryContractE2ETest {
 
     @Test
     @DisplayName("everything the contract lists as refused is refused with IllegalArgumentException")
-    void refusals() {
+    void refusals() throws Exception {
         int maximum = contract.at("/parameters/size/maximum").asInt();
         for (String raw : List.of(
-                "search=lamp",                       // an unknown parameter name
+                "colour=red",                        // an unknown parameter name
                 "page=1&page=2",                     // a repeated parameter
                 "sort=status,asc",                   // not sortable
                 "sort=name,up",                      // a direction other than asc or desc
@@ -176,9 +206,22 @@ class ListQueryContractE2ETest {
                 "page=-1",
                 "size=0",
                 "size=" + (maximum + 1),
-                "page=%zz")) {                       // malformed percent-encoding
+                "page=%zz",                          // malformed percent-encoding
+                "search=a&search=b",                 // a repeated search
+                "search=" + "x".repeat(contract.at("/parameters/search/maxLength").asInt() + 1))) {
             assertThatThrownBy(() -> parse(raw)).as(raw).isInstanceOf(IllegalArgumentException.class);
         }
+        // A non-blank search on an entity with no searchable property; a blank one is no search.
+        Class<?> customerQuery = app.loader().loadClass(BASE_PACKAGE + ".repository.CustomerListQuery");
+        assertThat((List<?>) customerQuery.getField("SEARCHABLE").get(null)).isEmpty();
+        assertThatThrownBy(() -> {
+            try {
+                customerQuery.getMethod("parse", String.class).invoke(null, "search=ada");
+            } catch (InvocationTargetException e) {
+                throw e.getCause();
+            }
+        }).isInstanceOf(IllegalArgumentException.class);
+        assertThat(customerQuery.getMethod("parse", String.class).invoke(null, "search=%20")).isNotNull();
     }
 
     @Test
@@ -211,12 +254,16 @@ class ListQueryContractE2ETest {
         Operation list = OpenApiPathsBuilder.buildPaths(productMetadata).get("/products").getGet();
 
         assertThat(list.getParameters()).extracting(Parameter::getName)
-                .containsExactly("page", "size", "sort", "active", "customerId", "grade", "price", "status");
+                .containsExactly("page", "search", "size", "sort", "active", "customerId", "grade", "price",
+                        "status");
         assertThat(list.getParameters()).extracting(Parameter::getIn).containsOnly("query");
-        Parameter size = list.getParameters().get(1);
+        Parameter search = list.getParameters().get(1);
+        assertThat(search.getSchema().getMaxLength()).isEqualTo(contract.at("/parameters/search/maxLength").asInt());
+        assertThat(search.getDescription()).contains("any of: name.");
+        Parameter size = list.getParameters().get(2);
         assertThat(size.getSchema().getDefault()).isEqualTo(contract.at("/parameters/size/default").asInt());
         assertThat(size.getSchema().getMaximum().intValue()).isEqualTo(contract.at("/parameters/size/maximum").asInt());
-        assertThat(list.getParameters().get(2).getSchema().getEnum())
+        assertThat(list.getParameters().get(3).getSchema().getEnum())
                 .containsExactly("customerId,asc", "customerId,desc", "grade,asc", "grade,desc",
                         "name,asc", "name,desc", "price,asc", "price,desc");
         assertThat(list.getResponses()).containsOnlyKeys("200", "400", "500");
@@ -425,7 +472,7 @@ class ListQueryContractE2ETest {
 
                     private Instant updatedAt;
 
-                    @Field(label = "Name", sortable = true)
+                    @Field(label = "Name", sortable = true, searchable = true)
                     private String name;
 
                     @Field(label = "Price", sortable = true, filterable = true)

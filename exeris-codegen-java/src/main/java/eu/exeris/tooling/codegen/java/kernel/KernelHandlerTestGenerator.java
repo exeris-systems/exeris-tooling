@@ -409,7 +409,7 @@ public final class KernelHandlerTestGenerator {
      * the parse rather than a status alone: a handler that answered {@code 200} while dropping the
      * page or the filter on the floor would pass a status check. The refusals assert the service was
      * never reached. A sort and a filter case are emitted only for an entity that has a sortable
-     * property, and a filter whose value a literal can be written for.
+     * property, and a filter whose value a literal can be written for; a search case for a searchable one.
      */
     private void addListTests(TypeSpec.Builder type, DomainMetadata metadata, ClassName entityType,
                               ClassName handlerType, ClassName exchangeType, ClassName stubType,
@@ -471,6 +471,7 @@ public final class KernelHandlerTestGenerator {
                             ASSERTIONS, filter.name(), filterSample(filter))
                     .build()));
 
+        addSearchTests(type, metadata, handlerType, exchangeType, stubType, basePath, tenantScoped);
         refusal(type, "handleGetAllRespondsBadRequestOnAnUnknownParameter",
                 "A name the route does not read is refused, not ignored: a mistyped filter would\n"
                         + "otherwise answer every row as if it had matched.\n",
@@ -483,6 +484,24 @@ public final class KernelHandlerTestGenerator {
         refusal(type, "handleGetAllRespondsBadRequestOnASizeAboveTheMaximum",
                 null, basePath + "?size=" + (ListQuerySupport.MAX_SIZE + 1), handlerType, exchangeType,
                 stubType, tenantScoped);
+    }
+
+    private void addSearchTests(TypeSpec.Builder type, DomainMetadata metadata, ClassName handlerType,
+                                ClassName exchangeType, ClassName stubType, String base, boolean tenant) {
+        boolean searchable = !ListQuerySupport.searchable(metadata).isEmpty();
+        if (searchable) {
+            type.addMethod(test("handleGetAllPassesTheRequestedSearchStripped")
+                    .addStatement("$T service = new $T()", stubType, stubType)
+                    .addStatement("$T handler = newHandler(service)", handlerType)
+                    .addStatement("$T exchange = $T.get($S)", exchangeType, exchangeType, base + "?search=%20Sample%20")
+                    .addStatement(invoke("handleGetAll", tenant))
+                    .addStatement("$T.assertThat(service.listQuery.search()).isEqualTo($S)", ASSERTIONS, "Sample")
+                    .build());
+        }
+        refusal(type, searchable ? "handleGetAllRespondsBadRequestOnASearchAboveTheMaximumLength"
+                        : "handleGetAllRespondsBadRequestOnASearchWithNothingSearchable", null,
+                base + "?search=" + "x".repeat(searchable ? ListQuerySupport.MAX_SEARCH_LENGTH + 1 : 1),
+                handlerType, exchangeType, stubType, tenant);
     }
 
     private void refusal(TypeSpec.Builder type, String name, String javadoc, String target,

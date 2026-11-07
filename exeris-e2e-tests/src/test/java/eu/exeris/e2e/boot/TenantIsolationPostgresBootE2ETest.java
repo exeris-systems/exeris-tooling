@@ -202,7 +202,7 @@ class TenantIsolationPostgresBootE2ETest {
 
     @Test
     @DisplayName("another tenant's row is 404 on GET, PUT, the respond-once @Action and the action stream's "
-            + "frame, and absent from the list")
+            + "frame, and absent from the list and its search")
     void anotherTenantsRowIsInvisible() throws Exception {
         assertThat(get("/ledgers/" + ledgerA, as(TENANT_B))).startsWith("HTTP/1.1 404");
         assertThat(put("/ledgers/" + ledgerA, "{\"label\":\"overwritten\"}", as(TENANT_B))).startsWith("HTTP/1.1 404");
@@ -212,6 +212,9 @@ class TenantIsolationPostgresBootE2ETest {
                 .containsExactly("event: stream-error",
                         "data: {\"type\":\"about:blank\",\"title\":\"Not Found\",\"status\":404}", "");
         assertThat(get("/ledgers", as(TENANT_B))).contains(ledgerB).doesNotContain(ledgerA);
+        assertThat(get("/ledgers?search=ALPH", as(TENANT_B))).as("a search reads what the policy shows")
+                .startsWith("HTTP/1.1 200").contains("\"totalElements\":0").doesNotContain(ledgerA);
+        assertThat(get("/ledgers?search=ALPH", as(TENANT_A))).contains(ledgerA).contains("\"totalElements\":1");
 
         assertThat(get("/ledgers/" + ledgerA, as(TENANT_A))).as("tenant A's row is untouched")
                 .startsWith("HTTP/1.1 200").contains("\"label\":\"alpha\"");
@@ -394,7 +397,7 @@ class TenantIsolationPostgresBootE2ETest {
 
                     private UUID id;
 
-                    @Field(label = "Label", required = true)
+                    @Field(label = "Label", required = true, searchable = true)
                     private String label;
 
                     @Field(label = "Tenant")
