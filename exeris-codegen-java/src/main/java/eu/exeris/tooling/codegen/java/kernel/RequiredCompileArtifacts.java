@@ -22,8 +22,9 @@ import java.util.Objects;
  *       {@code HttpRouter} and {@code TransactionOrchestrator} from Core.</li>
  *   <li>{@code eu.exeris:exeris-sdk-composition-runtime} — when the build is composed (at least one
  *       {@code @CapabilityModule}): {@code Application} imports {@code CompositionConductor}.</li>
- *   <li>{@code tools.jackson.core:jackson-databind} — when some entity has a {@code List<X>} field:
- *       its repository imports Jackson 3 ({@code KernelRepositoryGenerator.importsJackson}).</li>
+ *   <li>{@code tools.jackson.core:jackson-databind} — when some entity has a {@code List<X>} column
+ *       (an inverse collection is none): its repository imports Jackson 3
+ *       ({@code KernelRepositoryGenerator.importsJackson}).</li>
  *   <li>{@code org.junit.jupiter:junit-jupiter-api} and {@code org.assertj:assertj-core} — for the
  *       generated tests, the only two libraries ADR-058 lets them import.</li>
  * </ul>
@@ -105,7 +106,8 @@ public final class RequiredCompileArtifacts {
         }
         if (domains.stream().anyMatch(KernelRepositoryGenerator::importsJackson)) {
             required.add(new Requirement("tools.jackson.core", "jackson-databind", Classpath.MAIN,
-                    "the generated repository of an entity with a List<X> field"));
+                    "the generated repository of an entity with a List<X> column (an inverse"
+                            + " collection is none)"));
         }
         return required;
     }

@@ -548,7 +548,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                     .initializer("new $T()", OBJECT_MAPPER)
                     .build());
             // The import above is a compile requirement no emitted pom declares. Appended after
-            // DO NOT EDIT, and only for an entity with a List<X> field.
+            // DO NOT EDIT, and only for an entity with a List<X> column.
             repo.addJavadoc("<p>Compile requirement: {@code List<X>} fields are persisted as JSON\n")
                     .addJavadoc("through Jackson 3 ({@code tools.jackson.databind} /\n")
                     .addJavadoc("{@code tools.jackson.core}). Neither {@code exeris-kernel-spi} nor\n")

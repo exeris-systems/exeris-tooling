@@ -159,8 +159,10 @@ public final class OpenApiComponentsBuilder {
     /**
      * An inverse collection as the entity's JSON carries it: always {@code null}, since its rows are
      * held by the target's table and the generated application never fills it, and so
-     * {@code readOnly}. The description names the target's list route and the filter that lists the
-     * rows of one entity: the back-reference's key parameter ({@code <base>Id}).
+     * {@code readOnly}. It declares no {@code items}: the document of one entity defines no schema of
+     * another, and a {@code $ref} to the target would not resolve in it. The description names the
+     * target's list route and the filter that lists the rows of one entity: the back-reference's key
+     * parameter ({@code <base>Id}).
      */
     private static Schema<?> buildInverseCollectionSchema(DomainMetadata metadata, FieldMetadata field,
                                                           RelationshipMetadata inverse, List<DomainMetadata> build) {
@@ -168,7 +170,6 @@ public final class OpenApiComponentsBuilder {
         String targetName = target.map(DomainMetadata::entityName).orElse(inverse.targetEntity());
         Schema<Object> schema = OpenApiSchemas.typed(new Schema<>(), ARRAY);
         schema.setTypes(new LinkedHashSet<>(List.of(ARRAY, "null")));
-        schema.setItems(new Schema<>().$ref("#/components/schemas/" + targetName));
         schema.setReadOnly(true);
         String route = target
                 .flatMap(domain -> ForeignKeys.backReference(metadata, inverse, build)
