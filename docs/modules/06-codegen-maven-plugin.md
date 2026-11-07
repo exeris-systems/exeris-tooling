@@ -41,7 +41,7 @@ Runs `CodegenPipeline.run`, under `exeris.tests` `runTests`, and under `exeris.i
 
 When `verify-capabilities` is bound at `process-classes` or later, a capability-graph failure here degrades to a warning, the previous `cap-manifest.json` is kept, and the later gate decides on fresh metadata. Without that gate the failure stays fatal here.
 
-After writing, the goal compares the artifacts the generated code imports (`RequiredCompileArtifacts`) with the dependencies Maven collected for the module, and warns with `EXT-PLUG-2004` for each one absent. The check reads coordinates from dependency collection and downloads nothing.
+After writing, the goal compares the artifacts the generated code imports, plus H2, which the generated integration tests need at test runtime (`RequiredCompileArtifacts`), with the dependencies Maven collected for the module, and warns with `EXT-PLUG-2004` for each one absent. The check reads coordinates from dependency collection and downloads nothing.
 
 ### `verify-capabilities`
 
@@ -68,7 +68,7 @@ None: build-time. Each goal runs once per module per build.
 | `generate` | Writing the generated-test tree fails | Error `EXT-PLUG-2003` |
 | `generate` | Writing the generated integration-test tree fails | Error `EXT-PLUG-2005` |
 | `generate` | `exeris.integrationTests` on a build the integration tests do not boot: an entity not `GLOBAL`, a graph entity, a `@Blob` field or a `@CapabilityModule` | Warning `EXT-GEN-3105` naming the reason; nothing written or pruned in that root |
-| `generate` | A generated import's artifact is not on the classpath | Warning `EXT-PLUG-2004` naming `groupId:artifactId`; `javac` fails next |
+| `generate` | A generated import's artifact, or H2 under `exeris.integrationTests`, is not on the classpath | Warning `EXT-PLUG-2004` naming `groupId:artifactId`; `javac` fails next on a missing import, the integration tests on a missing H2 driver; add H2 at test scope (ADR-058 Amendment 1) |
 | `generate` | A refusal from the pipeline (`EXT-PROC-1033`, `EXT-GEN-3003`) | Failure carrying the pipeline's message |
 | `generate`, `verify-capabilities` | The capability graph does not resolve | Failure `EXT-PLUG-2201`, every problem listed |
 | `verify-capabilities` | Capability metadata cannot be read | Error `EXT-PLUG-2202` |
