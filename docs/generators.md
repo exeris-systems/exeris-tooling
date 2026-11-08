@@ -65,8 +65,8 @@ none of them promises that a file still matches what its generator wrote.
 
 | Placeholder | Meaning |
 |---|---|
-| `{base}` | The entity's package without its `.domain` segment, written as a path; the segment a template puts after it (`handler/`, `repository/`, …) is the one the generator substitutes for `.domain`. The package must end in `.domain`, or the run fails. The generators substitute every occurrence of `.domain`, so a package that also has `.domain` in an inner segment is outside the catalogue's guarantee. |
-| `{app}` | The run's base package (`exeris.basePackage`, `--base-package` on the command line), else the package of the entity whose fully-qualified name sorts first with `.domain` removed (`EXT-GEN-3104` when the entities span several packages), written as a path. |
+| `{base}` | The entity's package without its trailing `.domain` segment, written as a path; the segment a template puts after it (`handler/`, `repository/`, …) is the one the generator substitutes for that trailing `.domain`. The package must end in `.domain`, or the run fails. A `domain` earlier in the package is kept: `com.domainco.app.domain` and `a.domain.b.domain` give `com/domainco/app` and `a/domain/b`. |
+| `{app}` | The run's base package (`exeris.basePackage`, `--base-package` on the command line), else the package of the entity whose fully-qualified name sorts first with its trailing `.domain` removed (`EXT-GEN-3104` when the entities span several packages), written as a path. |
 | `{E}` | The entity's simple class name. |
 | `{Action}` | A streaming action's `@Action(name)` in Pascal case: each character that is not a letter or digit dropped, and the character after it upper-cased. |
 | `{Flow}` | The saga's flow class name, as the `saga-flow` row's condition says. |
@@ -113,7 +113,7 @@ existing key is removed or changes meaning or type.
 | `tenant-mismatch-exception` | `KernelErrorGenerator` | The exception a write raises when the row names another tenant; answered with 400. | `{base}/repository/{E}TenantMismatchException.java` | zero-or-one | `dataScope` `TENANT` or `UNIVERSE` | ADR-090 |
 | `shared-scope-mismatch-exception` | `KernelErrorGenerator` | The exception a write raises when the row is tagged with another shared scope; answered with 400. | `{base}/repository/{E}SharedScopeMismatchException.java` | zero-or-one | `UNIVERSE` with a `@SharedScope` field | ADR-090 |
 | `still-referenced-exception` | `KernelErrorGenerator` | The exception a delete raises when other rows still reference the row; answered with 409. | `{base}/repository/{E}StillReferencedException.java` | zero-or-one | referenced by a `MANY_TO_ONE` relationship of an entity of the build, and not `softDelete` | ADR-076 |
-| `list-query` | `KernelListQueryGenerator` | The list route's query record: page, sort and filters. | `{base}/repository/{E}ListQuery.java` | one | every entity | ADR-096 |
+| `list-query` | `KernelListQueryGenerator` | The list route's query record: page, sort, filters and search. | `{base}/repository/{E}ListQuery.java` | one | every entity | ADR-096 |
 | `page` | `KernelListQueryGenerator` | The list route's page envelope record. | `{base}/repository/{E}Page.java` | one | every entity | ADR-096 |
 | `event-publisher` | `KernelEventGenerator` | The publisher of the entity's domain events, called by the handler. | `{base}/event/{E}EventPublisher.java` | zero-or-one | at least one `@DomainEvent` | ADR-075 |
 | `event-subscriber` | `KernelEventHandlerGenerator` | The subscriber skeleton for the entity's domain events. | `{base}/event/{E}EventSubscriber.java` | zero-or-one | at least one `@DomainEvent` | — |

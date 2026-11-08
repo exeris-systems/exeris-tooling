@@ -15,7 +15,7 @@ Terms as `exeris-tooling` uses them, in alphabetical order. Each entry names the
 
 **Accepted-API-changes ledger.** A JSON list of breaking changes to generated output, each with its signature, release, ADR and justification. The root `accepted-api-changes.json` covers the processor and the Java pipeline; `exeris-codegen-ts/api/accepted-api-changes.json` covers the emitted TypeScript ([stability matrix](stability-matrix.md)).
 
-**Base package.** The package of `Application`, `RuntimeComponents`, `RuntimeLifecycle`, `GeneratedRoutePolicy` and the generated `testsupport` package: `exeris.basePackage` or `--base-package`, else the first domain's package by qualified name with `.domain` removed. `EXT-GEN-3104` warns when it was inferred across several packages.
+**Base package.** The package of `Application`, `RuntimeComponents`, `RuntimeLifecycle`, `GeneratedRoutePolicy` and the generated `testsupport` package: `exeris.basePackage` or `--base-package`, else the first domain's package by qualified name with its trailing `.domain` removed. `EXT-GEN-3104` warns when it was inferred across several packages.
 
 **Capability manifest.** `cap-manifest.json`, written by `CodegenPipeline` at the root of the main tree when the build declares a `@CapabilityModule`: the resolved capability graph and its composition stamp, read at boot by the SDK composition runtime ([ADR-024](https://github.com/exeris-systems/exeris-docs/blob/main/adr/ADR-024-capability-composition-model.md)).
 

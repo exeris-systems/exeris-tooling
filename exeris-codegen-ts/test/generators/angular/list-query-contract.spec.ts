@@ -7,7 +7,8 @@
  * in one committed file both sides test against: `ListQueryContractE2ETest` (exeris-e2e-tests)
  * holds the generated list query, page record and OpenAPI document to
  * `contract/list-query.json`, and this spec holds the emitted service, store, list, picker and
- * related-records panels, and the sortable / filterable rules of `list-query.ts`, to the same file.
+ * related-records panels, and the sortable / filterable / searchable rules of `list-query.ts`, to the
+ * same file.
  */
 
 import { readFileSync } from 'node:fs';
@@ -24,13 +25,17 @@ import {
   FILTERABLE_SCALAR_TYPES,
   SORTABLE_SCALAR_TYPES,
   MAX_PAGE_SIZE,
+  MAX_SEARCH_LENGTH,
   PAGE_ENVELOPE,
   PAGE_PARAM,
   RESERVED_PARAMS,
+  SEARCHABLE_SCALAR_TYPES,
+  SEARCH_PARAM,
   SIZE_PARAM,
   SORT_PARAM,
   filterProperties,
   listQuerySystemFieldNames,
+  searchableProperties,
   sortableProperties,
 } from '../../../src/generators/angular/list-query.js';
 import { type DomainMetadata } from '../../../src/models/domain-model.js';
@@ -43,11 +48,14 @@ interface ListQueryContract {
     size: { default: number; minimum: number; maximum: number };
     sort: { format: string; directions: string[] };
     filter: { format: string; booleanValues: string[]; foreignKey: string };
+    search: { maxLength: number; match: string; escaped: string[] };
   };
   reserved: string[];
-  properties: { sortable: string; filterable: string; neverOffered: string };
+  properties: { sortable: string; filterable: string; searchable: string; neverOffered: string };
   filterableScalarTypes: string[];
   sortableScalarTypes: string[];
+  searchableScalarTypes: string[];
+  refusedWith400: string[];
   envelope: string[];
 }
 
@@ -113,6 +121,32 @@ const isEnum = (field: { type: string; enumType?: string }) =>
   field.enumType !== undefined || ENUMS.some((e) => e.qualifiedName === field.type);
 const CTX = createGeneratorContext({}, [order], ENUMS);
 const service = new ServiceGenerator().generate(order, CTX)!.content;
+
+/** A searchable target (`name` flagged, `email` without `@Field`) and an entity that picks it. */
+const customer: DomainMetadata = parseOffered({
+  packageName: 'com.shop',
+  entityName: 'Customer',
+  softDelete: true,
+  fields: [
+    { name: 'id', type: 'java.util.UUID', searchable: true },
+    { name: 'name', type: 'String', searchable: true },
+    { name: 'email', type: 'java.lang.String', searchable: true },
+    { name: 'note', type: 'String' },
+    { name: 'visits', type: 'int', searchable: true },
+    { name: 'deletedBy', type: 'String', searchable: true },
+  ],
+});
+const invoice: DomainMetadata = parseOffered({
+  packageName: 'com.shop',
+  entityName: 'Invoice',
+  fields: [
+    { name: 'id', type: 'java.util.UUID' },
+    { name: 'customerId', type: 'java.util.UUID', required: true },
+  ],
+  relationships: [{ name: 'customerId', targetEntity: 'Customer', type: 'MANY_TO_ONE', displayField: 'name' }],
+});
+const customerService = new ServiceGenerator()
+  .generate(customer, createGeneratorContext({}, [customer, invoice], []))!.content;
 const store = new StoreGenerator().generate(order, CTX)!.content;
 const list = new ListGenerator().generate(order, CTX)!.content;
 
@@ -122,9 +156,9 @@ describe('contract/list-query.json — the query the front sends', () => {
     expect(service).toContain('return this.http.get<Page<Order>>(this.baseUrl, { params });');
   });
 
-  it('sends page, size and sort under the contract\'s names, and reserves exactly those', () => {
-    expect([PAGE_PARAM, SIZE_PARAM, SORT_PARAM]).toEqual(['page', 'size', 'sort']);
-    expect(Object.keys(contract.parameters)).toEqual([PAGE_PARAM, SIZE_PARAM, SORT_PARAM, 'filter']);
+  it('sends page, size, sort and search under the contract\'s names, and reserves exactly those', () => {
+    expect([PAGE_PARAM, SIZE_PARAM, SORT_PARAM, SEARCH_PARAM]).toEqual(['page', 'size', 'sort', 'search']);
+    expect(Object.keys(contract.parameters)).toEqual([PAGE_PARAM, SIZE_PARAM, SORT_PARAM, 'filter', SEARCH_PARAM]);
     expect([...RESERVED_PARAMS]).toEqual(contract.reserved);
     expect(service).toContain(`params = params.set('${PAGE_PARAM}', String(pageRequest.page));`);
     expect(service).toContain(`params = params.set('${SIZE_PARAM}', String(pageRequest.size));`);
@@ -180,7 +214,7 @@ describe('contract/list-query.json — the query the front sends', () => {
     const files = buildGeneratedFiles([product, line], [], DEFAULT_CONFIG);
     const sizes = files
       .filter((f) => f.path.endsWith('-form.component.ts') || f.path.endsWith('-detail.component.ts'))
-      .flatMap((f) => [...f.content.matchAll(/findAll\(\{ size: (\d+) \}/g)].map((m) => Number(m[1])));
+      .flatMap((f) => [...f.content.matchAll(/findAll\(\{ size: (\d+)[ ,]/g)].map((m) => Number(m[1])));
     expect(sizes).toContain(contract.parameters.size.maximum);
     expect(sizes.length).toBeGreaterThanOrEqual(2);
     for (const n of sizes) {
@@ -195,17 +229,42 @@ describe('contract/list-query.json — the query the front sends', () => {
     expect(list).toContain('<option value="false">No</option>');
   });
 
-  it('never sends search: no emitted module declares or sets it', () => {
+  it('sends search only for an entity with a searchable property, under the contract\'s name and bound', () => {
+    expect(contract.parameters.search.maxLength).toBe(MAX_SEARCH_LENGTH);
+    expect(contract.refusedWith400).toContain('a non-blank search on an entity with no searchable property');
+    // Order has nothing searchable: no emitted module declares or sets search.
     const files = buildGeneratedFiles([order], ENUMS, DEFAULT_CONFIG);
     const sent = files.filter((f) => /['"`]search['"`]|\bsearch\??:|\.search\b|setSearch|onSearch/.test(f.content));
     expect(sent.map((f) => f.path)).toEqual([]);
+    // Customer is searchable: the service offers search and sends it trimmed, never blank.
+    expect(customerService).toContain('PageRequest & { sort?: CustomerSortField; search?: string }');
+    expect(customerService).toContain(`if (search) params = params.set('${SEARCH_PARAM}', search);`);
+  });
+
+  it('the picker of a searchable target sends the typed term through search, at the maximum size and within the bound', () => {
+    const files = buildGeneratedFiles([customer, invoice], [], DEFAULT_CONFIG);
+    const form = files.find((f) => f.path.endsWith('invoice-form.component.ts'))!.content;
+    expect(form).toContain("  readonly customerIdSearch = signal('');");
+    expect(form).toContain('    params: () => this.customerIdSearch().trim(),');
+    expect(form).toContain(
+      `      switchMap(() => this.customerService.findAll({ size: ${contract.parameters.size.maximum}, search: params.slice(0, ${contract.parameters.search.maxLength}) })),`,
+    );
+    expect(form).toContain(`maxlength="${contract.parameters.search.maxLength}"`);
+    // A target with nothing searchable keeps the first-page picker.
+    const plain = buildGeneratedFiles([invoice, parseOffered({ ...customer, fields: customer.fields.map((f) => ({ ...f, searchable: false })) })], [], DEFAULT_CONFIG)
+      .find((f) => f.path.endsWith('invoice-form.component.ts'))!.content;
+    expect(plain).toContain(`this.customerService.findAll({ size: ${contract.parameters.size.maximum} }) });`);
+    expect(plain).not.toContain('search');
   });
 });
 
 describe('contract/list-query.json — the parameter names the service sends', () => {
   it('sends only the reserved names and the route\'s filters', () => {
     const literal = [...service.matchAll(/params\.set\('(\w+)'/g)].map((m) => m[1]);
-    expect(literal).toEqual(contract.reserved);
+    // Order has nothing searchable, so its service never sends search.
+    expect(literal).toEqual(contract.reserved.filter((name) => name !== SEARCH_PARAM));
+    const searching = [...customerService.matchAll(/params\.set\('(\w+)'/g)].map((m) => m[1]).sort();
+    expect(searching).toEqual(contract.reserved);
     // Every other name the service sends is a key of its filter, which are exactly the route's filters.
     expect(service).toContain('for (const [key, value] of Object.entries(filter)) {');
     const filter = service.match(/export interface OrderFilter \{\n([\s\S]*?)\n\}/)![1];
@@ -335,6 +394,49 @@ describe('contract/list-query.json — which properties sort and filter', () => 
     for (const name of ['placedAt', 'pickupAt', 'labels', 'page', 'note', 'createdAt', 'tenantId', 'archived', 'id']) {
       expect(list, name).not.toContain(`data-testid="filter-${name}"`);
     }
+  });
+});
+
+describe('contract/list-query.json — which properties search matches', () => {
+  it('searches on exactly the contract\'s scalar types', () => {
+    expect([...SEARCHABLE_SCALAR_TYPES]).toEqual(contract.searchableScalarTypes);
+    const probe = parseOffered({
+      packageName: 'com.shop',
+      entityName: 'Probe',
+      fields: [
+        { name: 'id', type: 'java.util.UUID' },
+        ...[...new Set([...contract.sortableScalarTypes, ...contract.filterableScalarTypes])]
+          .map((type, i) => ({ name: `p${i}`, type, searchable: true })),
+      ],
+    });
+    expect([...new Set(searchableProperties(probe).map((p) => p.type))].sort())
+      .toEqual([...contract.searchableScalarTypes].sort());
+  });
+
+  it('searches the flagged String fields, by name, never another kind or a system field', () => {
+    expect(contract.properties.searchable).toContain('never a system field or blob');
+    expect(searchableProperties(customer).map((p) => p.name)).toEqual(['email', 'name']);
+    expect(searchableProperties(order)).toEqual([]);
+    const withBlob = parseOffered({
+      packageName: 'com.shop',
+      entityName: 'Doc',
+      fields: [
+        { name: 'id', type: 'java.util.UUID' },
+        { name: 'title', type: 'String', searchable: true },
+        { name: 'scan', type: 'String', searchable: true, blob: { contentTypes: [] } },
+      ],
+    });
+    expect(searchableProperties(withBlob).map((p) => p.name)).toEqual(['title']);
+  });
+
+  it('a field named search is never a filter', () => {
+    const d = parseOffered({
+      packageName: 'com.shop',
+      entityName: 'Probe',
+      fields: [{ name: 'search', type: 'String', filterable: true, searchable: true }],
+    });
+    expect(filterProperties(d)).toEqual([]);
+    expect(searchableProperties(d).map((p) => p.name)).toEqual(['search']);
   });
 });
 

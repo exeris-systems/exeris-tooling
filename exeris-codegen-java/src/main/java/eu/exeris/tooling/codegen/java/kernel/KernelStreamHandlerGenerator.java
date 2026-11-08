@@ -7,6 +7,7 @@ import com.palantir.javapoet.TypeSpec;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
+import eu.exeris.tooling.codegen.java.support.DomainPackages;
 import eu.exeris.tooling.codegen.java.support.KernelEventSupport;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.tooling.codegen.java.support.KernelStreamScaffold;
@@ -136,7 +137,7 @@ public class KernelStreamHandlerGenerator implements KernelArtifactGenerator {
             return null;
         }
 
-        String basePackage = metadata.packageName().replace(".domain", "");
+        String basePackage = DomainPackages.basePackage(metadata);
         String packageName = basePackage + ".handler";
         String entity = metadata.entityName();
         String className = entity + "StreamHandler";

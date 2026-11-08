@@ -9,6 +9,7 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
+import eu.exeris.tooling.codegen.java.support.DomainPackages;
 import eu.exeris.tooling.codegen.java.support.ForeignKeys;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 
@@ -51,9 +52,9 @@ import java.util.List;
  * and a per-domain emitter cannot resolve that: {@code basePackage} is a pipeline-level input
  * (explicit {@code -Aexeris.basePackage}, else auto-detected from the first domain), while a
  * {@link KernelArtifactGenerator} sees only {@code metadata.packageName()}. The
- * {@code .replace(".domain", ".repository")} derivation every emitter already uses is correct
- * under both. The cost is that a consumer cannot catch one supertype across entities; that is
- * recorded in ADR-076 rather than designed around.
+ * {@link DomainPackages#sibling} derivation every emitter uses (the trailing {@code .domain}
+ * replaced by {@code .repository}) is correct under both. The cost is that a consumer cannot
+ * catch one supertype across entities; that is recorded in ADR-076 rather than designed around.
  *
  * <h2>Why the repository package and not the domain package</h2>
  * The domain package is the consumer's own — it holds their {@code @ExerisDomain} entity — and
@@ -81,7 +82,7 @@ public class KernelErrorGenerator implements KernelArtifactGenerator {
 
     /** The package the emitted repository lives in, and where these types join it. */
     static String errorPackage(DomainMetadata metadata) {
-        return metadata.packageName().replace(".domain", ".repository");
+        return DomainPackages.sibling(metadata, DomainPackages.REPOSITORY);
     }
 
     /** {@code <Entity>NotFoundException} — emitted for every entity. */

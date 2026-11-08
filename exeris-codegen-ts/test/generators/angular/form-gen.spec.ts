@@ -1644,6 +1644,86 @@ describe('FormGenerator — a MANY_TO_ONE foreign key is picked from its target 
     expect(generateForm(order(false), CTX.config, [], [order(false), product])!.content).toContain('ProductService');
     expect(generateForm(order(false), CTX.config)!.content).not.toContain('ProductService');
   });
+
+  describe('a target with a searchable property', () => {
+    const searchableProduct = domain({
+      entityName: 'Product',
+      fields: [
+        field({ name: 'id', type: 'java.util.UUID' }),
+        field({ name: 'name', type: 'String', searchable: true }),
+      ],
+    });
+
+    it('asks the list route for the typed term once typing pauses, at the largest size', () => {
+      const content = emit(order(true), [order(true), searchableProduct]);
+      expect(content).toContain("import { switchMap, timer } from 'rxjs';");
+      expect(content).toContain(
+        "  readonly productIdSearch = signal('');\n"
+        + '  private readonly productIdOptionsResource = rxResource({\n'
+        + '    params: () => this.productIdSearch().trim(),\n'
+        + '    stream: ({ params }) => timer(params ? 250 : 0).pipe(\n'
+        + '      switchMap(() => this.productService.findAll({ size: 100, search: params.slice(0, 100) })),\n'
+        + '    ),\n'
+        + '  });\n',
+      );
+    });
+
+    it('keeps the options it holds while the next term loads', () => {
+      const content = emit(order(true), [order(true), searchableProduct]);
+      expect(content).toContain('signal, computed, linkedSignal, effect, inject }');
+      expect(content).toContain(
+        '  private readonly productIdOptionsHeld = linkedSignal<{ loading: boolean; options: { value: string; label: string }[] }, { value: string; label: string }[]>({\n'
+        + '    source: () => ({ loading: this.productIdOptionsResource.isLoading(), options: pickerOptions(this.productIdOptionsResource.hasValue() ? this.productIdOptionsResource.value() : undefined, (row) => row.name) }),\n'
+        + '    computation: (current, previous) => (current.loading && previous ? previous.value : current.options),\n'
+        + '  });\n'
+        + '  readonly productIdOptions = computed(() =>\n'
+        + '    this.productIdOptionsHeld(),\n'
+        + '  );\n',
+      );
+    });
+
+    it('shows the label the chosen record last had once a later term no longer lists it', () => {
+      const content = emit(order(true), [order(true), searchableProduct]);
+      expect(content).toContain(
+        '  readonly productIdChosenLabel = linkedSignal<{ value: string; options: { value: string; label: string }[] }, string>({\n'
+        + '    source: () => ({ value: this.formModel().productId, options: this.productIdOptions() }),\n'
+        + '    computation: (current, previous) =>\n'
+        + '      current.options.find((option) => option.value === current.value)?.label\n'
+        + '      ?? (previous?.source.value === current.value ? previous.value : current.value),\n'
+        + '  });\n',
+      );
+      expect(content).toContain('@if (productIdUnlisted()) {\n'
+        + '            <option [value]="form.productId().value()">{{ productIdChosenLabel() }}</option>');
+    });
+
+    it('puts a labelled search box in front of the select and says the matches are capped', () => {
+      const content = emit(order(true), [order(true), searchableProduct]);
+      const input = '<input #productIdSearchInput type="search" data-testid="field-productId-search" '
+        + 'aria-label="Search Product Id" aria-controls="productId" maxlength="100" '
+        + '(input)="productIdSearch.set(productIdSearchInput.value)" class="exeris-input mt-1">';
+      expect(content).toContain(input);
+      expect(content.indexOf(input)).toBeLessThan(content.indexOf('<select id="productId"'));
+      expect(content).toContain('Showing the first 100 matches; type to narrow.');
+      expect(content).not.toContain('Showing the first 100 options only.');
+    });
+
+    it('imports the rxjs operators beside firstValueFrom when the form uploads a blob', () => {
+      const withBlob = domain({
+        ...order(true),
+        fields: [...order(true).fields, field({ name: 'scan', type: 'String', blob: { contentTypes: [] } })],
+      });
+      expect(emit(withBlob, [withBlob, searchableProduct])).toContain("import { firstValueFrom, switchMap, timer } from 'rxjs';");
+    });
+
+    it('leaves a target with nothing searchable byte-identical to the first-page picker', () => {
+      const plain = emit(order(true), [order(true), product]);
+      expect(plain).not.toContain('Search');
+      expect(plain).not.toContain("from 'rxjs'");
+      expect(plain).not.toContain('linkedSignal');
+      expect(plain).not.toContain('ChosenLabel');
+      expect(plain).toContain('private readonly productIdOptionsResource = rxResource({ stream: () => this.productService.findAll({ size: 100 }) });');
+    });
+  });
 });
 
 // ---------- @UIGroup field grouping ----------
@@ -1835,7 +1915,7 @@ describe('FormGenerator @Tab tabs layout', () => {
         tabs: [
           { name: 'compensation', label: 'Compensation', order: 2, icon: '💰', fields: ['salary'] },
           { name: 'basic', label: 'Basic Info', order: 1, icon: '👤', fields: ['first'] },
-          { name: 'emergency', order: 2, fields: ['emergency'] },
+          { name: 'emergency', order: 2, icon: 'emergency', fields: ['emergency'] },
         ],
       },
     }), CTX)!.content;
@@ -1857,7 +1937,7 @@ describe('FormGenerator @Tab tabs layout', () => {
     expect(content).toContain('<span class="mr-2">💰</span>Compensation');
     // Name fallback for emergency tab
     expect(content).toContain('id="tab-emergency" aria-controls="panel-emergency"');
-    expect(content).toContain('emergency</button>');
+    expect(content).toContain('<span class="material-symbols-outlined mr-2" aria-hidden="true">emergency</span>emergency</button>');
 
     // Tab panels with role="tabpanel" and [hidden]
     expect(content).toContain('<div role="tabpanel" id="panel-basic" aria-labelledby="tab-basic" [hidden]="activeTab() !== \'basic\'" data-testid="tabpanel-basic"');

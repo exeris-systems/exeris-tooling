@@ -62,6 +62,15 @@ The other side of a key is a collection that names it. `Invoice.lines` is a `Lis
 
 A `List` of entities that no `mappedBy` ties to a key of the target (no `@Relationship`, a `ONE_TO_MANY` without `mappedBy`, a `MANY_TO_MANY`, or a `mappedBy` that names no `MANY_TO_ONE` back) is refused with `EXT-GEN-3003`. A `MANY_TO_MANY` held as `List<UUID>` keys is a JSON column of keys: no join table is generated for it, and its `cascadeDelete` has no effect.
 
+`Customer` declares `name` with `@Field(searchable = true)`, so `GET /customers?search=kow` returns the customers whose name contains `kow` in any case, and the generated invoice form puts a search box in front of its customer select that asks the route for the matching customers. The match is `LOWER(name) LIKE LOWER(?)`, which the btree index on `name` does not serve. On PostgreSQL, a table large enough to need an index for it takes a trigram index in a migration of your own; the generated migrations do not create one, because it needs an extension:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX idx_customers_name_trgm ON customers USING gin (lower(name) gin_trgm_ops);
+```
+
+The parameter's rules are in [ADR-096](../adr/ADR-096-generated-list-route-query-and-page-envelope.md), Amendment 4.
+
 ### 3. Scope the rows to a tenant
 
 All three entities declare `dataScope = ExerisDomain.DataScope.TENANT` and mark their owning-tenant field with `@TenantId`. That adds a `tenant_id UUID NOT NULL` column, row-level security on the table, and a second migration that replaces the policy.
@@ -88,7 +97,7 @@ entity.setCreatedAt(now);
 entity.setUpdatedAt(now);
 ```
 
-The time comes from the server whatever the request body carries. The migration also declares `created_by` and `updated_by` columns, which no generated code writes.
+The time comes from the server whatever the request body carries. The migration also declares `created_by` and `updated_by` columns. They are yours to fill: generated code has no principal to record, so it never sets an actor, and the [codegen-java module page](../modules/04-codegen-java.md#the-generated-application) says how a service of yours writes one.
 
 A marker switches no role on by itself. All three entities mark a `@Version` field without `versioned = true`, and `Customer` marks an `@AuditCreatedAt` field without `audited = true`. Each such field is an ordinary column: the migration declares it from the field's type (`version BIGINT`, and `Customer`'s `created_at TIMESTAMPTZ`), and the repository writes the entity's value into it, with no optimistic lock and no stamp. Declare the flag with the marker when you want the role.
 

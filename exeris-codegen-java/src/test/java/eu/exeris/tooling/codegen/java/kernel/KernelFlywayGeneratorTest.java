@@ -518,6 +518,25 @@ class KernelFlywayGeneratorTest {
     }
 
     @Test
+    @DisplayName("a List field, in either spelling, is a TEXT column holding its JSON, with no declared width")
+    void listFieldsMapToTextColumns() {
+        DomainMetadata metadata = DomainMetadata.builder("Product", "eu.exeris.app.domain")
+                .fields(List.of(
+                        FieldMetadata.builder("relatedIds", "java.util.List<java.util.UUID>").build(),
+                        FieldMetadata.builder("tags", "List<String>").required(true).build(),
+                        FieldMetadata.builder("name", "String").build()))
+                .build();
+
+        String sql = generator.generate(metadata).content();
+        assertThat(sql)
+                .contains("    related_ids TEXT,")
+                .contains("    tags TEXT NOT NULL")
+                .contains("    name VARCHAR(255)")
+                .doesNotContain("related_ids VARCHAR")
+                .doesNotContain("tags VARCHAR");
+    }
+
+    @Test
     @DisplayName("T10: @Field(pattern) is NOT emitted as a CHECK (Java-vs-Postgres regex dialects diverge)")
     void patternIsNotEmittedAsCheck() {
         DomainMetadata metadata = DomainMetadata.builder("Order", "eu.exeris.app.domain")

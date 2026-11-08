@@ -50,9 +50,11 @@ The full path list, with the generator and condition of each file, is the [gener
 | `{base}/service/` | `{E}Service`, which the handler calls |
 | `{base}/repository/` | `{E}Repository` over the kernel persistence SPI; `{E}ListQuery` and `{E}Page`; the typed write-rejection exceptions |
 | `{base}/event/`, `{base}/graph/`, `{base}/saga/`, `{base}/client/` | The event publisher and subscriber, graph sync, saga flow and typed HTTP client, where the metadata asks for them |
-| `{app}/` | `Application`, `RuntimeComponents`, `RuntimeLifecycle` and `GeneratedRoutePolicy`, in the base package: `exeris.basePackage` (`--base-package`), else the first domain's package with `.domain` removed |
+| `{app}/` | `Application`, `RuntimeComponents`, `RuntimeLifecycle` and `GeneratedRoutePolicy`, in the base package: `exeris.basePackage` (`--base-package`), else the first domain's package with its trailing `.domain` removed |
 | `db/migration/` | `V{tier}{nnnnnn}__create_{table}.sql` per entity, the shared-scope and tenant-policy migrations where they apply, and one `V3000000__foreign_keys.sql` per build |
 | `openapi/` | `{kebab(E)}-api.yaml`, an OpenAPI 3.1 document per entity |
+
+The create-table migration of an `audited = true` entity declares `created_by` and `updated_by` as `VARCHAR(255)` columns beside the two timestamps, and a `softDelete = true` entity's declares `deleted_by`. These actor columns are the consumer's: generated code stamps the times and never an actor, because it has no principal to record. When the entity declares a field for an actor role, a create request leaves it out and the handler sets it to `null`, and the insert stores the value the consumer's service sets on the entity before it calls `save` ([ADR-090](../adr/ADR-090-reject-mismatched-tenant.md) Amendment 4). An update keeps the stored actor (Amendment 1), so recording who changed a row is a statement of the consumer's own. Without a declared field, nothing generated writes the column and it stays `NULL`.
 
 `Application.main()` boots the kernel with `BootstrapSelector.forNames(subsystems())`, binds the route policy and runs `RuntimeLifecycle` inside the boot callback. Its `protected` hooks are the seams a consumer overrides without editing generated code: `subsystems()`, `transactionalExecutor()`, `components(TransactionalExecutor)`, `routePolicy()`, `applicationPolicy()` and `unmatchedRoutes()`. `RuntimeComponents` holds one `protected create*` factory per generated repository, service and handler, and a `configureRoutes` hook ([ADR-070](../adr/ADR-070-generated-composition-root-seam.md)).
 
@@ -110,7 +112,7 @@ Trade-off: committed, regenerated output makes every emitter change a diff in ev
 | [ADR-070](../adr/ADR-070-generated-composition-root-seam.md) | `RuntimeComponents`, `RuntimeLifecycle` and the edge handler |
 | [ADR-105](../adr/ADR-105-generated-route-policy-emission.md) | `GeneratedRoutePolicy` and the three policy hooks |
 | [ADR-076](../adr/ADR-076-write-rejection-status.md), [ADR-090](../adr/ADR-090-reject-mismatched-tenant.md) | Write rejections and their statuses; server-owned columns kept on update |
-| [ADR-096](../adr/ADR-096-generated-list-route-query-and-page-envelope.md) | The list route's query and page envelope |
+| [ADR-096](../adr/ADR-096-generated-list-route-query-and-page-envelope.md) | The list route's query, its search over the searchable `String` fields (Amendment 4) and page envelope |
 | [ADR-044](../adr/ADR-044-tooling-sse-stream-emitter-shape.md), [ADR-075](../adr/ADR-075-generated-event-publisher-caller.md) | Stream handlers; who calls the event publisher |
 | [ADR-079](../adr/ADR-079-emitted-openapi-authentication-claim.md) | What the OpenAPI document claims about authentication |
 | [ADR-104](../adr/ADR-104-declared-primary-key-uuid-only.md), [ADR-108](../adr/ADR-108-blob-field-routes.md) | The declared `UUID` key; `@Blob` field routes |

@@ -9,6 +9,7 @@ import com.palantir.javapoet.TypeSpec;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.java.support.DomainPackages;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 
@@ -58,14 +59,14 @@ public class KernelServiceGenerator implements KernelArtifactGenerator {
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
-        String packageName = metadata.packageName().replace(".domain", ".service");
+        String packageName = DomainPackages.sibling(metadata, DomainPackages.SERVICE);
         String entity = metadata.entityName();
         String className = entity + "Service";
         String repoName = entity + "Repository";
 
         ClassName entityType = ClassName.get(metadata.packageName(), entity);
         ClassName repoType = ClassName.get(
-                metadata.packageName().replace(".domain", ".repository"), repoName);
+                DomainPackages.sibling(metadata, DomainPackages.REPOSITORY), repoName);
         TypeName optionalOfEntity = ParameterizedTypeName.get(OPTIONAL, entityType);
         TypeName listOfEntity = ParameterizedTypeName.get(LIST, entityType);
 

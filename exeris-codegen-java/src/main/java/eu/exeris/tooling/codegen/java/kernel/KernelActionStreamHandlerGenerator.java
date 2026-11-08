@@ -11,6 +11,7 @@ import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
+import eu.exeris.tooling.codegen.java.support.DomainPackages;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.tooling.codegen.java.support.KernelStreamScaffold;
 import eu.exeris.tooling.codegen.java.support.KernelStreamScaffold.StreamEventBinding;
@@ -252,7 +253,7 @@ public class KernelActionStreamHandlerGenerator implements KernelArtifactGenerat
 
     private GeneratedFile buildActionStreamHandler(DomainMetadata metadata, ActionMetadata action,
                                                    ClassName referenceNotFound) {
-        String basePackage = metadata.packageName().replace(".domain", "");
+        String basePackage = DomainPackages.basePackage(metadata);
         String packageName = basePackage + ".handler";
         String entity = metadata.entityName();
         String className = entity + NameCasing.pascal(action.name()) + "StreamHandler";
@@ -373,7 +374,7 @@ public class KernelActionStreamHandlerGenerator implements KernelArtifactGenerat
     }
 
     private static ClassName publisherType(DomainMetadata metadata) {
-        return ClassName.get(metadata.packageName().replace(".domain", ".event"),
+        return ClassName.get(DomainPackages.sibling(metadata, DomainPackages.EVENT),
                 metadata.entityName() + "EventPublisher");
     }
 

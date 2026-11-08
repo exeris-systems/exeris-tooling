@@ -83,7 +83,7 @@ Generated: `src/app/components/employee-form.component.ts`, the tab list (adapte
   <button type="button" role="tab" id="tab-employment" aria-controls="panel-employment" [attr.aria-selected]="activeTab() === 'employment'" (click)="activeTab.set('employment')" data-testid="tab-employment">Employment</button>
 ```
 
-Inside each tab panel a group is a `<details>` element, open unless the group declares `collapsed = true`, as `contact` does. `@NavMenu(group = "People", label = "Employees")` puts the entity's list under a `People` heading in the shell's navigation, `src/app/app.component.ts`. The forms are Signal Forms ([ADR-093](../adr/ADR-093-emitted-forms-are-signal-forms.md)).
+Inside each tab panel a group is a `<details>` element, open unless the group declares `collapsed = true`, as `contact` does. `@NavMenu(group = "People", label = "Employees", icon = "badge")` puts the entity's list under a `People` heading in the shell's navigation, `src/app/app.component.ts`. A Material icon name such as `badge` renders as a glyph of the Material Symbols font, which the scaffold installs as the `material-symbols` package and imports in `src/styles.css`; any other icon text, an emoji for example, renders as itself. The forms are Signal Forms ([ADR-093](../adr/ADR-093-emitted-forms-are-signal-forms.md)).
 
 ### 4. Point the application at the backend
 
@@ -115,7 +115,6 @@ This is the `sdk-examples-app` job of `.github/workflows/build.yml`, which runs 
 
 - **Block content.** The `LIST` block's `@Bind(path = "lastName")` loads the store and renders an empty `<ul>`; the `HERO` block renders an empty section. The page is structure, filled by you.
 - **The `invite` action.** It is a stub, and `Employee` declares no `invite` action for it to call.
-- **`@NavMenu(icon)`.** The icon name is rendered as text, `badge`, where the other entries carry a glyph.
 
 ## Where this does not apply
 

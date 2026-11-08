@@ -618,16 +618,27 @@ has no control for is left out of the create body, and the edit sends it back as
 
 A field with `@Field(inUpdate = false)` is disabled while the form edits, and is sent back as loaded.
 
-### The relationship picker lists one page
+### The relationship picker
 
-The picker requests one page of the target's list route, `findAll({ size: 100 })`, and 100 is the
-largest size that route serves (ADR-096). A target with more rows offers its first 100. The
-list route has no search parameter, so the picker cannot be narrowed or paged. When the list
-response reports rows beyond the page it holds (`last` is `false`), the form shows "Showing the
-first 100 options only." beside the select (`data-testid="options-truncated-<field>"`, referenced
-by the select's `aria-describedby`). The value a record already holds stays an option whether or
-not it is among those 100. Server-side search on the list route, and a combobox on it, are
-0.11.0 work.
+The picker requests one page of the target's list route at size 100, the largest size that route
+serves (ADR-096). What it can reach depends on the target:
+
+- **A target with a searchable property** (a `String` field `@Field(searchable = true)` marks, or
+  one without `@Field`) gets a search box in front of the select (`data-testid="field-<field>-search"`,
+  `maxlength="100"`). Once typing pauses for 250 ms the picker asks
+  `findAll({ size: 100, search })`, and the route matches the term case-insensitively as a
+  substring of the searchable properties (ADR-096 Amendment 4). While the next term loads the
+  select keeps the options it holds, and a chosen record a later term no longer matches keeps its
+  label. When rows remain beyond the page, the hint reads "Showing the first 100 matches; type to
+  narrow."
+- **A target with nothing searchable** keeps the first-page picker, `findAll({ size: 100 })`: a
+  target with more rows offers its first 100, and the hint reads "Showing the first 100 options
+  only."
+
+The hint appears when the list response reports rows beyond the page it holds (`last` is `false`),
+as `data-testid="options-truncated-<field>"`, referenced by the select's `aria-describedby`. The
+value a record already holds stays an option whether or not the page lists it. A combobox in place
+of the select waits until `@angular/aria` is stable.
 
 ## License
 

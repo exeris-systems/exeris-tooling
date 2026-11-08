@@ -24,10 +24,11 @@ import {
   viewReadsEntityData,
 } from './view-gen.js';
 import { testIdSegment, tsSingleQuoted, tsTemplateText } from './ts-literal.js';
+import { declaredIconSpan } from './declared-icon.js';
 import { sagaMachineName } from './saga-gen.js';
 import { hasLiveViewClient } from './stream-client-gen.js';
 import { hasActionStreamClients } from './action-stream-client-gen.js';
-import { BACKEND_SCAFFOLD_NEEDS, type ScaffoldNeeds } from '../../core/scaffold-needs.js';
+import { BACKEND_SCAFFOLD_NEEDS, usesMaterialSymbols, type ScaffoldNeeds } from '../../core/scaffold-needs.js';
 import { entityViews, hasFormPage } from './entity-views.js';
 import { serviceApiPath } from './service-gen.js';
 import { AUTH_INTERCEPTOR_NAME, AUTH_INTERCEPTOR_PATH } from './auth-interceptor-gen.js';
@@ -134,8 +135,18 @@ export function generateAppStructure(
   const appName = config.appName;
   const ssg = config.render === 'ssg';
 
+  // Views are sorted deterministically (by effective route path, then name) so the
+  // emitted route imports/spreads + nav links are order-stable regardless of the
+  // directory-scan order the CLI hands them in. The sort is on a copy — the caller's
+  // array is left untouched.
+  const sortedViews = sortViews(views);
+  // The shell renders the sidebar's declared icons, which the composed tree does not contain, so
+  // its own template counts towards the font the scaffold installs.
+  const appComponent = generateAppComponent(domains, appName, sortedViews);
+  const materialSymbols = needs.materialSymbols === true || usesMaterialSymbols(appComponent);
+
   // Config files at the project root
-  files.push({ path: 'package.json', content: generatePackageJson(appName, config, needs), overwritable: false });
+  files.push({ path: 'package.json', content: generatePackageJson(appName, config, { ...needs, materialSymbols }), overwritable: false });
   files.push({ path: 'angular.json', content: generateAngularJson(appName, config, ssg), overwritable: false });
   files.push({ path: 'tsconfig.json', content: generateTsConfig(), overwritable: false });
   files.push({ path: 'tsconfig.app.json', content: generateTsConfigApp(config, ssg), overwritable: false });
@@ -150,7 +161,7 @@ export function generateAppStructure(
   }
 
   // Static files under src/
-  files.push({ path: `${srcRoot}/styles.css`, content: generateStylesCss(needs.typography), overwritable: false });
+  files.push({ path: `${srcRoot}/styles.css`, content: generateStylesCss(needs.typography, materialSymbols), overwritable: false });
   files.push({ path: `${srcRoot}/index.html`, content: generateIndexHtml(appName), overwritable: false });
   files.push({ path: `${srcRoot}/favicon.ico`, content: generateFavicon(), overwritable: true });
   // main.ts under src/
@@ -163,12 +174,6 @@ export function generateAppStructure(
   files.push({ path: `${envRoot}/environment.ts`, content: generateEnvironmentFile({ production: true, api }), overwritable: false });
   files.push({ path: `${envRoot}/environment.development.ts`, content: generateEnvironmentFile({ production: false, api }), overwritable: false });
 
-  // Views are sorted deterministically (by effective route path, then name) so the
-  // emitted route imports/spreads + nav links are order-stable regardless of the
-  // directory-scan order the CLI hands them in. The sort is on a copy — the caller's
-  // array is left untouched.
-  const sortedViews = sortViews(views);
-
   // App shell under src/app
   files.push({
     path: `${appRoot}/app.config.ts`,
@@ -179,7 +184,7 @@ export function generateAppStructure(
     files.push({ path: `${appRoot}/app.config.server.ts`, content: generateAppConfigServer(), overwritable: false });
     files.push({ path: `${appRoot}/app.routes.server.ts`, content: generateServerRoutes(domains, sortedViews), overwritable: false });
   }
-  files.push({ path: `${appRoot}/app.component.ts`, content: generateAppComponent(domains, appName, sortedViews), overwritable: false });
+  files.push({ path: `${appRoot}/app.component.ts`, content: appComponent, overwritable: false });
   files.push({
     path: `${appRoot}/app.routes.ts`,
     content: generateAppRoutes(domains, appName, sortedViews, needs.routeRequirements ?? []),
@@ -375,12 +380,20 @@ export function sortViews(views: ViewMetadata[]): ViewMetadata[] {
   });
 }
 
-function renderSidebarLink(item: { path: string; label: string; icon: string }): string {
+/** The spacing and size of a sidebar icon, on a link and on a group heading. */
+const SIDEBAR_ICON_CLASSES = 'mr-3 text-xl';
+
+/** A built-in sidebar glyph: an emoji, rendered as text. */
+function glyphSpan(glyph: string): string {
+  return `<span class="${SIDEBAR_ICON_CLASSES}">${glyph}</span>`;
+}
+
+function renderSidebarLink(item: { path: string; label: string; iconHtml: string }): string {
   return `
             <a routerLink="/${item.path}"
                routerLinkActive="bg-indigo-100 dark:bg-indigo-900 text-exeris-primary-hover dark:text-indigo-200"
                class="group flex items-center px-2 py-2 text-base font-medium rounded-md text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700">
-              <span class="mr-3 text-xl">${item.icon}</span>
+              ${item.iconHtml}
               ${item.label}
             </a>`;
 }
@@ -389,7 +402,7 @@ interface SidebarItem {
   entityName: string;
   path: string;
   label: string;
-  icon: string;
+  iconHtml: string;
   order: number;
   group: string;
   groupOrder: number;
@@ -409,13 +422,13 @@ function generateNavItemsHtml(domains: DomainMetadata[], views: ViewMetadata[]):
   const hasNavMenu = domains.some((d) => d.navMenu !== undefined && d.navMenu !== null);
   if (!hasNavMenu) {
     const navItems = domains.filter((d) => entityViews(d).list).map((d) => {
-      const icon = getEntityIcon(d.entityName);
-      return { path: routePlural(d.entityName), label: labelPlural(d.entityName), icon };
+      const iconHtml = glyphSpan(getEntityIcon(d.entityName));
+      return { path: routePlural(d.entityName), label: labelPlural(d.entityName), iconHtml };
     });
 
     for (const v of views) {
       if (isPageView(v)) {
-        navItems.push({ path: viewRoutePath(v), label: v.title ?? v.name, icon: '🧩' });
+        navItems.push({ path: viewRoutePath(v), label: v.title ?? v.name, iconHtml: glyphSpan('🧩') });
       }
     }
 
@@ -428,7 +441,10 @@ function generateNavItemsHtml(domains: DomainMetadata[], views: ViewMetadata[]):
     if (d.navMenu?.hidden === true) continue;
     const nav = d.navMenu;
     const label = tsTemplateText((nav?.label && nav.label.trim()) || labelPlural(d.entityName));
-    const icon = tsTemplateText((nav?.icon && nav.icon.trim()) || getEntityIcon(d.entityName));
+    const declaredIcon = nav?.icon ? nav.icon.trim() : '';
+    const iconHtml = declaredIcon
+      ? declaredIconSpan(declaredIcon, SIDEBAR_ICON_CLASSES)
+      : glyphSpan(getEntityIcon(d.entityName));
     const path = routePlural(d.entityName);
     const order = nav?.order ?? 999;
     const group = nav?.group ? nav.group.trim() : '';
@@ -438,7 +454,7 @@ function generateNavItemsHtml(domains: DomainMetadata[], views: ViewMetadata[]):
       entityName: d.entityName,
       path,
       label,
-      icon,
+      iconHtml,
       order,
       group,
       groupOrder,
@@ -450,7 +466,7 @@ function generateNavItemsHtml(domains: DomainMetadata[], views: ViewMetadata[]):
   const pageViews = views.filter(isPageView).map((v) => ({
     path: viewRoutePath(v),
     label: v.title ?? v.name,
-    icon: '🧩',
+    iconHtml: glyphSpan('🧩'),
   }));
 
   const groupMap = new Map<string, { groupName: string; groupOrder: number; groupIcon: string; items: SidebarItem[] }>();
@@ -481,7 +497,7 @@ function generateNavItemsHtml(domains: DomainMetadata[], views: ViewMetadata[]):
   }
 
   for (const g of sortedGroups) {
-    const iconSpan = g.groupIcon ? `<span class="mr-3 text-xl">${tsTemplateText(g.groupIcon)}</span>` : '';
+    const iconSpan = g.groupIcon ? declaredIconSpan(g.groupIcon, SIDEBAR_ICON_CLASSES) : '';
     const groupItemsHtml = sortSidebarItems(g.items).map(renderSidebarLink).join('\n');
     sections.push(`
             <div data-testid="nav-group-${testIdSegment(g.groupName)}" class="pt-4 first:pt-0">
@@ -845,6 +861,8 @@ function generateBarrelExport(
  * and `zod` are used only by some emitters: an app with a backend keeps its fixed set, and an app
  * without one lists each only when an emitted file imports it. `@angular/ssr` and
  * `@angular/platform-server` are the server rendering `render: 'ssg'` prerenders with.
+ * `material-symbols` is the self-hosted icon font, listed when a template renders a declared icon
+ * name (core/scaffold-needs): its stylesheet and font files ship in the built app.
  */
 function runtimeDependencies(needs: ScaffoldNeeds, ssg: boolean): string {
   const used = (pkg: string): boolean => needs.backend || needs.packages.has(pkg);
@@ -859,6 +877,7 @@ function runtimeDependencies(needs: ScaffoldNeeds, ssg: boolean): string {
     ['@angular/router', '^22.0.0', true],
     ['@angular/ssr', '^22.0.0', ssg],
     ['@exeris/ui-kit', '^0.2.1', true],
+    ['material-symbols', '^0.48.0', needs.materialSymbols === true],
     ['rxjs', '~7.8.1', true],
     ['tslib', '^2.8.1', true],
     ['zod', '^3.24.0', used('zod')],
@@ -1094,7 +1113,7 @@ function generatePostcssConfig(): string {
 `;
 }
 
-function generateStylesCss(typography: boolean): string {
+function generateStylesCss(typography: boolean, materialSymbols: boolean): string {
   // Tailwind CSS v4 is CSS-first: @import replaces the @tailwind directives, and no
   // tailwind.config.js is read. The ui-kit is imported here, in the global stylesheet that
   // Tailwind processes, and never listed in angular.json's `styles` array, where its CSS would
@@ -1120,13 +1139,18 @@ function generateStylesCss(typography: boolean): string {
   // directive after the imports, which CSS requires to come first. Its `prose-invert` is a plain
   // utility, so `dark:prose-invert` compiles against the kit's `.dark` class variant like every
   // other `dark:` utility.
+  //
+  // The Material Symbols stylesheet, when a template renders a declared icon name, is imported
+  // into the `components` layer: its class sets the font's own size, and a utility on the same
+  // element (`text-xl`) sizes the icon only from a later layer.
   const plugins = typography ? '@plugin "@tailwindcss/typography";\n' : '';
+  const icons = materialSymbols ? '@import "material-symbols/outlined.css" layer(components);\n' : '';
   return `/* Generated Angular Frontend - Global Styles */
 /* Tailwind CSS v4 */
 @import "tailwindcss";
 @import "@exeris/ui-kit/theme";
 @import "@exeris/ui-kit/styles";
-${plugins}
+${icons}${plugins}
 /* Custom base styles */
 @layer base {
   html {
