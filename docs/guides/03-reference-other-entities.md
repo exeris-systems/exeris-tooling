@@ -4,7 +4,7 @@ type: howto
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-11-04
+last-verified: 2026-11-08
 ---
 
 # Reference other entities
@@ -13,7 +13,7 @@ last-verified: 2026-11-04
 
 **Goal:** generate the `invoicing` scenario's `Customer`, `Invoice` and `InvoiceLine`, read the foreign keys and the refusals that come with them, and see what tenant scope, audit and route access add.
 
-> **Verified against** exeris-tooling `main` at commit `dc4564a2` (`0.11.0-SNAPSHOT`) and `exeris-sdk-examples` at tag `v0.13.3`, 2026-11-04. Generated snippets are quoted from the `SdkExamplesE2ETest` workspace, `exeris-e2e-tests/target/sdk-examples/app/`. If a snippet and its source disagree, **the source wins and this guide is the defect**.
+> **Verified against** exeris-tooling `main` at commit `b70edc67` (`0.11.0-SNAPSHOT`) and `exeris-sdk-examples` at tag `v0.13.3`, 2026-11-08. Generated snippets are quoted from the `SdkExamplesE2ETest` workspace, `exeris-e2e-tests/target/sdk-examples/app/`. If a snippet and its source disagree, **the source wins and this guide is the defect**.
 
 ## Prerequisites
 
@@ -62,7 +62,7 @@ The other side of a key is a collection that names it. `Invoice.lines` is a `Lis
 
 A `List` of entities that no `mappedBy` ties to a key of the target (no `@Relationship`, a `ONE_TO_MANY` without `mappedBy`, a `MANY_TO_MANY`, or a `mappedBy` that names no `MANY_TO_ONE` back) is refused with `EXT-GEN-3003`. A `MANY_TO_MANY` held as `List<UUID>` keys is a JSON column of keys: no join table is generated for it, and its `cascadeDelete` has no effect.
 
-`Customer` declares `name` with `@Field(searchable = true)`, so `GET /customers?search=kow` returns the customers whose name contains `kow` in any case, and the generated invoice form puts a search box in front of its customer select that asks the route for the matching customers. The match is `LOWER(name) LIKE LOWER(?)`, which the btree index on `name` does not serve. On PostgreSQL, a table large enough to need an index for it takes a trigram index in a migration of your own; the generated migrations do not create one, because it needs an extension:
+`Customer` declares `name` with `@Field(searchable = true)`, so `GET /customers?search=kow` returns the customers whose name contains `kow` in any case, and the generated invoice form puts a search box in front of its customer select that asks the route for the matching customers. The match is `LOWER(name) LIKE LOWER(?) ESCAPE '\'`, which the btree index on `name` does not serve. On PostgreSQL, a table large enough to need an index for it takes a trigram index in a migration of your own; the generated migrations do not create one, because it needs an extension:
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS pg_trgm;

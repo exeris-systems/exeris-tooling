@@ -4,7 +4,7 @@ type: howto
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-11-04
+last-verified: 2026-11-08
 ---
 
 # Add the tooling to a build
@@ -13,7 +13,7 @@ last-verified: 2026-11-04
 
 **Goal:** put the processor and the codegen goals into the build, know which kernel and SDK versions come with them, and lay the entities out the way the processor requires.
 
-> **Verified against** exeris-tooling `main` at commit `dc4564a2` (`0.11.0-SNAPSHOT`) and `exeris-sdk-examples` at tag `v0.13.3`, 2026-11-04. Snippets are quoted or adapted from the cited file. If a snippet and its source disagree, **the source wins and this guide is the defect**.
+> **Verified against** exeris-tooling `main` at commit `b70edc67` (`0.11.0-SNAPSHOT`) and `exeris-sdk-examples` at tag `v0.13.3`, 2026-11-08. Snippets are quoted or adapted from the cited file. If a snippet and its source disagree, **the source wins and this guide is the defect**.
 
 ## Prerequisites
 

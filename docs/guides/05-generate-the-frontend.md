@@ -4,7 +4,7 @@ type: howto
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-11-04
+last-verified: 2026-11-08
 ---
 
 # Generate the frontend
@@ -13,7 +13,7 @@ last-verified: 2026-11-04
 
 **Goal:** generate the frontend of the whole corpus, read what the `presentation` scenario's `EmployeeDirectory` page and `Employee` entity become, and build and test the result.
 
-> **Verified against** exeris-tooling `main` at commit `dc4564a2` (`0.11.0-SNAPSHOT`) and `exeris-sdk-examples` at tag `v0.13.3`, 2026-11-04. The input is the metadata `SdkExamplesE2ETest` writes to `exeris-e2e-tests/target/sdk-examples/app/target/classes/exeris-metadata`, and generated snippets are quoted from the application `exeris-codegen-ts/scripts/gen-sdk-examples-app.mjs` writes from it. If a snippet and its source disagree, **the source wins and this guide is the defect**.
+> **Verified against** exeris-tooling `main` at commit `b70edc67` (`0.11.0-SNAPSHOT`) and `exeris-sdk-examples` at tag `v0.13.3`, 2026-11-08. The input is the metadata `SdkExamplesE2ETest` writes to `exeris-e2e-tests/target/sdk-examples/app/target/classes/exeris-metadata`, and generated snippets are quoted from the application `exeris-codegen-ts/scripts/gen-sdk-examples-app.mjs` writes from it. If a snippet and its source disagree, **the source wins and this guide is the defect**.
 
 ## Prerequisites
 

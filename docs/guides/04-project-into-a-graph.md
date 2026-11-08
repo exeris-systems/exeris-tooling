@@ -4,7 +4,7 @@ type: howto
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-11-07
+last-verified: 2026-11-08
 ---
 
 # Project into a graph
@@ -13,7 +13,7 @@ last-verified: 2026-11-07
 
 **Goal:** generate the `graph` scenario's `Product`, read its `ProductGraphSync`, and choose what a graph failure does to a write.
 
-> **Verified against** exeris-tooling `main` at commit `5528cd59` with the change that wires the graph sync into the generated application applied (`0.11.0-SNAPSHOT`), and `exeris-sdk-examples` at tag `v0.13.3`, 2026-11-07. Every step was re-checked. Generated snippets are quoted from the `SdkExamplesE2ETest` workspace, `exeris-e2e-tests/target/sdk-examples/app/`. If a snippet and its source disagree, **the source wins and this guide is the defect**.
+> **Verified against** exeris-tooling `main` at commit `b70edc67` (`0.11.0-SNAPSHOT`) and `exeris-sdk-examples` at tag `v0.13.3`, 2026-11-08. Generated snippets are quoted from the `SdkExamplesE2ETest` workspace, `exeris-e2e-tests/target/sdk-examples/app/`. If a snippet and its source disagree, **the source wins and this guide is the defect**.
 
 ## Prerequisites
 

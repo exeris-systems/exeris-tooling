@@ -4,7 +4,7 @@ type: howto
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-11-04
+last-verified: 2026-11-08
 ---
 
 # Read a capability-graph refusal
@@ -13,7 +13,7 @@ last-verified: 2026-11-04
 
 **Goal:** run the `capability` scenario through the pipeline, read why it is refused, and know which change makes the graph resolve.
 
-> **Verified against** exeris-tooling `main` at commit `dc4564a2` (`0.11.0-SNAPSHOT`) and `exeris-sdk-examples` at tag `v0.13.3`, 2026-11-04. The output below comes from compiling the scenario's one source file with `exeris-processor` and running the `exeris-codegen-cli` jar of the same commit over the metadata. If the output and this page disagree, **the output wins and this guide is the defect**.
+> **Verified against** exeris-tooling `main` at commit `b70edc67` (`0.11.0-SNAPSHOT`) and `exeris-sdk-examples` at tag `v0.13.3`, 2026-11-08. The output below comes from compiling the scenario's one source file with `exeris-processor` and running `CodegenMain` of the same commit, the class the `exeris-codegen-cli` jar launches, over the metadata. If the output and this page disagree, **the output wins and this guide is the defect**.
 
 ## Prerequisites
 
