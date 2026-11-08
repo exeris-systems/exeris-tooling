@@ -5,6 +5,7 @@ import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ParamSource;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
@@ -591,5 +592,19 @@ class KernelHandlerTestGeneratorTest {
         assertThat(source)
                 .doesNotContain("RecordingStreamExchange")
                 .doesNotContain("StreamHandler");
+    }
+
+    @Test
+    @DisplayName("a graph entity's service double passes no graph sync: every method that would reach it "
+            + "is overridden")
+    void graphEntityStubPassesNoGraphSync() {
+        DomainMetadata graph = DomainMetadata.builder("Product", "com.example.domain").path("/products")
+                .graphMetadata(new GraphMetadata("Product", List.of(), List.of(), List.of()))
+                .build();
+
+        assertThat(new KernelHandlerTestGenerator().generate(graph, "com.example").content())
+                .contains("super((ProductRepository) null, null);");
+        assertThat(new KernelHandlerTestGenerator().generate(ORDER, "com.example").content())
+                .contains("super((OrderRepository) null);");
     }
 }

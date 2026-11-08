@@ -5,6 +5,9 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.Artifact
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.GraphEdgeMetadata;
+import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
+import eu.exeris.sdk.sourcemodel.ast.GraphPropertyMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 import eu.exeris.tooling.diagnostics.DiagnosticId;
 import org.junit.jupiter.api.DisplayName;
@@ -823,6 +826,100 @@ class KernelApplicationGeneratorTest {
                         + "{@link LedgerHandler}, {@link LedgerRepository}{@code .actingTenantId()}")
                 // optional: named, not listed
                 .contains("Optional, and so not listed: {@link KernelProviders#EVENT_PAYLOAD_CODEC_REGISTRY}");
+    }
+
+    private static DomainMetadata graphProduct() {
+        return DomainMetadata.builder("Product", "com.example.domain").path("/products")
+                .fields(List.of(FieldMetadata.builder("name", "String").build(),
+                        FieldMetadata.builder("categoryId", "UUID").build()))
+                .graphMetadata(new GraphMetadata("Product",
+                        List.of(new GraphPropertyMetadata("name", "STRING", false)),
+                        List.of(new GraphEdgeMetadata("categoryId", "Category", "BELONGS_TO")), List.of()))
+                .build();
+    }
+
+    private static DomainMetadata graphCategory() {
+        return DomainMetadata.builder("Category", "com.example.domain").path("/categories")
+                .graphMetadata(new GraphMetadata("Category", List.of(), List.of(), List.of()))
+                .build();
+    }
+
+    @Test
+    @DisplayName("ADR-070 Amendment 4: every graph sync is a component built from the boot-bound graph "
+            + "engine, and a non-tenant graph entity's service takes it through the accessor")
+    void graphSyncJoinsTheSeam() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata ledger = DomainMetadata.builder("Ledger", "com.example.domain").path("/ledgers")
+                .dataScope(eu.exeris.sdk.sourcemodel.ast.DataScope.TENANT)
+                .graphMetadata(new GraphMetadata("Ledger", List.of(), List.of(), List.of()))
+                .build();
+        String components = components(gen.generateAll(List.of(graphProduct(), graphCategory(), ledger),
+                "com.example.foundation"));
+
+        assertThat(components)
+                .contains("import eu.exeris.kernel.spi.graph.GraphKernelProviders;")
+                .contains("private ProductGraphSync productGraphSync;")
+                .contains("public ProductGraphSync productGraphSync()")
+                .contains("protected ProductGraphSync createProductGraphSync()")
+                // @GraphProperty: the allocator that encodes node properties is captured too.
+                .contains("return new ProductGraphSync(GraphKernelProviders.GRAPH_ENGINE.get(), "
+                        + "KernelProviders.MEMORY_ALLOCATOR.get());")
+                .contains("return new CategoryGraphSync(GraphKernelProviders.GRAPH_ENGINE.get());")
+                .contains("return new ProductService(productRepository(), productGraphSync());")
+                .contains("return new CategoryService(categoryRepository(), categoryGraphSync());")
+                // Tenant-partitioned: built, not handed to the service.
+                .contains("protected LedgerGraphSync createLedgerGraphSync()")
+                .contains("return new LedgerService(ledgerRepository());")
+                .contains("COMPOSITION_SCOPES = List.of(KernelProviders.MEMORY_ALLOCATOR, "
+                        + "GraphKernelProviders.GRAPH_ENGINE);")
+                .contains("{@link GraphKernelProviders#GRAPH_ENGINE} — read by "
+                        + "{@link #createProductGraphSync()}, {@link #createCategoryGraphSync()}, "
+                        + "{@link #createLedgerGraphSync()}")
+                .contains("{@link KernelProviders#MEMORY_ALLOCATOR} — read by {@link #createProductGraphSync()}, "
+                        + "{@link #createProductHandler()}")
+                .contains("service, graph sync, handler, publisher, subscriber and saga flow it");
+        DomainMetadata invoice = DomainMetadata.builder("Invoice", "com.example.domain").path("/invoices").build();
+        assertThat(components(gen.generateAll(List.of(invoice), "com.example.foundation")))
+                .contains("service, handler, publisher, subscriber and saga flow it wires or")
+                .doesNotContain("graph sync");
+    }
+
+    @Test
+    @DisplayName("ADR-070 Amendment 4: run() registers every graph sync's descriptors first, in domain "
+            + "order, before any publisher is built and before the handler slot is set")
+    void graphDescriptorsAreRegisteredFirst() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata invoice = DomainMetadata.builder("Invoice", "com.example.domain")
+                .path("/invoices")
+                .events(List.of(eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata.simple("InvoiceIssued")))
+                .build();
+        String lifecycle = lifecycle(gen.generateAll(List.of(graphProduct(), invoice, graphCategory()),
+                "com.example.foundation"));
+        String run = method(lifecycle, "public void run()");
+
+        int product = run.indexOf("components.productGraphSync().registerDescriptors();");
+        int category = run.indexOf("components.categoryGraphSync().registerDescriptors();");
+        int handlers = run.indexOf("components.productHandler();");
+        int publisher = run.indexOf("components.invoiceEventPublisher();");
+        int handlerSlot = run.indexOf("handlerSlot.set(");
+        assertThat(product).as("registered at boot").isGreaterThan(-1);
+        assertThat(category).as("in domain order").isGreaterThan(product);
+        assertThat(handlers).as("before anything is composed").isGreaterThan(category);
+        assertThat(publisher).as("before the publishers").isGreaterThan(category);
+        assertThat(handlerSlot).as("before the app serves").isGreaterThan(category);
+        assertThat(lifecycle).contains("<p>Graph descriptors are registered before anything else");
+    }
+
+    @Test
+    @DisplayName("ADR-070 Amendment 4: an application without graph entities carries no graph member, "
+            + "scope or registration")
+    void noGraphEntityNoGraphWiring() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        List<GeneratedFile> files = gen.generateAll(List.of(
+                DomainMetadata.builder("Tag", "com.example.domain").path("/tags").build()), "com.example.foundation");
+
+        assertThat(components(files)).doesNotContain("Graph");
+        assertThat(lifecycle(files)).doesNotContain("registerDescriptors").doesNotContain("Graph descriptors");
     }
 
     @Test

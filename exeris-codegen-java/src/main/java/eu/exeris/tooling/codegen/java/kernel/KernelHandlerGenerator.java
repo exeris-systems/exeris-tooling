@@ -428,7 +428,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         if (needsAggregate) {
             method.addStatement("$T removed = service.findById(id)", optionalOfEntity);
         }
-        method.addStatement("service.delete(id)");
+        KernelHandlerBlobRoutes.appendServiceDelete(method, metadata);
         // Non-payload DELETE events publish straight after the delete; payload-bearing ones
         // inside the presence check, because they need an aggregate to hand over.
         appendPublishCalls(method, metadata, DomainEventMetadata.Trigger.DELETE, null, "id", null);

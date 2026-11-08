@@ -9,7 +9,7 @@ slug: adr/ADR-070
 
 # ADR-070 — Open the generated composition root: `RuntimeComponents`
 
-- **Status:** ACCEPTED (2026-08-18) · amended 2026-09-26 (Amendment 1 — obligation 6; Amendment 2 — edge router, subscribers and flows, scope lists) · amended 2026-10-01 (Amendment 3 — StreamRouteResolver, obligations 4–6)
+- **Status:** ACCEPTED (2026-08-18) · amended 2026-09-26 (Amendment 1 — obligation 6; Amendment 2 — edge router, subscribers and flows, scope lists) · amended 2026-10-01 (Amendment 3 — StreamRouteResolver, obligations 4–6) · amended 2026-11-07 (Amendment 4 — the graph sync joins the seam, is registered at boot and is called by the service)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / codegen pipeline
 - **Visibility:** public
@@ -463,3 +463,94 @@ and `run()` publishes exactly what `decorate` returned:
    refused once `configureRoutes` registers a stream and accepted when nothing streams; and
    `edgeHandler(...)` answering `503` to a stream open while the slot is empty. The `decorate` and
    edge cases fail when the emitted mechanism each covers is removed.
+
+---
+
+## Amendment 4 — the graph sync joins the seam, is registered at boot, and is called by the service (2026-11-07)
+
+**Status:** Accepted *(adds one component kind to obligation 1, one scope to the composition list,
+and a first step to Amendment 2's `run()` order; the rest of the seam is unchanged)*
+**Trigger:** the generated `<Entity>GraphSync` was a component type outside the seam. No factory
+built it, and no generated code registered its descriptors or called it, while the `graph`
+subsystem booted.
+
+### What
+
+**Obligation 1: one more component kind.** Every `<Entity>GraphSync` gets the three members.
+`create<Entity>GraphSync()` returns `new <Entity>GraphSync(GraphKernelProviders.GRAPH_ENGINE.get())`,
+plus `KernelProviders.MEMORY_ALLOCATOR.get()` when the entity declares `@GraphProperty`.
+`GRAPH_ENGINE` joins `COMPOSITION_SCOPES`, read by every graph-sync factory; `MEMORY_ALLOCATOR`
+gains the property-encoding graph-sync factories as readers. The graph sync is built for every
+graph entity, tenant-partitioned ones included, so a consumer's code can reach it.
+
+**`run()` order: a step before step 1.** `RuntimeLifecycle.run()` calls `registerDescriptors()` on
+every graph sync, in domain order: the node descriptor, then the edge descriptors in declaration
+order. This registration is load-bearing. The Community engine creates `graph_nodes` and each edge
+table only when the descriptor is registered with a bound `PersistenceEngine`, which holds only in
+the boot scope. Its `deleteNode` also cascades only through registered edges. Registration is an
+explicit method rather than a constructor side effect, so constructing a graph sync touches no
+storage.
+
+**The service calls the sync.** For an entity that is not tenant-partitioned, `<Entity>Service`
+takes its graph sync as a constructor argument, through the accessor (obligation 2), and the
+one-argument constructor is no longer emitted for it.
+
+- `save`, `update` and `updateFromRequest` call `syncToGraph` on the entity the repository returned.
+- `delete` calls `deleteFromGraph`, whether the delete is hard or soft: a soft-deleted row is hidden
+  from every read, so its node goes too.
+- Each call runs after the repository returns, so after the commit. A write the repository refuses
+  throws before the graph is touched. The graph SPI offers no transaction that spans the relational
+  store: the Community SQL binding commits each statement, and the Cypher binding is a separate
+  store.
+- A graph failure propagates, so the route answers 5xx for a row that committed. This is the
+  after-commit trade-off ADR-075 accepted for the publish.
+- A consumer who wants the write to stand regardless returns a `create<Entity>GraphSync()` subclass
+  whose `syncToGraph` and `deleteFromGraph` catch.
+- On a graph failure after a delete, the delete route's later steps do not run: its `DELETE` events
+  are not published. The handler of a hard-deleted entity with `@Blob` fields wraps
+  `service.delete(id)` and, when the call fails and the row is gone, deletes the row's objects
+  before the failure propagates. A retried `DELETE` answers `404` and could not reach them.
+
+The service is the seam, not the handler. Every write reaches it, including each action and each
+streaming action through `service.update`, and the projection needs only the stored state, not the
+trigger.
+
+**Tenant-partitioned entities are not called.** The graph sync is still built, but the service does
+not take or call it. The Community graph refuses a tenant-scoped traversal on a request thread,
+where no `PersistenceEngine` is bound, and writes nodes to one `graph_nodes` table that carries no
+tenant. The emitted service Javadoc says so, and the kernel ask is recorded upstream.
+
+**Server-side only.** The graph projection has no client-side counterpart: `exeris-codegen-ts` emits
+nothing for it, because a generated client reads an entity through its routes and never the graph.
+
+### Consequences
+
+- **[+]** A generated application keeps its graph in step with its rows on every generated write
+  path of a non-tenant `@Graph` entity.
+- **[-]** The service constructor of a non-tenant `@Graph` entity gains a parameter. A consumer
+  subclass or override passes `<entity>GraphSync()`; see the API ledger entry and the 0.11.0
+  migration step.
+- **[-]** Every write route of a graph entity pays the graph round trips, and a graph outage fails
+  those routes after their rows commit.
+- **[-]** A crash between commit and sync leaves the graph stale for that row until its next sync.
+- **[-]** A graph failure after a delete commits skips the route's `DELETE` events; a retried
+  `DELETE` answers `404`, so they are not published for that row. The row's `@Blob` objects are
+  deleted on that failure path, and are not orphaned.
+- **[-]** A tenant-partitioned `@Graph` entity's graph stays the consumer's to call until the kernel
+  can scope graph sessions to the acting tenant.
+
+### Engineering Protocol (additions)
+
+1. `KernelApplicationGeneratorTest`: the graph sync's three members, its scope and readers, the
+   service factory passing it through the accessor, and the registration step before publishers and
+   before `handlerSlot`.
+2. `KernelServiceGeneratorTest`: the call after each repository write, the soft-delete removal, and
+   tenant-partitioned and non-graph services unchanged.
+3. `ScopeLedgerE2ETest` scans `GraphKernelProviders` reads alongside the other two holders, with a
+   graph corpus.
+4. `GraphSyncPostgresBootE2ETest` (`@Tag("postgres")`): create, update with a changed edge, and
+   delete, read back from `graph_nodes` and the edge table. Its second case boots an application
+   whose graph sync registers nothing and answers `500` for a committed row, which is the vacuity
+   check of the registration.
+5. `BlobFieldRoutesE2ETest`: a hard delete of a `@Graph` entity with a `@Blob` field whose node
+   delete fails answers `500`, leaves no stored object, and a retry answers `404`.

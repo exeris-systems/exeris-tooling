@@ -74,8 +74,8 @@ import java.util.Optional;
  * <p>A nested {@code Stub<Entity>Service} subclasses the generated service and overrides the three
  * methods under test. Subclassing rather than mocking is what keeps the dependency contract at
  * JUnit 5 + AssertJ (ADR-058): the generated service is {@code public}, non-final, and its
- * constructor only assigns the repository, so {@code super(null)} is safe and no repository —
- * hence no persistence stack — is ever touched.
+ * constructor only assigns the repository and a graph entity's graph sync, so {@code super(null)}
+ * touches no persistence stack or graph engine: every method that would reach either is overridden.
  *
  * <p>Per entity, like the handler it covers. Deterministic: the emitted source is a pure function
  * of the entity name and package (hard-constraint #3), and the one {@code UUID} the tests need is
@@ -1294,14 +1294,16 @@ public final class KernelHandlerTestGenerator {
         // So does one whose relationship names a missing row (ADR-076 Amendment 1).
         boolean refuses = KernelErrorGenerator.tenantMismatchType(metadata) != null
                 || foreignKeys.referenceNotFound() != null;
+        boolean synced = KernelGraphSyncGenerator.syncedByService(metadata);
 
         TypeSpec.Builder stub = TypeSpec.classBuilder(stubType.simpleName())
                 .addModifiers(Modifier.STATIC, Modifier.FINAL)
                 .superclass(serviceType)
                 .addJavadoc("Records what the handler asked for and returns what the test staged.\n")
                 .addJavadoc("<p>{@code super(null)} is safe: the generated service constructor only\n")
-                .addJavadoc("assigns the repository, and no method overridden here reads it — so no\n")
-                .addJavadoc("persistence engine is involved in a handler test.\n")
+                .addJavadoc("assigns the repository$L, and no method overridden here reads $L — so no\n",
+                        synced ? " and the graph sync" : "", synced ? "either" : "it")
+                .addJavadoc("persistence$L engine is involved in a handler test.\n", synced ? " or graph" : "")
                 .addField(FieldSpec.builder(KernelListQueryGenerator.pageType(metadata), "page")
                         .initializer("$T.of($T.of(), 0L, 0, $T.DEFAULT_SIZE)",
                                 KernelListQueryGenerator.pageType(metadata), LIST,
@@ -1399,7 +1401,7 @@ public final class KernelHandlerTestGenerator {
         findById.addStatement("return byId");
         stub
                 .addMethod(MethodSpec.constructorBuilder()
-                        .addStatement("super(($T) null)", repositoryType)
+                        .addStatement(synced ? "super(($T) null, null)" : "super(($T) null)", repositoryType)
                         .build())
                 .addMethod(findPage.build())
                 .addMethod(findById.build())

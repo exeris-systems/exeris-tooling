@@ -1,7 +1,11 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.DataScope;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.GraphEdgeMetadata;
+import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
+import eu.exeris.sdk.sourcemodel.ast.GraphPropertyMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
@@ -207,5 +211,65 @@ class KernelServiceTestGeneratorTest {
                 .contains("this.fromRequest = true;")
                 .contains("this.fromRequest = false;");
         assertThat(generate(ORDER)).doesNotContain("fromRequest");
+    }
+
+    private static DomainMetadata.Builder graphProduct(List<GraphPropertyMetadata> properties) {
+        return DomainMetadata.builder("Product", "com.example.domain").path("/products")
+                .fields(List.of(FieldMetadata.builder("name", "String").build(),
+                        FieldMetadata.builder("categoryId", "UUID").build()))
+                .graphMetadata(new GraphMetadata("Product", properties,
+                        List.of(new GraphEdgeMetadata("categoryId", "Category", "BELONGS_TO")), List.of()));
+    }
+
+    @Test
+    @DisplayName("a graph entity's service test builds the service with a recording graph sync and asserts "
+            + "what each write projected, and that a refused write projects nothing")
+    void graphEntityGetsTheProjectionCases() {
+        String source = generate(graphProduct(List.of()).build()).replaceAll("\\s+", " ");
+
+        assertThat(source)
+                .contains("import com.example.graph.ProductGraphSync;")
+                .contains("RecordingGraphSync graphSync = new RecordingGraphSync(); "
+                        + "ProductService service = new ProductService(repository, graphSync);")
+                .contains("static final class RecordingGraphSync extends ProductGraphSync")
+                .contains("RecordingGraphSync() { super(null); }")
+                .contains("public void syncToGraph(Product entity) { this.synced = entity; this.calls++; }")
+                .contains("public void deleteFromGraph(UUID entityId) { this.removed = entityId; this.calls++; }")
+                .contains("Assertions.assertThat(graphSync.synced).isSameAs(persisted);")
+                .contains("Assertions.assertThat(graphSync.removed).isEqualTo(UUID.fromString(")
+                .contains("void aWriteTheRepositoryRefusesIsNotProjectedIntoTheGraph()")
+                .contains("Assertions.assertThat(graphSync.calls).isZero();")
+                .contains("if (refusal != null) { throw refusal; }")
+                .doesNotContain("new ProductService(repository);");
+        assertThat(generate(graphProduct(List.of(new GraphPropertyMetadata("name", "STRING", false))).build()))
+                .contains("super(null, null);");
+    }
+
+    @Test
+    @DisplayName("a graph entity with a read-only field asserts that a refused request update projects nothing")
+    void graphEntityWithReadOnlyFieldCoversTheRefusedRequestUpdate() {
+        String plain = generate(graphProduct(List.of()).build()).replaceAll("\\s+", " ");
+        String readOnly = generate(graphProduct(List.of())
+                .fields(List.of(FieldMetadata.builder("name", "String").readOnly(true).build(),
+                        FieldMetadata.builder("categoryId", "UUID").build()))
+                .build()).replaceAll("\\s+", " ");
+
+        String refusedRequestUpdate = "Assertions.assertThatThrownBy(() -> service.updateFromRequest("
+                + "UUID.fromString(\"00000000-0000-4000-8000-000000000001\"), new Product()))"
+                + ".isSameAs(repository.refusal); Assertions.assertThat(graphSync.calls).isZero();";
+        assertThat(readOnly).contains(refusedRequestUpdate);
+        assertThat(plain).doesNotContain("service.updateFromRequest(");
+    }
+
+    @Test
+    @DisplayName("a tenant-partitioned graph entity's service test is the plain one")
+    void tenantGraphEntityGetsThePlainTest() {
+        String tenantGraph = generate(graphProduct(List.of()).dataScope(DataScope.TENANT).build());
+        String tenantPlain = generate(DomainMetadata.builder("Product", "com.example.domain").path("/products")
+                .fields(List.of(FieldMetadata.builder("name", "String").build(),
+                        FieldMetadata.builder("categoryId", "UUID").build()))
+                .dataScope(DataScope.TENANT).build());
+
+        assertThat(tenantGraph).isEqualTo(tenantPlain).doesNotContain("GraphSync").doesNotContain("refusal");
     }
 }

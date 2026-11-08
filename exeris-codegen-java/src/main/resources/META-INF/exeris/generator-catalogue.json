@@ -248,7 +248,7 @@
     {
       "id": "graph-sync",
       "generator": "KernelGraphSyncGenerator",
-      "artefact": "The projection of the entity and its edges into the graph SPI.",
+      "artefact": "The projection of the entity and its edges into the graph SPI, built in RuntimeComponents, registered at boot, and called by the service unless the entity is tenant-partitioned.",
       "outputRoot": "main",
       "pathPattern": "^(?:[^/]+/)*graph/[^/]+GraphSync\\.java$",
       "pathTemplate": "{base}/graph/{E}GraphSync.java",
@@ -256,7 +256,7 @@
       "cardinality": "zero-or-one",
       "condition": "`@Graph`",
       "ambiguousWith": [],
-      "adr": null,
+      "adr": "ADR-070",
       "since": "0.10.0"
     },
     {
