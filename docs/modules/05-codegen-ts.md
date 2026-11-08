@@ -4,7 +4,7 @@ type: module
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-11-03
+last-verified: 2026-11-08
 ---
 
 # Codegen TS
@@ -48,8 +48,8 @@ It is not a module of the Maven reactor. It has its own build (`npm`), its own t
 | Forms | Signal Forms from `@angular/forms/signals` ([ADR-093](../adr/ADR-093-emitted-forms-are-signal-forms.md)) |
 | Stores | An injectable class per entity holding its state in `signal` and `computed` |
 | Guards | `core/route-guards.ts` with `requireAuthenticated` and `requireAnyPermission(...permissions)`, emitted only when some route demands identity; `app.routes.ts` attaches them per page from the route-requirement row of the backend route the page calls first ([ADR-105](../adr/ADR-105-generated-route-policy-emission.md) obligations 20 to 22). No permission name is invented |
-| Styling | Tailwind v4 through `@exeris/ui-kit` |
-| Relationships | A `MANY_TO_ONE` key links to the target's detail page and is picked from its records in the form. A `ONE_TO_MANY` is a related-records panel of the detail view, read through the target's service filtered by the back-reference's key. A `List` field that a `ONE_TO_MANY` with `mappedBy` declares is held by the target's rows, so the record type, its Zod schema and both request types leave it out, as they leave out a `@Blob` field (`src/core/relationships.ts`). A `MANY_TO_MANY` has no panel |
+| Styling | Tailwind v4 through `@exeris/ui-kit`. A declared `@NavMenu` or `@Tab` icon that is a Material icon name renders through the Material Symbols font, which the scaffold adds (`material-symbols`) only when a template uses it |
+| Relationships | A `MANY_TO_ONE` key links to the target's detail page and is picked from its records in the form, through a search box over the target's list route when the target has a searchable field. A `ONE_TO_MANY` is a related-records panel of the detail view, read through the target's service filtered by the back-reference's key. A `List` field that a `ONE_TO_MANY` with `mappedBy` declares is held by the target's rows, so the record type, its Zod schema and both request types leave it out, as they leave out a `@Blob` field (`src/core/relationships.ts`). A `MANY_TO_MANY` has no panel |
 
 ### Output tree ownership
 

@@ -4,7 +4,7 @@ type: module
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-11-03
+last-verified: 2026-11-08
 ---
 
 # Maven plugin
@@ -53,7 +53,7 @@ Fails when an SPI that `RequiredDrivers` derives from the emitted artifacts has 
 
 ### `detach`
 
-Moves the files under `exeris.generatedDir` byte for byte into `exeris.targetDir`, prunes the emptied generated tree and removes `exeris.ignoreEntry` from the ignore file. A missing or empty generated tree is a no-op, so rerunning is safe. A file that already exists at the target is a conflict and is left in place, never overwritten. After it the application owns the code and removes the `generate` execution from its build. It moves the one tree `exeris.generatedDir` names; the generated-test tree is not moved.
+Moves the files under `exeris.generatedDir` byte for byte into `exeris.targetDir`, prunes the emptied generated tree and removes `exeris.ignoreEntry` from the ignore file. A missing or empty generated tree is a no-op, so rerunning is safe. A file that already exists at the target is a conflict and is left in place, never overwritten. After it the application owns the code and removes the `generate` execution from its build. It moves the one tree `exeris.generatedDir` names; the generated-test and integration-test trees are not moved.
 
 ## Hot path
 
