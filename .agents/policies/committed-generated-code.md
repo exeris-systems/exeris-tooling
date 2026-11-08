@@ -12,6 +12,7 @@ Generated code is committed into downstream user repositories to enable develope
    Downstream projects may run `exeris:detach` (planned for the 0.3.0 Maven plugin), breaking the generator umbilical cord and allowing the user to take full, permanent ownership of the emitted code. The pipeline must never emit code that depends on private or internal codegen runtime scaffolding.
 4. **Separation of generated test sources.**
    Per ADR-058, generated tests are placed in a distinct output directory (`src/test/generated/java`) behind the opt-in `exeris.tests` flag, ensuring test suites are cleanly decoupled from main sources.
+   Per ADR-058 Amendment 1, generated integration tests are placed in a third root (`src/test/generated-it/java`, `exeris.integrationTestOutputDir`) behind the opt-in `exeris.integrationTests` flag. It has its own `OutputWriter` and manifest, so neither test tree prunes the other, and `exeris:generate` registers it as a test compile source root. The Java emitters write to no other root.
 
 ## Verification
 
