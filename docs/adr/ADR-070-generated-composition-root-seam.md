@@ -520,6 +520,9 @@ not take or call it. The Community graph refuses a tenant-scoped traversal on a 
 where no `PersistenceEngine` is bound, and writes nodes to one `graph_nodes` table that carries no
 tenant. The emitted service Javadoc says so, and the kernel ask is recorded upstream.
 
+**Server-side only.** The graph projection has no client-side counterpart: `exeris-codegen-ts` emits
+nothing for it, because a generated client reads an entity through its routes and never the graph.
+
 ### Consequences
 
 - **[+]** A generated application keeps its graph in step with its rows on every generated write

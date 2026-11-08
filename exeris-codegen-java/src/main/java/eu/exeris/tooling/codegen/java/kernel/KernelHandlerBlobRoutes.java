@@ -339,9 +339,8 @@ final class KernelHandlerBlobRoutes {
     }
 
     /**
-     * Deletes every object of a hard-deleted row, each on its own: the row is gone, so a failed
-     * object delete is logged at warning level and fails nothing, and leaves the object in the
-     * store.
+     * Deletes the objects of a row whose delete failed after the row was removed: a row that is
+     * still stored keeps its objects, and a failure here is suppressed into the route's failure.
      */
     private static MethodSpec deleteObjectsOfAGoneRowMethod() {
         return MethodSpec.methodBuilder("deleteBlobObjectsIfRowGone")
@@ -363,6 +362,11 @@ final class KernelHandlerBlobRoutes {
                 .build();
     }
 
+    /**
+     * Deletes every object of a hard-deleted row, each on its own: the row is gone, so a failed
+     * object delete is logged at warning level and fails nothing, and leaves the object in the
+     * store.
+     */
     private static MethodSpec deleteObjectsMethod(List<FieldMetadata> fields, String entityLower) {
         MethodSpec.Builder method = MethodSpec.methodBuilder("deleteBlobObjects")
                 .addModifiers(Modifier.PRIVATE)

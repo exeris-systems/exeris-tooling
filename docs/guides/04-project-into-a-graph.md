@@ -11,7 +11,7 @@ last-verified: 2026-11-07
 
 **Audience:** you declare `@Graph`, `@GraphProperty` and `@GraphEdge` on an entity and want to know what the generated graph sync writes to the kernel graph SPI, and when.
 
-**Goal:** generate the `graph` scenario's `Product`, read its `ProductGraphSync`, and see where the generated application calls it.
+**Goal:** generate the `graph` scenario's `Product`, read its `ProductGraphSync`, and choose what a graph failure does to a write.
 
 > **Verified against** exeris-tooling `main` at commit `5528cd59` with the change that wires the graph sync into the generated application applied (`0.11.0-SNAPSHOT`), and `exeris-sdk-examples` at tag `v0.13.3`, 2026-11-07. Every step was re-checked. Generated snippets are quoted from the `SdkExamplesE2ETest` workspace, `exeris-e2e-tests/target/sdk-examples/app/`. If a snippet and its source disagree, **the source wins and this guide is the defect**.
 
@@ -80,15 +80,11 @@ This example declares no direction, `bidirectional` or weight on its edges, so e
 
 `deleteFromGraph(UUID)` deletes the node, and the graph SPI's `deleteNode` contract deletes its incident edges with it.
 
-### 4. Know who calls the sync, and when
+### 4. Choose what a graph failure does to a write
 
-The generated application wires the graph sync itself ([ADR-070](../adr/ADR-070-generated-composition-root-seam.md), Amendment 4):
+`ProductService` calls the graph sync after each repository write: `syncToGraph` on the row `save`, `update` or `updateFromRequest` stored, and `deleteFromGraph` after `delete`. Who builds and registers the sync, the order of the calls and what a failure leaves behind are stated on the [codegen-java module page](../modules/04-codegen-java.md) and in [ADR-070](../adr/ADR-070-generated-composition-root-seam.md) Amendment 4.
 
-- `RuntimeComponents` builds it in `createProductGraphSync()` from the kernel's `GraphEngine` and `MemoryAllocator`, read inside the boot callback where both are bound. The node's properties are encoded as one UTF-8 JSON object in a buffer loaned from that allocator.
-- `RuntimeLifecycle.run()` calls `registerDescriptors()` on it before anything else. Registration is what makes the Community SQL graph create `graph_nodes` and one table per edge type, and what lets a node delete cascade through those edge tables.
-- `ProductService` takes it as a constructor argument and calls it after each repository write: `syncToGraph` on the entity `save`, `update` or `updateFromRequest` returned, which is the row as stored, and `deleteFromGraph` after `delete`, whether the delete is hard or soft. Every generated write route, each action included, goes through the service, and so does your code when it calls the service.
-
-Generated: `src/main/generated/java/eu/exeris/sdk/examples/graph/service/ProductService.java`, methods `save` and `delete` (quoted).
+Generated: `src/main/generated/java/eu/exeris/sdk/examples/graph/service/ProductService.java`, method `save` (quoted).
 
 ```java
 public Product save(Product entity) {
@@ -98,14 +94,7 @@ public Product save(Product entity) {
 }
 ```
 
-```java
-public void delete(UUID id) {
-    repository.deleteById(id);
-    graphSync.deleteFromGraph(id);
-}
-```
-
-The sync runs after the repository returns, so after the row has committed: the graph SPI offers no transaction that spans the relational store. A write the repository refuses, a missing row or a conflict, throws before the graph is touched. A graph failure propagates, so the route answers `500` for a row that is stored, and a failed delete publishes none of its `DELETE` events: a retried `DELETE` answers `404`. For an entity with `@Blob` fields that is hard-deleted, the delete route still deletes the row's stored objects on that failure when the row is gone. To let the write stand instead, return a graph sync that catches from an override of `createProductGraphSync()`:
+By default a graph failure fails the route after the row has committed. To let the write stand instead, return a graph sync that catches from an override of `createProductGraphSync()`:
 
 ```java
 @Override
@@ -132,7 +121,6 @@ protected ProductGraphSync createProductGraphSync() {
 }
 ```
 
-An entity whose `dataScope` is `TENANT` or `UNIVERSE` is not synced by its service. The Community graph engine cannot scope a traversal to the acting tenant on a request thread, where no `PersistenceEngine` is bound, and it keeps every node in one `graph_nodes` table that carries no tenant. `RuntimeComponents` still builds that entity's graph sync, and the service's Javadoc says why it does not call it.
 
 ## Verify
 
@@ -142,7 +130,7 @@ An entity whose `dataScope` is `TENANT` or `UNIVERSE` is not synced by its servi
 
 ## Not available today
 
-- **A graph sync for a tenant-partitioned entity.** See step 4.
+- **A graph sync for a tenant-partitioned entity.** Its service does not call it; the reason is on the [codegen-java module page](../modules/04-codegen-java.md).
 - **Repair after a crash between the commit and the sync.** The row is stored and the node is not, until the entity's next write syncs it.
 - **`@GraphQuery`.** `Product` declares a `neighbours` query, and nothing is generated from it.
 - **A wide `List<UUID>` column.** The relational table stores `relatedIds` as JSON text in a `related_ids VARCHAR(255)` column of `products`, so the column's width bounds how many keys one row can hold.
