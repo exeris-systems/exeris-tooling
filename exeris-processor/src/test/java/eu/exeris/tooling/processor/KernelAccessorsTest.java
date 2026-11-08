@@ -8,6 +8,7 @@ import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphEdgeMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphPropertyMetadata;
+import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -48,6 +49,37 @@ class KernelAccessorsTest {
 
         assertThat(calls(metadata)).containsExactly(
                 "getId()", "setId(…)", "getTenantId()", "setTenantId(…)", "setScan(…)");
+    }
+
+    @Test
+    @DisplayName("an inverse collection is reset through its setter and never read, even when required")
+    void inverseCollectionNeedsOnlySetter() {
+        DomainMetadata metadata = entity()
+                .fields(List.of(field("number", "String"),
+                        FieldMetadata.builder("lines", "java.util.List<com.example.notes.domain.Line>")
+                                .required(true).readOnly(true).build()))
+                .relationships(List.of(RelationshipMetadata.builder("lines", "Line")
+                        .type(RelationshipMetadata.RelationType.ONE_TO_MANY).mappedBy("noteId").build()))
+                .build();
+
+        assertThat(calls(metadata)).containsExactly(
+                "getId()", "setId(…)", "getNumber()", "setNumber(…)", "setLines(…)");
+    }
+
+    @Test
+    @DisplayName("a List field is a column when its ONE_TO_MANY names no mappedBy, and so is a mappedBy scalar")
+    void listWithoutMappedByIsAColumn() {
+        DomainMetadata metadata = entity()
+                .fields(List.of(field("tags", "List<String>"), field("ownerId", "java.util.UUID")))
+                .relationships(List.of(
+                        RelationshipMetadata.builder("tags", "Tag")
+                                .type(RelationshipMetadata.RelationType.ONE_TO_MANY).build(),
+                        RelationshipMetadata.builder("ownerId", "Owner")
+                                .type(RelationshipMetadata.RelationType.ONE_TO_MANY).mappedBy("noteId").build()))
+                .build();
+
+        assertThat(calls(metadata)).containsExactly(
+                "getId()", "setId(…)", "getTags()", "setTags(…)", "getOwnerId()", "setOwnerId(…)");
     }
 
     @Test

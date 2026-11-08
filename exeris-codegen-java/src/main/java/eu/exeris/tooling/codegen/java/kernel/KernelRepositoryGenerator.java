@@ -11,16 +11,18 @@ import com.palantir.javapoet.TypeVariableName;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
-import eu.exeris.tooling.codegen.java.support.BlobFields;
 import eu.exeris.tooling.codegen.java.support.ColumnNaming;
 import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
 import eu.exeris.tooling.codegen.java.support.DomainTypeKind;
+import eu.exeris.tooling.codegen.java.support.ForeignKeys;
+import eu.exeris.tooling.codegen.java.support.InverseCollections;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.tooling.codegen.java.support.NameCasing;
 import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
 import eu.exeris.tooling.codegen.java.support.ListQuerySupport;
 import eu.exeris.tooling.codegen.java.support.ServerOwnedFields;
 import eu.exeris.tooling.codegen.java.support.SqlColumnTypes;
+import eu.exeris.tooling.codegen.java.support.StoredFields;
 import eu.exeris.tooling.codegen.java.support.SystemColumns;
 import eu.exeris.tooling.codegen.java.support.SystemColumns.Role;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
@@ -211,8 +213,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
 
     /**
      * Whether the emitted repository for {@code metadata} imports Jackson 3 — true exactly when a
-     * field is a {@code List<X>}, which is persisted as a JSON column — a compile requirement
-     * the kernel SPI and core do not satisfy.
+     * column is a {@code List<X>}, which is persisted as JSON — a compile requirement the kernel
+     * SPI and core do not satisfy. An inverse collection is no column, so it needs no JSON.
      *
      * <p>The ADR-060-shaped alternative — encoding these columns through a kernel-provided codec, so
      * the repository names no JSON library — is an open question tracked in {@code ROADMAP.md}.
@@ -221,7 +223,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      * @return whether the emitted repository imports {@code tools.jackson}
      */
     static boolean importsJackson(DomainMetadata metadata) {
-        return metadata.fields().stream().anyMatch(f -> listElementType(f.type()) != null);
+        return metadata.fields().stream()
+                .anyMatch(f -> listElementType(f.type()) != null && StoredFields.isColumn(metadata, f));
     }
 
     /** The element type of a {@code List}-typed field, or {@code null} — see {@link DomainTypeKind}. */
@@ -238,10 +241,13 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      * store and read back — a {@link DomainTypeKind#UNSTORABLE} field, or a {@code List} whose
      * element type is not a plain type name (a parameterised type, an array, a wildcard), or a field
      * typed as an entity of {@code domains}, or a {@code @GraphEdge} field that is neither a
-     * {@code UUID} nor a {@code List<UUID>}. An enum field is never refused, whatever its type is
-     * named, when its {@code enumType} is set.
+     * {@code UUID} nor a {@code List<UUID>}, or a {@code List} of an entity of {@code domains} that
+     * is no inverse collection, or an inverse collection whose target is no entity of
+     * {@code domains}, whose element is not its target, or whose {@code mappedBy} names no
+     * {@code MANY_TO_ONE} of the target back to the entity. An enum field is never refused,
+     * whatever its type is named, when its {@code enumType} is set.
      * A field that is not a column — a {@code @Blob} field, or one shadowing the primary key or an
-     * active system column — is not checked, since nothing binds or reads it.
+     * active system column — is not checked as a column, since nothing binds or reads it.
      *
      * <p>Called by the pipeline before it writes anything, so a refused build leaves the generated
      * tree as it was; {@link #generate} applies the same check to its one entity.
@@ -269,14 +275,96 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
 
     private static List<String> unpersistableFields(DomainMetadata metadata, List<DomainMetadata> build) {
         List<String> refused = unstorableColumns(metadata, build);
-        // A field refused as a column is reported once, as a column.
-        for (String edgeField : KernelGraphSyncGenerator.unwritableEdgeFields(metadata, build)) {
-            String field = edgeField.substring(0, edgeField.indexOf(" : ") + 3);
-            if (refused.stream().noneMatch(entry -> entry.startsWith(field))) {
-                refused.add(edgeField);
+        // A field is reported once: as a column, else as a graph edge, else as a collection.
+        addUnreported(refused, KernelGraphSyncGenerator.unwritableEdgeFields(metadata, build));
+        addUnreported(refused, unreadableCollections(metadata, build));
+        return refused;
+    }
+
+    private static void addUnreported(List<String> refused, List<String> entries) {
+        for (String entry : entries) {
+            String field = entry.substring(0, entry.indexOf(" : ") + 3);
+            if (refused.stream().noneMatch(reported -> reported.startsWith(field))) {
+                refused.add(entry);
+            }
+        }
+    }
+
+    /**
+     * The {@code List} fields that name rows of an entity of {@code build} that no table holds for
+     * this entity: an inverse collection that does not resolve to a {@code MANY_TO_ONE} back to it,
+     * and a {@code List} of an entity that is no inverse collection.
+     */
+    private static List<String> unreadableCollections(DomainMetadata metadata, List<DomainMetadata> build) {
+        List<String> refused = new ArrayList<>();
+        for (FieldMetadata field : metadata.fields()) {
+            if (DomainTypeKind.of(field) != DomainTypeKind.LIST) {
+                continue;
+            }
+            Optional<RelationshipMetadata> inverse = InverseCollections.relationship(metadata, field);
+            String reason = inverse.isPresent()
+                    ? unresolvedInverseReason(metadata, field, inverse.get(), build)
+                    : entityCollectionReason(metadata, field, build);
+            if (reason != null) {
+                refused.add(metadata.packageName() + "." + metadata.entityName() + "." + field.name()
+                        + " : " + field.type() + " (" + reason + ")");
             }
         }
         return refused;
+    }
+
+    /** Why an inverse collection has no rows to read, or {@code null} when it resolves. */
+    private static String unresolvedInverseReason(DomainMetadata owner, FieldMetadata field,
+                                                  RelationshipMetadata inverse, List<DomainMetadata> build) {
+        Optional<DomainMetadata> target = ForeignKeys.entityOf(inverse.targetEntity(), build);
+        if (target.isEmpty()) {
+            return "the target " + inverse.targetEntity() + " is not an entity of this build, so no row"
+                    + " of it can be read";
+        }
+        String entity = target.get().entityName();
+        if (!entity.equals(referencedEntity(listElementType(field.type()), owner, build))) {
+            return "a mappedBy collection is a List of its targetEntity: List<" + entity + ">";
+        }
+        if (ForeignKeys.backReference(owner, inverse, build).isEmpty()) {
+            return "mappedBy \"" + inverse.mappedBy() + "\" names no MANY_TO_ONE of " + entity
+                    + " that references " + owner.entityName() + "; declare @Relationship(targetEntity = "
+                    + owner.entityName() + ".class) UUID " + lowerFirst(owner.entityName()) + "Id on " + entity;
+        }
+        return null;
+    }
+
+    /** Why a {@code List} of an entity that is no inverse collection is refused, or {@code null}. */
+    private static String entityCollectionReason(DomainMetadata owner, FieldMetadata field,
+                                                 List<DomainMetadata> build) {
+        String entity = referencedEntity(listElementType(field.type()), owner, build);
+        if (entity == null) {
+            return null;
+        }
+        return "a collection of the entity " + entity + ", which no column stores; read it from " + entity
+                + "'s rows with @Relationship(targetEntity = " + entity + ".class, relationshipType = ONE_TO_MANY,"
+                + " mappedBy = \"" + backReferenceKey(owner, entity, build) + "\"), or hold their keys:"
+                + " List<UUID> " + lowerFirst(entity) + "Ids";
+    }
+
+    /**
+     * The name of {@code entity}'s first {@code MANY_TO_ONE} back to {@code owner}, in declaration
+     * order, or the key it would declare: {@code <owner>Id}.
+     */
+    private static String backReferenceKey(DomainMetadata owner, String entity, List<DomainMetadata> build) {
+        Optional<DomainMetadata> target = ForeignKeys.entityOf(entity, build);
+        if (target.isPresent() && target.get().hasRelationships()) {
+            for (RelationshipMetadata rel : target.get().relationships()) {
+                if (rel.type() == RelationshipMetadata.RelationType.MANY_TO_ONE
+                        && ForeignKeys.entityOf(rel.targetEntity(), build).filter(owner::equals).isPresent()) {
+                    return rel.name();
+                }
+            }
+        }
+        return lowerFirst(owner.entityName()) + "Id";
+    }
+
+    private static String lowerFirst(String name) {
+        return Character.toLowerCase(name.charAt(0)) + name.substring(1);
     }
 
     private static List<String> unstorableColumns(DomainMetadata metadata, List<DomainMetadata> build) {
@@ -460,7 +548,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                     .initializer("new $T()", OBJECT_MAPPER)
                     .build());
             // The import above is a compile requirement no emitted pom declares. Appended after
-            // DO NOT EDIT, and only for an entity with a List<X> field.
+            // DO NOT EDIT, and only for an entity with a List<X> column.
             repo.addJavadoc("<p>Compile requirement: {@code List<X>} fields are persisted as JSON\n")
                     .addJavadoc("through Jackson 3 ({@code tools.jackson.databind} /\n")
                     .addJavadoc("{@code tools.jackson.core}). Neither {@code exeris-kernel-spi} nor\n")
@@ -647,7 +735,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             // skip a field held outside the row, a duplicate of the PK / an earlier field, or a
             // shadow of a system column (membership check before mutating `seen`, so the guard has
             // no side effect)
-            if (!BlobFields.isColumn(field) || seen.contains(sqlName) || systemCols.contains(sqlName)) {
+            if (!StoredFields.isColumn(metadata, field) || seen.contains(sqlName) || systemCols.contains(sqlName)) {
                 continue;
             }
             seen.add(sqlName);
@@ -927,7 +1015,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      *
      * <p>Every filterable field gets a finder; the WHERE column always exists — either as a domain
      * column or, in the rare shadow case, as the system column it collides with. A field that is no
-     * column ({@link BlobFields#isColumn}) has nothing to compare, and two more are excluded: a
+     * column ({@link StoredFields#isColumn}) has nothing to compare, and two more are excluded: a
      * field whose finder would shadow the primary-key lookup (see {@link #shadowsPrimaryKeyLookup}),
      * and a {@code List} field, whose column is JSON text — equality on it compares a rendering, not
      * the list, so such a finder could not find the row it was written from.
@@ -936,7 +1024,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         List<FinderSpec> specs = new ArrayList<>();
 
         metadata.fields().stream()
-                .filter(BlobFields::isColumn)
+                .filter(f -> StoredFields.isColumn(metadata, f))
                 .filter(FieldMetadata::filterable)
                 .filter(f -> !shadowsPrimaryKeyLookup(f))
                 .filter(f -> !PrimaryKeys.field(metadata).equals(f.name()))

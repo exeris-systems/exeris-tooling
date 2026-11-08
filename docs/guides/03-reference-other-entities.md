@@ -45,7 +45,7 @@ Each `MANY_TO_ONE` to an entity of the same build becomes a `UUID` column, an in
 Generated: `src/main/generated/java/db/migration/V3000000__foreign_keys.sql` (adapted: the comment lines removed).
 
 ```sql
-ALTER TABLE invoice_lines ADD CONSTRAINT fk_invoice_lines_invoice_id FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE RESTRICT;
+ALTER TABLE invoice_lines ADD CONSTRAINT fk_invoice_lines_invoice_id FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE;
 ALTER TABLE invoices ADD CONSTRAINT fk_invoices_customer_id FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT;
 ```
 
@@ -57,6 +57,10 @@ The repositories turn a violation of these constraints into typed exceptions, wh
 | Delete a `Customer` that an invoice still references | `CustomerStillReferencedException` | 409 |
 
 `InvoiceRepository` also gains `findByCustomerId(UUID)`. Each exception's row, and the condition under which it is written, is in the [generator catalogue](../generators.md#main-root-entity-scope).
+
+The other side of a key is a collection that names it. `Invoice.lines` is a `List<InvoiceLine>` declared `relationshipType = ONE_TO_MANY` with `mappedBy = "invoiceId"`, the field of `InvoiceLine` that holds the key. Its rows are the `invoice_lines` rows: `invoices` has no column for it, the repository neither writes nor reads it, the handler sets it to `null` after decoding a request body, and an invoice the routes answer with never holds lines. The lines of one invoice are read from the child's list route, `GET /invoice-lines?invoiceId={id}`, which the OpenAPI description of the field names. Its `cascadeDelete = true` sets `ON DELETE CASCADE` on the child's constraint above, so deleting an invoice deletes its lines.
+
+A `List` of entities that no `mappedBy` ties to a key of the target (no `@Relationship`, a `ONE_TO_MANY` without `mappedBy`, a `MANY_TO_MANY`, or a `mappedBy` that names no `MANY_TO_ONE` back) is refused with `EXT-GEN-3003`. A `MANY_TO_MANY` held as `List<UUID>` keys is a JSON column of keys: no join table is generated for it, and its `cascadeDelete` has no effect.
 
 ### 3. Scope the rows to a tenant
 
@@ -116,10 +120,9 @@ The `issue` action reads `dueInDays` from the request body and declares `default
 ## Not available today
 
 - **`@Action(httpMethod = "GET")`.** `viewShared` declares it, and the route is `POST /invoices/{id}/actions/view-shared`: every action is served on `POST`. Under `-Aexeris.strict=true` the processor reports the attribute as `EXT-PROC-1201`.
-- **A `ONE_TO_MANY` collection.** `Invoice.lines` is a `List<InvoiceLine>` with `mappedBy = "invoiceId"`. The run writes it as a `lines VARCHAR(255)` column of `invoices`, holding the list as JSON, rather than reading the children from `invoice_lines`. Its `cascadeDelete = true` reaches no constraint: the foreign key is the child's, and it is `ON DELETE RESTRICT`.
 
 ## Where this does not apply
 
 - **Edges in a graph.** A reference between rows is a foreign key; a projection of it into a graph store is [guide 04](04-project-into-a-graph.md).
 - **`UNIVERSE` scope and shared-scope rows.** The corpus declares none; their migrations and refusals are in the [generator catalogue](../generators.md) and the [diagnostics reference](../diagnostics.md).
-- **Trade-off you accept.** Holding references as keys keeps every row one table and every constraint the database's, and gives up navigation: the generated `Invoice` carries `customerId`, and loading the customer is a second call your code makes.
+- **Trade-off you accept.** Holding references as keys keeps every row one table and every constraint the database's, and gives up navigation: the generated `Invoice` carries `customerId`, and loading the customer is a second call your code makes. In the other direction, `lines` is always `null`, and loading the lines is a call to the child's list route.

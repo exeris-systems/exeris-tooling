@@ -99,7 +99,7 @@ public final class ListQuerySupport {
      * {@link DomainTypeKind#of(FieldMetadata)} classifies as {@link DomainTypeKind#ENUM}). Never a
      * {@code List} field, a field of a type nothing here recognises, a
      * {@link #systemFieldNames system field}, or a field that is no column
-     * ({@link BlobFields#isColumn}). Sorted by name.
+     * ({@link StoredFields#isColumn}). Sorted by name.
      *
      * @param metadata the entity
      * @return the sortable properties
@@ -110,7 +110,7 @@ public final class ListQuerySupport {
         for (FieldMetadata field : metadata.fields()) {
             DomainTypeKind kind = DomainTypeKind.of(field);
             if (field.sortable() && SORT_KINDS.contains(kind) && !system.contains(field.name())
-                    && BlobFields.isColumn(field)) {
+                    && StoredFields.isColumn(metadata, field)) {
                 byName.putIfAbsent(field.name(), new Property(field.name(), field.type(), kind,
                         ColumnNaming.snakeCase(field.name())));
             }
@@ -126,7 +126,7 @@ public final class ListQuerySupport {
      * as {@code <base>Id=<uuid>}. A field named after a reserved parameter ({@code page},
      * {@code size}, {@code sort}) is not a filter, because the parameter means the other thing, and
      * a {@link #systemFieldNames system field} or a field that is no column
-     * ({@link BlobFields#isColumn}) is never one. A foreign key whose parameter name a
+     * ({@link StoredFields#isColumn}) is never one. A foreign key whose parameter name a
      * field already took is the same column and is not added twice. Sorted by name.
      *
      * @param metadata the entity
@@ -138,7 +138,7 @@ public final class ListQuerySupport {
         for (FieldMetadata field : metadata.fields()) {
             DomainTypeKind kind = DomainTypeKind.of(field);
             if (field.filterable() && FILTER_KINDS.contains(kind) && !RESERVED.contains(field.name())
-                    && !system.contains(field.name()) && BlobFields.isColumn(field)) {
+                    && !system.contains(field.name()) && StoredFields.isColumn(metadata, field)) {
                 byName.putIfAbsent(field.name(), new Property(field.name(), field.type(), kind,
                         ColumnNaming.snakeCase(field.name())));
             }

@@ -43,6 +43,7 @@ class RelationshipSqlE2ETest {
     static Path workspace;
 
     private static String createOrders;
+    private static String createOrderItems;
     private static String foreignKeys;
 
     @BeforeAll
@@ -54,7 +55,8 @@ class RelationshipSqlE2ETest {
         CodegenPipeline.createDefault()
                 .run(classes.resolve("exeris-metadata"), generated, "com.shop");
 
-        createOrders = migration(generated, "orders");
+        createOrders = migration(generated, "create_orders");
+        createOrderItems = migration(generated, "create_order_items");
         foreignKeys = migration(generated, "foreign_keys");
     }
 
@@ -67,10 +69,20 @@ class RelationshipSqlE2ETest {
     @Test
     @DisplayName("the ONE_TO_MANY side gets no column, no index, no constraint — the child owns them")
     void collectionSideGetsNothing() {
-        // Before the extraction fix this table carried an `items_id UUID`, an index on it and a
-        // FOREIGN KEY into order_items — schema for a reference that does not exist on this row.
-        assertThat(createOrders).doesNotContain("items_id");
-        assertThat(foreignKeys).doesNotContain("items");
+        // The rows of a mappedBy collection are the child's, through its own key column.
+        assertThat(createOrders).doesNotContain("items");
+        assertThat(createOrderItems).contains("order_id UUID");
+        assertThat(foreignKeys)
+                .doesNotContain("items_id")
+                .contains("ALTER TABLE order_items ADD CONSTRAINT fk_order_items_order_id FOREIGN KEY (order_id)"
+                        + " REFERENCES orders(id)");
+    }
+
+    @Test
+    @DisplayName("cascadeDelete on the collection side becomes ON DELETE CASCADE on the child's constraint")
+    void collectionSideCascadeReachesTheChildConstraint() {
+        assertThat(foreignKeys).contains("fk_order_items_order_id FOREIGN KEY (order_id) REFERENCES orders(id)"
+                + " ON DELETE CASCADE;");
     }
 
     @Test
@@ -87,7 +99,7 @@ class RelationshipSqlE2ETest {
     /** Reads the one emitted migration whose file name contains {@code fragment}. */
     private static String migration(Path generated, String fragment) throws IOException {
         try (Stream<Path> files = Files.walk(generated.resolve("db/migration"))) {
-            Path file = files.filter(p -> p.getFileName().toString().contains(fragment))
+            Path file = files.filter(p -> p.getFileName().toString().contains(fragment + "."))
                     .filter(p -> p.toString().endsWith(".sql"))
                     .findFirst()
                     .orElseThrow(() -> new AssertionError("no migration matching '" + fragment + "'"));
@@ -143,6 +155,9 @@ class RelationshipSqlE2ETest {
 
                 import eu.exeris.sdk.annotation.ExerisDomain;
                 import eu.exeris.sdk.annotation.Field;
+                import eu.exeris.sdk.annotation.Relationship;
+
+                import java.util.UUID;
 
                 @ExerisDomain(module = "sales", path = "/order-items")
                 public class OrderItem {
@@ -155,6 +170,12 @@ class RelationshipSqlE2ETest {
                     private String description;
                     public String getDescription() { return description; }
                     public void setDescription(String description) { this.description = description; }
+
+                    // Owning side of Order.items: the key the collection's mappedBy names.
+                    @Relationship(targetEntity = Order.class, displayField = "orderNumber")
+                    private UUID orderId;
+                    public UUID getOrderId() { return orderId; }
+                    public void setOrderId(UUID orderId) { this.orderId = orderId; }
                 }
                 """);
         sources.put("com/shop/domain/Order.java",
@@ -194,9 +215,11 @@ class RelationshipSqlE2ETest {
                     public UUID getCarrierId() { return carrierId; }
                     public void setCarrierId(UUID carrierId) { this.carrierId = carrierId; }
 
-                    // Collection side: OrderItem holds the order_id, never the other way round.
+                    // Collection side: OrderItem holds the order_id, never the other way round,
+                    // and deleting the order takes its items with it.
                     @Relationship(targetEntity = OrderItem.class, displayField = "description",
-                            relationshipType = RelationshipType.ONE_TO_MANY, mappedBy = "order")
+                            relationshipType = RelationshipType.ONE_TO_MANY, mappedBy = "order",
+                            cascadeDelete = true)
                     private List<OrderItem> items;
                     public List<OrderItem> getItems() { return items; }
                     public void setItems(List<OrderItem> items) { this.items = items; }

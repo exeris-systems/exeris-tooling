@@ -14,6 +14,9 @@
 
 import type { DomainMetadata, FieldMetadata, RelationshipMetadata } from '../../models/domain-model.js';
 import { systemRoleFieldNames } from '../../core/server-owned-fields.js';
+import { foreignKeyParam, storedMember } from '../../core/relationships.js';
+
+export { foreignKeyBase, foreignKeyParam } from '../../core/relationships.js';
 
 /** Zero-based page index. */
 export const PAGE_PARAM = 'page';
@@ -143,18 +146,6 @@ export interface ListQueryProperty {
   readonly enumeration?: boolean;
 }
 
-/** `customer` and `customerId` both → `customer`: the relationship name with a trailing `Id` removed. */
-export function foreignKeyBase(relationshipName: string): string {
-  return relationshipName.length > 2 && relationshipName.endsWith('Id')
-    ? relationshipName.slice(0, -2)
-    : relationshipName;
-}
-
-/** The filter parameter of a `MANY_TO_ONE` relationship: `<base>Id`. */
-export function foreignKeyParam(relationshipName: string): string {
-  return `${foreignKeyBase(relationshipName)}Id`;
-}
-
 function byName(a: { name: string }, b: { name: string }): number {
   return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
 }
@@ -169,7 +160,7 @@ function byName(a: { name: string }, b: { name: string }): number {
 export function listQuerySystemFieldNames(metadata: DomainMetadata): ReadonlySet<string> {
   const names = new Set<string>(systemRoleFieldNames(metadata));
   for (const field of metadata.fields ?? []) {
-    if (field.blob !== undefined) names.add(field.name);
+    if (!storedMember(field, metadata)) names.add(field.name);
   }
   return names;
 }

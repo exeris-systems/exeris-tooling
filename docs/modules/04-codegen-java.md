@@ -56,9 +56,11 @@ The full path list, with the generator and condition of each file, is the [gener
 
 `Application.main()` boots the kernel with `BootstrapSelector.forNames(subsystems())`, binds the route policy and runs `RuntimeLifecycle` inside the boot callback. Its `protected` hooks are the seams a consumer overrides without editing generated code: `subsystems()`, `transactionalExecutor()`, `components(TransactionalExecutor)`, `routePolicy()`, `applicationPolicy()` and `unmatchedRoutes()`. `RuntimeComponents` holds one `protected create*` factory per generated repository, service and handler, and a `configureRoutes` hook ([ADR-070](../adr/ADR-070-generated-composition-root-seam.md)).
 
+Relationships map to the schema by `relationshipType`. A `MANY_TO_ONE` to an entity of the build is the referencing entity's `UUID` key: a column, an index, a finder and a constraint in `V3000000__foreign_keys.sql`. A `ONE_TO_MANY` with `mappedBy` on a `List` of the target is the inverse of the target's `MANY_TO_ONE` back to the entity: no column, in neither request body, `null` in the entity's JSON, and `readOnly` in OpenAPI with the child list route its rows are read from. `cascadeDelete` on either side sets `ON DELETE CASCADE` on the owning side's constraint. A `MANY_TO_MANY` held as `List<UUID>` keys is a JSON column of keys, with no join table and no effect of `cascadeDelete`. Any other `List` of entities is refused with `EXT-GEN-3003`. `ONE_TO_ONE` gets neither a constraint nor an inverse.
+
 `routePolicy()` returns `HttpRoutePolicy.firstDeclared(List.of(applicationPolicy(), GeneratedRoutePolicy.INSTANCE), unmatchedRoutes())`. `GeneratedRoutePolicy` answers each route whose entity or action declares access and abstains on every other route; `applicationPolicy()` abstains everywhere by default; `unmatchedRoutes()` returns `permitAll()` by default, so an undeclared route is public unless the application overrides it ([ADR-105](../adr/ADR-105-generated-route-policy-emission.md)).
 
-Generated code logs through `System.Logger` and binds no logging facade ([ADR-060](../adr/ADR-060-generated-code-logging-facade.md)). Its compile-time imports outside the JDK are the kernel SPI and Core, the SDK composition runtime when the build is composed, and Jackson 3 when an entity has a `List<X>` field; `RequiredCompileArtifacts` derives that list and `exeris:generate` warns with `EXT-PLUG-2004` when one is missing.
+Generated code logs through `System.Logger` and binds no logging facade ([ADR-060](../adr/ADR-060-generated-code-logging-facade.md)). Its compile-time imports outside the JDK are the kernel SPI and Core, the SDK composition runtime when the build is composed, and Jackson 3 when an entity has a `List<X>` column (an inverse collection is none); `RequiredCompileArtifacts` derives that list and `exeris:generate` warns with `EXT-PLUG-2004` when one is missing.
 
 ### Generated tests
 
@@ -84,7 +86,7 @@ None: build-time. The pipeline makes one pass over the build per run, inside `ex
 | Situation | What the caller sees |
 |---|---|
 | An entity's package does not end in `.domain` | `EntityPackageLayoutException`, `EXT-PROC-1033`, before the first write. The processor refuses the same entity earlier unless it ran with `-Aexeris.metadataOnly` |
-| An entity field has a type the generated repository cannot store and read back, a field typed as another entity included | `UnpersistableFieldTypeException`, `EXT-GEN-3003`, before the first write |
+| An entity field has a type the generated repository cannot store and read back, a field typed as another entity and a `List` of entities that is no resolvable `mappedBy` collection included | `UnpersistableFieldTypeException`, `EXT-GEN-3003`, before the first write |
 | No metadata, and a previous run owns a committed tree the prune would delete | `EmptyMetadataException`, printed as `EXT-PLUG-2001`; nothing is deleted unless `allowEmpty` |
 | No domain or capability metadata, and no previous tree | Warning `EXT-GEN-3101`; nothing written |
 | No base package given and the entities span several packages | Warning `EXT-GEN-3104` naming the package chosen |

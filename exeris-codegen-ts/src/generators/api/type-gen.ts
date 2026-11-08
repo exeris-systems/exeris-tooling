@@ -7,6 +7,7 @@ import { outPath } from '../../core/paths.js';
 import { primaryKeyField } from '../../core/primary-key.js';
 import { omittedFromCreate, omittedFromUpdate, systemRoleFieldNames } from '../../core/server-owned-fields.js';
 import { systemRoleField } from '../../core/system-columns.js';
+import { storedMember } from '../../core/relationships.js';
 import { ownerFieldName, type DomainMetadata, type FieldMetadata } from '../../models/domain-model.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import { modelTypeName } from '../../models/model-naming.js';
@@ -105,7 +106,7 @@ export class TypeGenerator implements CodeGenerator {
     // Main interface
     lines.push(`export interface ${interfaceName} {`);
     for (const field of metadata.fields) {
-      if (field.blob !== undefined) continue;
+      if (!storedMember(field, metadata)) continue;
       const mapping = mapScopedType(field.type, scope);
       const optional = !field.required || isUndescribedValue(field.type, scope) ? '?' : '';
       const comment = field.description ? ` // ${field.description}` : '';
@@ -193,7 +194,7 @@ export class TypeGenerator implements CodeGenerator {
     // Main schema
     lines.push(`export const ${interfaceName}Schema = z.object({`);
     for (const field of metadata.fields) {
-      if (field.blob !== undefined) continue;
+      if (!storedMember(field, metadata)) continue;
       const zodType = buildZodType(field, scope);
       lines.push(`  ${field.name}: ${zodType},`);
     }
@@ -409,7 +410,7 @@ export function undeclaredReadSchemaMembers(metadata: DomainMetadata): string[] 
  */
 export function updateOmittedFields(metadata: DomainMetadata): string[] {
   const declared = new Set([
-    ...metadata.fields.filter((f) => f.blob === undefined).map((f) => f.name),
+    ...metadata.fields.filter((f) => storedMember(f, metadata)).map((f) => f.name),
     ...undeclaredReadMembers(metadata).map((m) => m.name),
   ]);
   const owner = ownerFieldName(metadata);
@@ -476,7 +477,7 @@ export function collectEnumTypes(fields: FieldMetadata[], scope: TypeScope = { d
  * their names; with `includeSelf`, the entity itself too when a field references it.
  */
 export function referencedEntities(metadata: DomainMetadata, scope: TypeScope, includeSelf = false): DomainMetadata[] {
-  return typeImports(metadata.fields.map((f) => f.type), scope).entities
+  return typeImports(metadata.fields.filter((f) => storedMember(f, metadata)).map((f) => f.type), scope).entities
     .filter((entity) => includeSelf || entity.entityName !== metadata.entityName);
 }
 
@@ -487,7 +488,7 @@ export function referencedEntities(metadata: DomainMetadata, scope: TypeScope, i
  */
 export function createOmittedFields(metadata: DomainMetadata): string[] {
   const keys = new Set([
-    ...metadata.fields.filter((f) => f.blob === undefined).map((f) => f.name),
+    ...metadata.fields.filter((f) => storedMember(f, metadata)).map((f) => f.name),
     ...undeclaredReadMembers(metadata).map((m) => m.name),
   ]);
   return omittedFromCreate(metadata).filter((name) => keys.has(name));
@@ -499,7 +500,7 @@ export function createOmittedFields(metadata: DomainMetadata): string[] {
  */
 export function createDtoFields(metadata: DomainMetadata): FieldMetadata[] {
   const omitted = new Set(omittedFromCreate(metadata));
-  return metadata.fields.filter((f) => f.blob === undefined && !omitted.has(f.name));
+  return metadata.fields.filter((f) => storedMember(f, metadata) && !omitted.has(f.name));
 }
 
 /**

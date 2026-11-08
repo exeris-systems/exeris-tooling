@@ -7,6 +7,7 @@ import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphEdgeMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphPropertyMetadata;
+import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
 
 import java.util.ArrayList;
@@ -28,20 +29,23 @@ import java.util.TreeSet;
  * <ul>
  *   <li>a getter and a setter for every column of its table: the primary key, every field that is
  *       a column, and the owning tenant, audit times, soft-delete flag and version the entity's
- *       flags enable. The repository binds each column from the getter and reads it back through
- *       the setter. A primitive {@code boolean} field and the soft-delete flag read as
- *       {@code is<Name>()}, every other column as {@code get<Name>()};</li>
+ *       flags enable. A {@code @Blob} field is no column, and neither is an inverse collection: a
+ *       {@code List} field whose {@code ONE_TO_MANY} relationship names {@code mappedBy}. The
+ *       repository binds each column from the getter and reads it back through the setter. A
+ *       primitive {@code boolean} field and the soft-delete flag read as {@code is<Name>()}, every
+ *       other column as {@code get<Name>()};</li>
  *   <li>a setter for every property the create and update handlers reset after decoding a body:
  *       the audit, version and soft-delete fields the flags enable, the audit actors and the
- *       deletion time and actor where declared, and every {@code @Blob} field;</li>
+ *       deletion time and actor where declared, every {@code @Blob} field and every inverse
+ *       collection;</li>
  *   <li>a getter for every field the create or update handler validates, and for every required,
  *       read-only field the repository checks before an insert;</li>
  *   <li>a getter for every field an event payload carries, and for the key, edge, weight and
  *       property fields the graph projection reads.</li>
  * </ul>
- * A field outside every list, such as a {@code @Blob} field no event or graph names, needs no
- * getter, and a field that is only read needs no setter. A static or transient field is not in
- * the metadata and needs nothing.
+ * A field outside every list, such as a {@code @Blob} field or an inverse collection no event or
+ * graph names, needs no getter, and a field that is only read needs no setter. A static or
+ * transient field is not in the metadata and needs nothing.
  *
  * <p>The generated tests ({@code exeris.tests}) call the accessors of the same columns and fields;
  * the names they form agree with the list above for every field whose name is a camel-case Java
@@ -133,21 +137,54 @@ final class KernelAccessors {
     private static void readFields(DomainMetadata metadata, List<FieldMetadata> fields, Roles roles,
                                    Map<String, Accessor> accessors) {
         Set<String> systemRoles = systemFieldNames(metadata, fields, roles);
-        Set<String> notInCreate = notInCreateBody(fields, systemRoles);
+        Set<String> notInCreate = notInCreateBody(metadata, fields, systemRoles);
         Set<String> notInUpdate = notInUpdateBody(metadata, fields, roles, systemRoles);
         for (FieldMetadata field : fields) {
             String name = field.name();
             boolean validated = hasRules(field) && (!notInCreate.contains(name) || !notInUpdate.contains(name));
-            if (validated || isSetByServer(field, systemRoles)) {
+            if (validated || isSetByServer(metadata, field, systemRoles)) {
                 add(accessors, name, GET + pascal(name), false);
             }
         }
     }
 
     /** A required, read-only, non-system reference-typed column, which the server sets before insert. */
-    private static boolean isSetByServer(FieldMetadata field, Set<String> systemRoles) {
+    private static boolean isSetByServer(DomainMetadata metadata, FieldMetadata field, Set<String> systemRoles) {
         return field.required() && field.readOnly() && !systemRoles.contains(field.name())
-                && !PRIMITIVE_TYPES.contains(field.type()) && !field.hasBlob();
+                && !PRIMITIVE_TYPES.contains(field.type()) && !heldOutsideTheRow(metadata, field);
+    }
+
+    /**
+     * Whether the entity's row holds nothing for {@code field}: a {@code @Blob} field, whose bytes
+     * are in the blob store, or an inverse collection, whose rows are the target's. Neither is a
+     * column nor a member of a request body, and the handlers reset both after decoding.
+     */
+    private static boolean heldOutsideTheRow(DomainMetadata metadata, FieldMetadata field) {
+        return field.hasBlob() || isInverseCollection(metadata, field);
+    }
+
+    /**
+     * Whether {@code field} is an inverse collection: a {@code List} field named by a
+     * {@code ONE_TO_MANY} relationship with a non-blank {@code mappedBy}. The rule is the one the
+     * Java emitters classify the field by.
+     */
+    static boolean isInverseCollection(DomainMetadata metadata, FieldMetadata field) {
+        if (!metadata.hasRelationships() || !isList(field.type())) {
+            return false;
+        }
+        for (RelationshipMetadata rel : metadata.relationships()) {
+            if (rel.fieldName().equals(field.name())
+                    && rel.type() == RelationshipMetadata.RelationType.ONE_TO_MANY
+                    && rel.mappedBy() != null && !rel.mappedBy().isBlank()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Whether {@code type} is {@code List<X>} or {@code java.util.List<X>}. */
+    private static boolean isList(String type) {
+        return (type.startsWith("List<") || type.startsWith("java.util.List<")) && type.endsWith(">");
     }
 
     /** The repository's column layout: the key, the domain columns, then the system columns. */
@@ -164,7 +201,8 @@ final class KernelAccessors {
         seen.add(snakeCase(roles.key()));
         for (FieldMetadata field : fields) {
             String column = snakeCase(field.name());
-            if (!field.hasBlob() && !seen.contains(column) && !systemColumnNames.contains(column)) {
+            if (!heldOutsideTheRow(metadata, field) && !seen.contains(column)
+                    && !systemColumnNames.contains(column)) {
                 seen.add(column);
                 addColumn(accessors, field.name(), getterPrefix(field.type()));
             }
@@ -212,6 +250,8 @@ final class KernelAccessors {
             reset.add(roles.version());
         }
         fields.stream().filter(FieldMetadata::hasBlob).forEach(field -> reset.add(field.name()));
+        fields.stream().filter(field -> isInverseCollection(metadata, field))
+                .forEach(field -> reset.add(field.name()));
         for (String name : reset) {
             add(accessors, name, SET + pascal(name), true);
         }
@@ -288,10 +328,11 @@ final class KernelAccessors {
     }
 
     /** The fields the create body does not carry, so the create handler validates none of them. */
-    private static Set<String> notInCreateBody(List<FieldMetadata> fields, Set<String> systemRoles) {
+    private static Set<String> notInCreateBody(DomainMetadata metadata, List<FieldMetadata> fields,
+                                               Set<String> systemRoles) {
         Set<String> names = new HashSet<>(systemRoles);
         for (FieldMetadata field : fields) {
-            if (field.readOnly() || !field.inCreate() || field.hasBlob()) {
+            if (field.readOnly() || !field.inCreate() || heldOutsideTheRow(metadata, field)) {
                 names.add(field.name());
             }
         }
@@ -306,7 +347,7 @@ final class KernelAccessors {
         sharedScopeField(metadata, fields).ifPresent(names::remove);
         for (FieldMetadata field : fields) {
             boolean fixedOnUpdate = (field.readOnly() || !field.inUpdate()) && !systemRoles.contains(field.name());
-            if (fixedOnUpdate || field.hasBlob()) {
+            if (fixedOnUpdate || heldOutsideTheRow(metadata, field)) {
                 names.add(field.name());
             }
         }

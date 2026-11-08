@@ -22,7 +22,8 @@ import { outPath } from '../../core/paths.js';
 import { testIdSegment, tsSingleQuoted, tsTemplateText } from './ts-literal.js';
 import { auditFieldNames, updateVersionField } from '../api/type-gen.js';
 import { fieldRenderContext, isEnumField, resolveFieldRenders, toTitleCase, type FieldRenderModel } from './field-render.js';
-import { filterProperties, foreignKeyBase, foreignKeyParam } from './list-query.js';
+import { filterProperties } from './list-query.js';
+import { backReference, foreignKeyParam, simpleEntityName } from '../../core/relationships.js';
 import type { FieldMetadata, RelationshipMetadata } from '../../models/domain-model.js';
 import { entityExitRoute, entityViews } from './entity-views.js';
 import { fileHeaderLines } from '../file-header.js';
@@ -824,8 +825,8 @@ function relatedRecords(domain: DomainMetadata, context: GeneratorContext): Rela
     if (!targetDomain) continue;
     const views = entityViews(targetDomain);
     const listRoute = listsGenerated && views.list ? `/${DslMapper.routePlural(target)}` : undefined;
-    const backReference = servicesGenerated ? childBackReference(rel, domain, targetDomain) : undefined;
-    const param = backReference ? foreignKeyParam(backReference.name) : undefined;
+    const back = servicesGenerated ? childBackReference(rel, domain, targetDomain) : undefined;
+    const param = back ? foreignKeyParam(back.name) : undefined;
     const filterable = param !== undefined && declaresPrimaryKey(targetDomain)
       && filterProperties(targetDomain, (f) => isEnumField(f, context.enums ?? [])).some((p) => p.name === param);
     const labelField = rel.displayField && targetDomain.fields.some((f) => f.name === rel.displayField)
@@ -855,27 +856,20 @@ function relatedRecords(domain: DomainMetadata, context: GeneratorContext): Rela
 
 /**
  * The target's MANY_TO_ONE back to `domain` that a ONE_TO_MANY's rows are held by: the one
- * `mappedBy` names (by relationship name, field name, `<base>` or `<base>Id`), else the only one there is.
+ * `mappedBy` names (`backReference`), else, for a relationship without `mappedBy`, the only one there is.
  */
 function childBackReference(
   rel: RelationshipMetadata,
   domain: DomainMetadata,
   target: DomainMetadata,
 ): RelationshipMetadata | undefined {
+  if (rel.mappedBy) {
+    return backReference(rel.mappedBy, domain, target);
+  }
   const candidates = (target.relationships ?? []).filter(
     (r) => r.type === 'MANY_TO_ONE' && simpleEntityName(r.targetEntity) === domain.entityName,
   );
-  if (rel.mappedBy) {
-    return candidates.find(
-      (r) => [r.name, r.fieldName, foreignKeyBase(r.name), foreignKeyParam(r.name)].includes(rel.mappedBy),
-    );
-  }
   return candidates.length === 1 ? candidates[0] : undefined;
-}
-
-/** The processor's fallback may record a qualified name; entity names are simple names. */
-function simpleEntityName(name: string): string {
-  return name.includes('.') ? name.split('.').pop()! : name;
 }
 
 /**
