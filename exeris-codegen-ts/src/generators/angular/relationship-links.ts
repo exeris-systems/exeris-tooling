@@ -15,6 +15,7 @@ import type { DomainMetadata, RelationshipMetadata } from '../../models/domain-m
 import { DslMapper } from '../../models/dsl-mapper.js';
 import { entityViews } from './entity-views.js';
 import { declaresPrimaryKey, primaryKeyField } from '../../core/primary-key.js';
+import { searchableProperties } from './list-query.js';
 
 const UUID_TYPES = new Set(['UUID', 'java.util.UUID']);
 
@@ -87,6 +88,12 @@ export interface ForeignKeyPicker {
    * declares a field of that name. Absent otherwise, and an option is then labelled with its key.
    */
   readonly labelField?: string;
+  /**
+   * Present when the target has a searchable property (`searchableProperties`): the control then
+   * narrows its options through the list route's `search`. Absent otherwise, and the control lists
+   * the target's first page.
+   */
+  readonly searchable?: true;
 }
 
 /**
@@ -113,6 +120,7 @@ export function foreignKeyPickers(
       serviceModule: `${DslMapper.toKebabCase(key.target)}.service`,
       keyField: primaryKeyField(targetDomain),
       ...(labelField ? { labelField } : {}),
+      ...(searchableProperties(targetDomain).length > 0 ? { searchable: true as const } : {}),
     });
   }
   return pickers;

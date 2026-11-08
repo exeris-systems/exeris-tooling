@@ -346,5 +346,11 @@
     "since": "0.11",
     "adr": "ADR-092",
     "justification": "The rows of a mappedBy collection are held by the target's table: the generated server answers the field as null and takes it from neither request body, and the emitted Zod member, .optional(), rejected that null. The member is omitted from the entity interface, the request types and the Zod schemas, and the list and detail view show no field for it, as for a @Blob field. The detail view's related-records panel, which reads the rows through the target's service filtered by the back-reference's key, is unchanged. An entity without such a field regenerates byte-identically. docs/migration/0.11.0/ts-16-inverse-collection-omitted.md carries the step."
+  },
+  {
+    "signature": "<Model>Filter: - search; <Entity>Service.findAll first argument: + search?: string on an entity with a searchable property; <entity>-form.component.ts: a picker of a searchable target + <field>Search signal, + search input (data-testid field-<field>-search), options requested with search after a 250 ms pause",
+    "since": "0.11",
+    "adr": "ADR-096",
+    "justification": "ADR-096 Amendment 4: the list route reads search over the target's searchable String fields. The service offers it only where the route reads it, and the relationship picker of a searchable target sends the typed term, so it reaches rows beyond the first page. A field named search is reserved and is no longer a filter. An app whose picked targets have no searchable property regenerates its forms byte-identically. docs/migration/0.11.0/ts-17-relationship-picker-search.md carries the step."
   }
 ]

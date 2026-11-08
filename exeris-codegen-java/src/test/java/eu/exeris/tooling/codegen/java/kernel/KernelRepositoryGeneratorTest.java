@@ -1408,6 +1408,48 @@ class KernelRepositoryGeneratorTest {
     }
 
     @Test
+    @DisplayName("findPage appends one search predicate after the filters, binds the escaped pattern once "
+            + "per searchable column, then the limit and offset")
+    void findPageSearchesTheSearchableColumns() {
+        DomainMetadata customer = DomainMetadata.builder("Customer", "com.example.domain")
+                .path("/customers")
+                .softDelete(true)
+                .fields(List.of(
+                        FieldMetadata.builder("name", "String").searchable(true).build(),
+                        FieldMetadata.builder("emailAddress", "String").searchable(true).build(),
+                        FieldMetadata.builder("status", "String").filterable(true).build()))
+                .build();
+        String src = listRepositoryOf(customer);
+
+        assertThat(src)
+                .contains("if (query.search() != null) { predicates.add(\"(LOWER(email_address) LIKE LOWER(?) "
+                        + "ESCAPE '\\\\' OR LOWER(name) LIKE LOWER(?) ESCAPE '\\\\')\"); }")
+                .contains("bindSearch(stmt, query.search(), bindListFilter(stmt, filter));")
+                .contains("int next = bindSearch(stmt, query.search(), bindListFilter(stmt, filter)); "
+                        + "stmt.bindInt(next, query.size());")
+                .contains("private static int bindSearch(PersistenceStatement stmt, String search, int index) { "
+                        + "if (search == null) { return index; } String pattern = containsPattern(search); "
+                        + "for (int i = 0; i < 2; i++) { stmt.bindString(index + i, pattern); } return index + 2; }")
+                .contains("return \"%\" + term.replace(\"\\\\\", \"\\\\\\\\\").replace(\"%\", \"\\\\%\")"
+                        + ".replace(\"_\", \"\\\\_\") + \"%\";");
+        assertThat(src.indexOf("predicates.add(\"status = ?\")"))
+                .isLessThan(src.indexOf("LOWER(email_address)"));
+        assertThat(src).doesNotContain("toLowerCase").doesNotContain("Locale");
+        assertThat(KernelRepositoryGenerator.searchPredicate(
+                eu.exeris.tooling.codegen.java.support.ListQuerySupport.searchable(customer)))
+                .isEqualTo("(LOWER(email_address) LIKE LOWER(?) ESCAPE '\\' OR LOWER(name) LIKE LOWER(?) ESCAPE '\\')");
+    }
+
+    @Test
+    @DisplayName("an entity with nothing searchable emits no search predicate, bindSearch or containsPattern")
+    void nothingSearchable() {
+        String src = listRepositoryOf(KernelListQueryGeneratorTest.order());
+
+        assertThat(src).doesNotContain("query.search()").doesNotContain("bindSearch")
+                .doesNotContain("containsPattern").doesNotContain("LIKE");
+    }
+
+    @Test
     @DisplayName("an entity with nothing sortable orders by id alone and emits no sortColumn")
     void nothingSortable() {
         DomainMetadata bare = DomainMetadata.builder("Tag", "com.example.domain").path("/tags").build();

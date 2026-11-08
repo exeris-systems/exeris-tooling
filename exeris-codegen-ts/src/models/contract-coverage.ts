@@ -57,7 +57,7 @@ export const CONTRACT_COVERAGE = {
   dataScope: { state: 'READ' },
   tenantScoped: { state: 'READ' },
   versioned: { state: 'READ' },
-  fullTextSearch: { state: 'RESERVED', reason: 'No search index or search endpoint is emitted on either side.' },
+  fullTextSearch: { state: 'RESERVED', reason: 'No full-text index or full-text search is emitted on either side; the list route search reads @Field(searchable).' },
   searchConfig: { state: 'RESERVED', reason: 'Configuration for fullTextSearch, which nothing emits yet.' },
   audited: { state: 'READ' },
   softDelete: { state: 'READ' },
@@ -122,11 +122,7 @@ export const FIELD_CONTRACT_COVERAGE = {
     written: true,
     reason: 'No emitter reads it: the migration indexes searchable, unique and filterable fields, not indexed ones.',
   },
-  searchable: {
-    state: 'JAVA_ONLY',
-    written: true,
-    reason: 'Indexes the column in the Flyway migration. The list route has no search parameter (ADR-096), so the front has no search.',
-  },
+  searchable: { state: 'READ', written: true },
   sortable: { state: 'READ', written: true },
   filterable: { state: 'READ', written: true },
   audited: {
@@ -162,7 +158,7 @@ export const UI_CONTRACT_COVERAGE = {
   searchable: {
     state: 'RESERVED',
     written: true,
-    reason: 'Written from @UI; the list route has no search parameter (ADR-096), so no search box is emitted on either side.',
+    reason: 'Written from @UI; no list search box is emitted on either side. The list route\'s search reads @Field(searchable), not this switch.',
   },
   filterable: { state: 'READ', written: true },
   exportable: {

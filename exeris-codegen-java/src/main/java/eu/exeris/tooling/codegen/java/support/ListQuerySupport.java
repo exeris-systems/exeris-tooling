@@ -15,7 +15,8 @@ import java.util.TreeSet;
 
 /**
  * The list route's query contract: which query parameters {@code GET {base}} reads, which fields an
- * entity may be sorted and filtered on, and the field names of the page envelope it answers with.
+ * entity may be sorted, filtered and searched on, and the field names of the page envelope it
+ * answers with.
  *
  * <p>Every artefact that states the contract reads it here — the emitted list query and page
  * types, the repository's {@code ORDER BY} and {@code WHERE} whitelist, the handler, the client and
@@ -35,6 +36,8 @@ public final class ListQuerySupport {
     public static final String SIZE = "size";
     /** {@code <property>,<asc|desc>}. */
     public static final String SORT = "sort";
+    /** One term matched case-insensitively as a substring against every searchable property. */
+    public static final String SEARCH = "search";
 
     /** The page size when the request names none — the size the emitted Angular list starts at. */
     public static final int DEFAULT_SIZE = 20;
@@ -47,8 +50,15 @@ public final class ListQuerySupport {
      */
     public static final int MAX_SIZE = 100;
 
+    /**
+     * The longest {@code search} term the route serves, in UTF-16 chars after stripping. Escaped
+     * for {@code LIKE} and wrapped in {@code %}, the longest term still fits the
+     * {@code VARCHAR(255)} a string column is declared as.
+     */
+    public static final int MAX_SEARCH_LENGTH = 100;
+
     /** The parameter names that are never a filter, in sorted order. */
-    public static final List<String> RESERVED = List.of(PAGE, SIZE, SORT);
+    public static final List<String> RESERVED = List.of(PAGE, SEARCH, SIZE, SORT);
 
     /** The page envelope's members, in declaration order — the members the emitted front reads. */
     public static final List<String> ENVELOPE =
@@ -119,12 +129,38 @@ public final class ListQuerySupport {
     }
 
     /**
+     * The properties {@code search} is matched against: every field the metadata marks searchable
+     * ({@code @Field(searchable = true)}, and every field the processor recorded without
+     * {@code @Field}, which it marks searchable) whose type is {@code String} in either spelling.
+     * Never a {@link #systemFieldNames system field} or a field that is no column
+     * ({@link BlobFields#isColumn}). An empty list means the route refuses a non-blank
+     * {@code search}. Sorted by name, which is the order the repository's predicate names the
+     * columns in.
+     *
+     * @param metadata the entity
+     * @return the searchable properties
+     */
+    public static List<Property> searchable(DomainMetadata metadata) {
+        Set<String> system = systemFieldNames(metadata);
+        Map<String, Property> byName = new TreeMap<>();
+        for (FieldMetadata field : metadata.fields()) {
+            DomainTypeKind kind = DomainTypeKind.of(field);
+            if (field.searchable() && kind == DomainTypeKind.STRING && !system.contains(field.name())
+                    && BlobFields.isColumn(field)) {
+                byName.putIfAbsent(field.name(), new Property(field.name(), field.type(), kind,
+                        ColumnNaming.snakeCase(field.name())));
+            }
+        }
+        return List.copyOf(byName.values());
+    }
+
+    /**
      * The filter parameters: every {@code @Field(filterable = true)} field of a kind in which a
      * query-parameter value can be parsed — a type in {@link #filterableScalarTypes()} or an enum (a
      * field {@link DomainTypeKind#of(FieldMetadata)} classifies as {@link DomainTypeKind#ENUM}) —
      * then every {@code MANY_TO_ONE} relationship's foreign key
      * as {@code <base>Id=<uuid>}. A field named after a reserved parameter ({@code page},
-     * {@code size}, {@code sort}) is not a filter, because the parameter means the other thing, and
+     * {@code search}, {@code size}, {@code sort}) is not a filter, because the parameter means the other thing, and
      * a {@link #systemFieldNames system field} or a field that is no column
      * ({@link StoredFields#isColumn}) is never one. A foreign key whose parameter name a
      * field already took is the same column and is not added twice. Sorted by name.
@@ -194,6 +230,17 @@ public final class ListQuerySupport {
                 "LocalDate", "java.time.LocalDate"));
         types.sort(null);
         return List.copyOf(types);
+    }
+
+    /**
+     * The metadata type strings a searchable property may have, both spellings, sorted —
+     * published in the contract file so the front sends {@code search} only for an entity the
+     * server searches.
+     *
+     * @return the searchable scalar type names
+     */
+    public static List<String> searchableScalarTypes() {
+        return List.of("String", "java.lang.String");
     }
 
     /**

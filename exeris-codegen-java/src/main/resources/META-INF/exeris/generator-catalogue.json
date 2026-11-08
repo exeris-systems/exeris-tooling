@@ -192,7 +192,7 @@
     {
       "id": "list-query",
       "generator": "KernelListQueryGenerator",
-      "artefact": "The list route's query record: page, sort and filters.",
+      "artefact": "The list route's query record: page, sort, filters and search.",
       "outputRoot": "main",
       "pathPattern": "^(?:[^/]+/)*repository/[^/]+ListQuery\\.java$",
       "pathTemplate": "{base}/repository/{E}ListQuery.java",
