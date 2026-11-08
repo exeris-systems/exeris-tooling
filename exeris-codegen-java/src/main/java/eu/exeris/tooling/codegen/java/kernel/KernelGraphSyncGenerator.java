@@ -12,6 +12,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
+import eu.exeris.tooling.codegen.java.support.DomainPackages;
 import eu.exeris.tooling.codegen.java.support.DomainTypeKind;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
@@ -245,7 +246,7 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
      * @return the class name in the entity's {@code .graph} package
      */
     public static ClassName graphSyncType(DomainMetadata metadata) {
-        return ClassName.get(metadata.packageName().replace(".domain", ".graph"),
+        return ClassName.get(DomainPackages.sibling(metadata, DomainPackages.GRAPH),
                 metadata.entityName() + "GraphSync");
     }
 

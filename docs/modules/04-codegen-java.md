@@ -50,7 +50,7 @@ The full path list, with the generator and condition of each file, is the [gener
 | `{base}/service/` | `{E}Service`, which the handler calls |
 | `{base}/repository/` | `{E}Repository` over the kernel persistence SPI; `{E}ListQuery` and `{E}Page`; the typed write-rejection exceptions |
 | `{base}/event/`, `{base}/graph/`, `{base}/saga/`, `{base}/client/` | The event publisher and subscriber, graph sync, saga flow and typed HTTP client, where the metadata asks for them |
-| `{app}/` | `Application`, `RuntimeComponents`, `RuntimeLifecycle` and `GeneratedRoutePolicy`, in the base package: `exeris.basePackage` (`--base-package`), else the first domain's package with `.domain` removed |
+| `{app}/` | `Application`, `RuntimeComponents`, `RuntimeLifecycle` and `GeneratedRoutePolicy`, in the base package: `exeris.basePackage` (`--base-package`), else the first domain's package with its trailing `.domain` removed |
 | `db/migration/` | `V{tier}{nnnnnn}__create_{table}.sql` per entity, the shared-scope and tenant-policy migrations where they apply, and one `V3000000__foreign_keys.sql` per build |
 | `openapi/` | `{kebab(E)}-api.yaml`, an OpenAPI 3.1 document per entity |
 
