@@ -56,10 +56,12 @@ T5. **The Java and TypeScript emitters move together** (`emitter-parity.md`). A 
 T6. **Emitted code builds in a consumer project this repository does not see**
     (`consumer-build-contracts.md`, `committed-generated-code.md`). From the Java emitters: logging
     that is not `System.Logger` with `MessageFormat` placeholders and doubled quotes, a test
-    importing anything beyond JUnit 5 and AssertJ, or output written outside `src/main/generated/`
-    and `src/test/generated/java`. From `exeris-codegen-ts`: output written outside its configured
-    `outputPath`, `src/app/generated` by default. Each → `[HARD BLOCK]`. The consumer's build
-    breaks, and nothing here fails.
+    importing anything beyond JUnit 5 and AssertJ, an integration test in
+    `src/test/generated-it/java` importing anything beyond those, the JDK packages
+    `consumer-build-contracts.md` names and the generated main code, or output written outside
+    `src/main/generated/`, `src/test/generated/java` and `src/test/generated-it/java`. From
+    `exeris-codegen-ts`: output written outside its configured `outputPath`, `src/app/generated` by
+    default. Each → `[HARD BLOCK]`. The consumer's build breaks, and nothing here fails.
 
 T7. **A published artefact is complete.** This raises the shared routine's rule 28. The reactor
     deploys to Maven Central, so a published module that stops attaching its sources or javadoc jar,

@@ -10,7 +10,7 @@ Review emitted code against downstream consumer build constraints.
 
 Priorities:
 1. Logging facade (ADR-060): verify `System.Logger` usage, `{0}` / `{1}` placeholders, and quote escaping via `KernelScaffold.escapeQuotes`. Ensure no slf4j dependencies are required.
-2. Generated tests (ADR-058): verify generated test sources land in `src/test/generated/java`, import only JUnit 5 and AssertJ, use emitted doubles rather than mock frameworks, and are guarded by the `exeris.tests` flag.
+2. Generated tests (ADR-058): verify generated test sources land in `src/test/generated/java`, import only JUnit 5 and AssertJ, use emitted doubles rather than mock frameworks, and are guarded by the `exeris.tests` flag. Generated integration tests (ADR-058 Amendment 1) land in `src/test/generated-it/java` behind `exeris.integrationTests`, import only JUnit 5, AssertJ, the JDK set the policy names and the generated main code, need H2 and a kernel driver at test runtime only, and name every test class `*IT`.
 3. Cap-tier Wall (ADR-055): verify `CapTierWall` uses the JDK Class-File API without third-party dependencies, preserving the full five-source extraction union.
 4. Constructor contracts: verify emitted service constructors remain public, non-final, and assignment-only for test subclassing.
 
