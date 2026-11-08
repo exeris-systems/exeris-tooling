@@ -4182,33 +4182,61 @@ carrier (exeris-sdk#186).
       integration tests (#408); ADR-096 amendment for list route search (#365); the `@ActionParam`
       refusal (#422); the graph-property payload encoding (kernel ask); `customBlocks` (#417,
       stretch); the `@GraphQuery` decision between the kernel and the SDK.
-- [ ] **T4 TCK binding**: `exeris-sdk-tck` bound to the processor, every extraction removing its
+      *Landed:* ADR-108 and RFC-2026-11-01 for the `@Blob` routes (#470); ADR-058 Amendment 1
+      (#512); ADR-096 Amendment 4 (#515); the `@ActionParam` refusal, `EXT-PROC-1020` (#459); the
+      graph-property payload encoded as UTF-8 JSON, the Community driver's encoding, recorded in #474.
+      *Open:* `customBlocks` (#417, stretch) and the `@GraphQuery` decision.
+- [x] **T4 TCK binding**: `exeris-sdk-tck` bound to the processor, every extraction removing its
       facet; at the cut `unsupportedFacets()` is empty. Gate: exeris-sdk#249 (the corpus declares
       no primary key) in a final 0.13.x.
-- [ ] **JB1–JB4 correctness**: writer path traversal (#430), static fields (#421, done in #451),
+      *Landed:* the producer, reader and reader-parity bindings with the facet ratchet (#464), and
+      the last facet, `BLOBS` (#479): `unsupportedFacets()` is empty.
+- [x] **JB1–JB4 correctness**: writer path traversal (#430), static fields (#421, done in #451),
       the `@Action` parameter refusal (#422), the generated tenant policy (#429, #428).
-- [ ] **J1 `@PrimaryKey`**: the field marker, read into `primaryKeyField` (ADR-104).
-- [ ] **J2 + S1 `@GraphProperty`, `@UIGroup`**: graph node properties in the graph-sync upsert and
+      *Landed:* #452 (JB1), #451 (JB2), #459 (JB3), #466 (JB4).
+- [x] **J1 `@PrimaryKey`**: the field marker, read into `primaryKeyField` (ADR-104).
+      *Landed:* #461.
+- [x] **J2 + S1 `@GraphProperty`, `@UIGroup`**: graph node properties in the graph-sync upsert and
       the 0.13 `GraphEdgeMetadata` (#444, #437, #438); grouped sections in the generated forms and
       detail views.
-- [ ] **J7, J8, J9**: saga trigger, compensation and retry (#432, #434, #433, #446);
+      *Landed:* the extraction in the SDK 0.13 shape (#462); edge direction, weight and node
+      properties in the graph sync (#474); the `@UIGroup` sections (#471). #438 stays open for
+      `@Channel`, which is 0.12.0.
+- [x] **J7, J8, J9**: saga trigger, compensation and retry (#432, #434, #433, #446);
       `ActionMetadata.resultType` (#436); the strict audit against SDK 0.13 (#435, #442).
-- [ ] **J3 + S2 `@Blob`**: after its wave 0 ADR.
-- [ ] **J5 + S4 `@QueryParam`, `@NavMenu`, `@Tab`** (#440).
-- [ ] **J6 + S5 T53 route policy, the data half** (#439): processor extraction of `permissions` and
+      *Landed:* J7 (#475), J8 (#472), J9 (#476).
+- [x] **J3 + S2 `@Blob`**: after its wave 0 ADR.
+      *Landed:* the extraction, the field routes, the `BLOBS` facet and the TS client (#479), on
+      ADR-108 (#470).
+- [x] **J5 + S4 `@QueryParam`, `@NavMenu`, `@Tab`** (#440).
+      *Landed:* `@QueryParam` on both sides (#464); `@NavMenu` and `@Tab` (#477).
+- [x] **J6 + S5 T53 route policy, the data half** (#439): processor extraction of `permissions` and
       `routeAccess`, the obligation-12 table, `route-policy.json` with its conformance test, the
       OpenAPI security block (ADR-079), and the TS guards that read the declared names
       (ADR-105 J3-3, J3-4 and S3).
-- [ ] **J10 + S8 list route search** (#365), after its ADR-096 amendment.
-- [ ] **S6 `@View` page gaps** left open by 0.10.0 wave S6: the view's name in its route (#413), the
+      *Landed:* the extraction, the table and `route-policy.json` (#478); the OpenAPI security block
+      (#483); the TS guards and the `fetch`-based stream client for a route that demands an identity
+      (#481).
+- [x] **J10 + S8 list route search** (#365), after its ADR-096 amendment.
+      *Landed:* #515, with ADR-096 Amendment 4.
+- [x] **S6 `@View` page gaps** left open by 0.10.0 wave S6: the view's name in its route (#413), the
       prerender list under `scaffold: false` (#414), `viewHeading` per view (#415), typed CUSTOM block
       props (#416); stretch: SEO fields (#412, upstream: SDK presentation IR), no hand-maintained
       `customBlocks` map (#417).
-- [ ] **T1–T3, T5, T6 coverage**: generated Java and TS tests (#407); the first slice of opt-in
+      *Landed:* #456 (#413), #458 (#414), #457 (#415), #460 (#416).
+      *Open, stretch:* #412 and #417, which do not hold the cut.
+- [x] **T1–T3, T5, T6 coverage**: generated Java and TS tests (#407); the first slice of opt-in
       generated integration tests on H2 (#408); per-file vitest thresholds; processor-compiled e2e
       fixtures for `@UI`, `@View`, `@GraphEdge`, `@RouteAccess`.
-- [ ] **Hygiene**: #405 (done, #450); #406; #314, LF line endings for the committed generated tree;
+      *Landed:* T1, generated Java tests for actions, versioning and soft delete (#473), and for the
+      stream handlers and the route policy (#505); T2, TS store and form specs (#463) and route guard
+      and interceptor specs (#506); T3, the integration-test channel (#512, ADR-058 Amendment 1); T5
+      (#453); T6, `GraphEdgeSyncE2ETest` (#495) and the `@RouteAccess`, `@UI` and `@View` fixtures
+      (#522).
+- [x] **Hygiene**: #405 (done, #450); #406; #314, LF line endings for the committed generated tree;
       `fe-app-build` a required check.
+      *Landed:* #405 (#450); #406 (#508); #314 (#454, and #455 for a new project); `fe-app-build`
+      (`ng build (generated sample app)`) is a required status check on `main`, a repository setting.
 
 Not in 0.11.0: `@Channel` (J4, S3 — SDK 0.13 has no reader half for it; 0.12.0, with its RFC/ADR),
 generated integration tests on PostgreSQL and tenant scopes (0.12.0), `@Encrypted` /
