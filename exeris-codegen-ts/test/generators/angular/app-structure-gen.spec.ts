@@ -801,6 +801,56 @@ describe('generateAppStructure — @NavMenu sidebar', () => {
   });
 });
 
+describe('generateAppStructure — declared Material icon names', () => {
+  const iconSpan = (name: string) =>
+    `<span class="material-symbols-outlined mr-3 text-xl" aria-hidden="true">${name}</span>`;
+
+  it('renders a declared icon name and group icon name as Material Symbols ligatures', () => {
+    const employee = domain({
+      entityName: 'Employee',
+      navMenu: { group: 'People', groupIcon: ' groups ', label: 'Employees', icon: ' badge ' },
+    });
+    const comp = fileAt(generateAppStructure([employee], [], cfg()), 'src/app/app.component.ts')!;
+
+    expect(comp.content).toContain(`${iconSpan('badge')}\n              Employees`);
+    expect(comp.content).toContain(`${iconSpan('groups')}People`);
+  });
+
+  it('installs and loads the font when the sidebar renders an icon name', () => {
+    const employee = domain({ entityName: 'Employee', navMenu: { label: 'Employees', icon: 'badge' } });
+    const files = generateAppStructure([employee], [], cfg());
+
+    expect(fileAt(files, 'package.json')!.content).toContain('"material-symbols": "^0.48.0",');
+    const styles = fileAt(files, 'src/styles.css')!.content;
+    expect(styles).toContain('@import "material-symbols/outlined.css" layer(components);\n');
+    expect(styles.indexOf('@import "@exeris/ui-kit/styles";')).toBeLessThan(styles.indexOf('material-symbols'));
+  });
+
+  it('installs the font when only the composed tree renders an icon name', () => {
+    const files = generateAppStructure([domain({ entityName: 'Order' })], [], cfg(), [], {
+      ...BACKEND_SCAFFOLD_NEEDS,
+      materialSymbols: true,
+    });
+
+    expect(fileAt(files, 'package.json')!.content).toContain('"material-symbols"');
+    expect(fileAt(files, 'src/styles.css')!.content).toContain('material-symbols/outlined.css');
+  });
+
+  it('keeps declared emoji as text, with neither the font class nor the font', () => {
+    const order = domain({
+      entityName: 'Order',
+      navMenu: { group: 'Sales', groupIcon: '💰', label: 'Orders', icon: '🛒' },
+    });
+    const files = generateAppStructure([order], [], cfg());
+
+    const comp = fileAt(files, 'src/app/app.component.ts')!.content;
+    expect(comp).toContain('<span class="mr-3 text-xl">🛒</span>');
+    expect(comp).not.toContain('material-symbols');
+    expect(fileAt(files, 'package.json')!.content).not.toContain('material-symbols');
+    expect(fileAt(files, 'src/styles.css')!.content).not.toContain('material-symbols');
+  });
+});
+
 // ---------- route guards (ADR-105 obligation 21) ----------
 
 describe('generateAppStructure — app.routes.ts guards each page by its route requirement', () => {

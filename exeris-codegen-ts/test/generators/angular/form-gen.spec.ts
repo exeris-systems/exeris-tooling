@@ -1835,7 +1835,7 @@ describe('FormGenerator @Tab tabs layout', () => {
         tabs: [
           { name: 'compensation', label: 'Compensation', order: 2, icon: '💰', fields: ['salary'] },
           { name: 'basic', label: 'Basic Info', order: 1, icon: '👤', fields: ['first'] },
-          { name: 'emergency', order: 2, fields: ['emergency'] },
+          { name: 'emergency', order: 2, icon: 'emergency', fields: ['emergency'] },
         ],
       },
     }), CTX)!.content;
@@ -1857,7 +1857,7 @@ describe('FormGenerator @Tab tabs layout', () => {
     expect(content).toContain('<span class="mr-2">💰</span>Compensation');
     // Name fallback for emergency tab
     expect(content).toContain('id="tab-emergency" aria-controls="panel-emergency"');
-    expect(content).toContain('emergency</button>');
+    expect(content).toContain('<span class="material-symbols-outlined mr-2" aria-hidden="true">emergency</span>emergency</button>');
 
     // Tab panels with role="tabpanel" and [hidden]
     expect(content).toContain('<div role="tabpanel" id="panel-basic" aria-labelledby="tab-basic" [hidden]="activeTab() !== \'basic\'" data-testid="tabpanel-basic"');
