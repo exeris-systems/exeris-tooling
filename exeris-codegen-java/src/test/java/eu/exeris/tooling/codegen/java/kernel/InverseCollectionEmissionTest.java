@@ -66,7 +66,7 @@ class InverseCollectionEmissionTest {
     void migration() {
         String sql = new KernelFlywayGenerator().generate(invoice(LINES_TYPE, true, inverse())).content();
 
-        assertThat(sql).doesNotContain("lines").contains("tags VARCHAR(255)").contains("number VARCHAR(255)");
+        assertThat(sql).doesNotContain("lines").contains("tags TEXT").contains("number VARCHAR(255)");
     }
 
     @Test
@@ -146,7 +146,7 @@ class InverseCollectionEmissionTest {
                 lines(RelationType.MANY_TO_MANY, null, CascadeType.REMOVE));
 
         KernelRepositoryGenerator.requirePersistableFields(build(invoice));
-        assertThat(new KernelFlywayGenerator().generate(invoice).content()).contains("lines VARCHAR(255)");
+        assertThat(new KernelFlywayGenerator().generate(invoice).content()).contains("lines TEXT");
     }
 
     private static void assertRefused(List<DomainMetadata> build, String expected) {
