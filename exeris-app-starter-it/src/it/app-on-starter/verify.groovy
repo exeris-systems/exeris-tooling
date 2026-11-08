@@ -39,6 +39,11 @@ def reports = new File(basedir, 'target/surefire-reports')
     assert new File(reports, "TEST-eu.exeris.fixture.notes.${it}.xml").isFile()
 }
 
+// The application leaves exeris.integrationTests off, so exeris-app-parent's integration-test
+// profile is inactive: no Failsafe ran NoteArchiveIT, the *IT class of its own.
+assert !new File(basedir, 'target/failsafe-reports').exists()
+assert !log.contains('--- failsafe:')
+
 // Effective POM (pass 3, under -P release): the application's own blanks, none of Exeris's
 // publication metadata, and no publishing inherited from exeris-app-bom's profile.
 def pom = new groovy.xml.XmlSlurper().parse(new File(basedir, 'target/effective-pom.xml'))
@@ -51,7 +56,8 @@ assert pom.distributionManagement.size() == 0
 def effective = new File(basedir, 'target/effective-pom.xml').text
 ['github.com/exeris-systems', 'exeris.eu', 'Apache License'].each { assert !effective.contains(it) }
 def plugins = pom.build.plugins.plugin.artifactId*.text()
-['maven-gpg-plugin', 'central-publishing-maven-plugin', 'maven-source-plugin', 'maven-javadoc-plugin'].each {
+['maven-gpg-plugin', 'central-publishing-maven-plugin', 'maven-source-plugin', 'maven-javadoc-plugin',
+ 'maven-failsafe-plugin'].each {
     assert !plugins.contains(it)
 }
 

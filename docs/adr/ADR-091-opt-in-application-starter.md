@@ -9,7 +9,7 @@ slug: adr/ADR-091
 
 # ADR-091 — Publish an opt-in application starter, so a consumer does not hand-write its build
 
-- **Status:** ACCEPTED (2026-09-30) · amended 2026-10-01 (Amendment 1 — backend, frontend and backend + frontend; Amendment 2 — starter scope, publication metadata, starter version) · amended 2026-10-02 (Amendment 3 — the release profile list) · amended 2026-10-06 (Amendment 4 — Maven coordinates move to the eu.exeris group) · amended 2026-10-13 (Amendment 5 — a new project, written by exeris-initializr) · amended 2026-10-30 (Amendment 6 — a new project pins its generated trees to LF) · amended 2026-11-07 (Amendment 7 — the app BOM manages H2 and the parent binds Failsafe)
+- **Status:** ACCEPTED (2026-09-30) · amended 2026-10-01 (Amendment 1 — backend, frontend and backend + frontend; Amendment 2 — starter scope, publication metadata, starter version) · amended 2026-10-02 (Amendment 3 — the release profile list) · amended 2026-10-06 (Amendment 4 — Maven coordinates move to the eu.exeris group) · amended 2026-10-13 (Amendment 5 — a new project, written by exeris-initializr) · amended 2026-10-30 (Amendment 6 — a new project pins its generated trees to LF) · amended 2026-11-07 (Amendment 7 — the app BOM manages H2 and the parent runs the generated integration tests)
 - **Deciders:** the founder (scope); `exeris-tooling` (module layout)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / build (consumer-build contract)
@@ -483,12 +483,12 @@ make the output differ between machines.
 Lands in 0.11.0. Migration owner: `exeris-tooling`; a project the initializr already wrote is
 unaffected, and the README says how to add the same lines by hand.
 
-## Amendment 7 — the app BOM manages H2 and the parent binds Failsafe (2026-11-07)
+## Amendment 7 — the app BOM manages H2 and the parent runs the generated integration tests (2026-11-07)
 
 - **Status:** ACCEPTED (2026-11-07). Decided by the founder with ADR-058 Amendment 1
   (`exeris-tooling#408`).
 - **Amends:** obligation 1, "It manages nothing else", which no longer excludes H2; and
-  obligation 2, which gains one plugin. The starter (obligation 3) is unchanged.
+  obligation 2, which gains one profile. The starter (obligation 3) is unchanged.
 
 ADR-058 Amendment 1 adds generated integration tests that boot the application on an in-memory H2
 database and that Failsafe runs. Both are needs of the consumer's build, which tooling does not
@@ -499,11 +499,27 @@ write, so the two POMs that carry the build carry them:
    equal to `exeris-tooling-bom`'s, and `tools/release-readiness` fails a release where the two
    differ. The application still declares the dependency, at `test` scope, when it turns the channel
    on; the starter does not carry it, since no main source needs it.
-2. **`exeris-app-parent` binds `maven-failsafe-plugin` 3.2.5** with an `exeris-integration-tests`
-   execution of `integration-test` and `verify`, inside the build block README route 2 copies.
-   Every generated integration test ends in `IT`, which Surefire's default includes do not match,
-   so `mvn test` is unchanged and a build without such a class runs nothing under the binding.
+2. **`exeris-app-parent` carries an `exeris-integration-tests` profile** that binds
+   `maven-failsafe-plugin` 3.2.5, with an execution of the same id running `integration-test` and
+   `verify`. The profile is activated by the existence of `${basedir}/src/test/generated-it/java`,
+   the channel's default root, when the build starts. An application that never turned the channel
+   on has no such directory and binds no Failsafe, so an `*IT`, `IT*` or `*ITCase` class of its
+   own runs, or does not, exactly as before. Every generated integration test ends in `IT`, which
+   Surefire's default includes do not match, so `mvn test` is unchanged either way.
+   - Maven decides activation before `exeris:generate` runs, so the build that first writes the
+     root compiles the integration tests and the builds after it run them. Generated code is
+     committed (L1), so a checkout of an application that turned the channel on runs them from its
+     first build.
+   - Binding Failsafe in the plugins the build block lists would run an existing application's own
+     `*IT` classes with the channel off. A property activation cannot replace the file: Maven 3.9
+     activates a profile from system and user properties only, and the flag is a POM property.
+   - The README carries a copy of the profile beside the route 2 build block, kept identical to the
+     parent's. An application that moves the root with `exeris.integrationTestOutputDir` binds
+     Failsafe itself.
 
 The `app-integration-tests` invoker fixture builds an application on the parent with the channel
-on and checks Failsafe's report. Lands in 0.11.0. Migration owner: `exeris-tooling`.
+on, and checks that the build which first writes the root runs no Failsafe and the next one runs
+every generated `*IT`. `app-on-starter`, with the channel off, carries an `*IT` class of its own
+that fails if run, and checks that no Failsafe report exists and the effective POM binds no
+Failsafe. Lands in 0.11.0. Migration owner: `exeris-tooling`.
 

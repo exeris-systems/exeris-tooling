@@ -168,7 +168,8 @@ public class GenerateMojo extends AbstractMojo {
      * application on an in-memory H2 database and call it over HTTP. Opt-in, for the reason
      * {@link #generateTests} is, and because it costs more: {@code com.h2database:h2} at test scope,
      * a kernel driver on the test runtime classpath and a {@code maven-failsafe-plugin} binding,
-     * which {@code exeris-app-parent} supplies. A build whose entities are not all {@code GLOBAL},
+     * which {@code exeris-app-parent}'s {@code exeris-integration-tests} profile supplies once the
+     * default root exists. A build whose entities are not all {@code GLOBAL},
      * or that boots the graph or storage subsystem or a capability composition, gets none and a
      * warning ({@code EXT-GEN-3105}).
      */

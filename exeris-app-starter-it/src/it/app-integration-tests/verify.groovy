@@ -19,7 +19,10 @@ assert new File(it, 'GeneratedRoutePolicyIT.java').isFile()
 def surefire = new File(basedir, 'target/surefire-reports')
 assert !surefire.exists() || !surefire.listFiles().any { it.name.contains('CrudIT') }
 
-// Failsafe ran them, and every one passed.
+// Failsafe ran them, under exeris-app-parent's file-activated profile, and every one passed.
+// Pass 2 started without the root, so the profile was inactive there: Failsafe ran in pass 3 only.
+def failsafeRuns = log.count('--- failsafe:3.2.5:integration-test (exeris-integration-tests)')
+assert failsafeRuns == 1 : "Failsafe ran in ${failsafeRuns} passes, expected pass 3 alone"
 def failsafe = new File(basedir, 'target/failsafe-reports')
 ['handler.MemoCrudIT', 'handler.DispatchCrudIT', 'GeneratedRoutePolicyIT'].each {
     assert new File(failsafe, "TEST-eu.exeris.fixture.memos.${it}.xml").isFile()

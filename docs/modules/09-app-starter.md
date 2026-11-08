@@ -42,7 +42,7 @@ It manages `com.h2database:h2` at `h2.version`, for the generated integration te
 | Codegen | `exeris:generate` at `generate-sources`; `exeris:verify-capabilities` and `exeris:verify-runtime` at `process-classes` |
 | Resources | `src/main/resources`, and `db/migration/**` and `openapi/**` from `src/main/generated/java`, so the migrations and the OpenAPI document reach the classpath |
 | Surefire | 3.2.5, which runs the JUnit 5 generated tests with no provider declared |
-| Failsafe | 3.2.5, bound in `integration-test` and `verify` (execution `exeris-integration-tests`), which runs the generated `*IT` integration tests ([ADR-058](../adr/ADR-058-generated-test-emission-channel.md) Amendment 1) |
+| Failsafe | 3.2.5, in the `exeris-integration-tests` profile, bound in `integration-test` and `verify` (execution `exeris-integration-tests`), which runs the generated `*IT` integration tests ([ADR-058](../adr/ADR-058-generated-test-emission-channel.md) Amendment 1). The profile is active only when `src/test/generated-it/java` exists as the build starts, so an application without that root binds no Failsafe; the build that first writes it compiles the tests and the builds after it run them ([ADR-091](../adr/ADR-091-opt-in-application-starter.md) Amendment 7) |
 
 The parent declares Exeris's own `url` and inherits `licenses`, `developers` and `scm` from the BOM, because Central validates it as published. An application on it inherits them unless it declares its own; the README's application POM blanks them.
 

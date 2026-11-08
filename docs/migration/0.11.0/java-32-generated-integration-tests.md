@@ -19,13 +19,18 @@ and `409`, the `@Validation` boundaries), and `GeneratedRoutePolicyIT` when a ro
 identity (`401`, `403`, admission), with tokens verified against a key set the test serves on a
 loopback port.
 
-Nothing changes for an application that leaves the flag off, which is the default. To turn it on:
+Nothing changes for an application that leaves the flag off, which is the default: it has no
+`src/test/generated-it/java`, so `exeris-app-parent` binds no Failsafe, and an `*IT` class of its
+own runs, or does not, as before. To turn it on:
 
 - Add `com.h2database:h2` at `test` scope beside JUnit 5 and AssertJ. `exeris-app-bom` manages its
   version. `exeris:generate` warns with `EXT-PLUG-2004` when it is missing.
-- Run them with Failsafe: `exeris-app-parent` binds `maven-failsafe-plugin` (execution
-  `exeris-integration-tests`). An application on README route 2 copies the plugin from the build
-  block. `mvn test` does not run them; `mvn verify` does.
+- Run them with Failsafe: `exeris-app-parent`'s `exeris-integration-tests` profile binds
+  `maven-failsafe-plugin` when `src/test/generated-it/java` exists as the build starts. The build
+  that first writes the directory compiles the integration tests; the builds after it run them. An
+  application on README route 2 copies the profile from the README; one that moves the root with
+  `exeris.integrationTestOutputDir` binds Failsafe itself. `mvn test` does not run them;
+  `mvn verify` does.
 - Keep the generated migrations on the test classpath, as `exeris-app-parent`'s `<resource>` entry
   does.
 - Add `src/test/generated-it/** text eol=lf` to `.gitattributes` beside the other generated trees.

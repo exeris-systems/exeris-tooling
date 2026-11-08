@@ -49,8 +49,7 @@ Coordinates: groupId `eu.exeris`, packages `eu.exeris.tooling.*`.
   (L2, 0.3.0 plugin). Never assume "always regenerate" ([policy](.agents/policies/committed-generated-code.md)).
 - **Consumer-build contracts:** Emitted code binds `System.Logger` with `{0}` placeholders and quote
   escaping (ADR-060, no slf4j). Emitted tests in `src/test/generated/java` import only JUnit 5 +
-  AssertJ (ADR-058), integration tests also the JDK. `CapTierWall` uses dependency-free
-  Class-File API (ADR-055)
+  AssertJ (ADR-058). `CapTierWall` uses dependency-free Class-File API (ADR-055)
   ([policy](.agents/policies/consumer-build-contracts.md)).
 - **Scoped bans:** Hard boundaries across processor, emitters, and TypeScript generator
   ([policy](.agents/policies/scoped-bans.md)).

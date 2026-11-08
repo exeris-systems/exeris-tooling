@@ -294,8 +294,9 @@ The tooling e2e compares them by booting the emitted `Application`. A consumer h
    (`java.net.http`, `jdk.httpserver`, `java.security`, `java.sql`) and the generated main code. At
    test runtime they need `com.h2database:h2`, which `RequiredCompileArtifacts` reports as
    `EXT-PLUG-2004` when it is absent, and a kernel driver. `exeris-app-bom` manages the H2 version
-   the tooling e2e ran, and `exeris-app-parent` binds `maven-failsafe-plugin` (ADR-091
-   Amendment 7). No mocking framework and no kernel testkit are imported.
+   the tooling e2e ran, and `exeris-app-parent` binds `maven-failsafe-plugin` in a profile active
+   only when the default root exists (ADR-091 Amendment 7). No mocking framework and no kernel
+   testkit are imported.
 8. **The gate runs them.** `GeneratedIntegrationTestsE2ETest` runs annotated source through the
    processor, `run` and `runIntegrationTests`, compiles both trees with `javac` against JUnit,
    AssertJ and the kernel alone, and executes the `*IT` classes on the JUnit Platform launcher. It
@@ -310,7 +311,9 @@ The tooling e2e compares them by booting the emitted `Application`. A consumer h
 ### Consequences
 
 - Turning the channel on costs H2 at test scope and a Failsafe binding. The binding arrives with
-  `exeris-app-parent`; an application on route 2 copies it, and adds H2 either way.
+  `exeris-app-parent`'s profile once the root exists; an application on route 2 copies the
+  profile, and adds H2 either way. The build that first writes the root does not run the tests;
+  the builds after it do.
 - The integration tests are committed L1 output like the rest, and `exeris:detach` does not move
   them, as for the unit tree.
 - A generator that changes a status, a route or a requirement fails a consumer's `mvn verify`

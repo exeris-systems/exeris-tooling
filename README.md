@@ -272,20 +272,6 @@ and why the tooling version is a property of your own.
                 </execution>
             </executions>
         </plugin>
-        <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-failsafe-plugin</artifactId>
-            <version>3.2.5</version>
-            <executions>
-                <execution>
-                    <id>exeris-integration-tests</id>
-                    <goals>
-                        <goal>integration-test</goal>
-                        <goal>verify</goal>
-                    </goals>
-                </execution>
-            </executions>
-        </plugin>
         <!-- END exeris build block -->
     </plugins>
 </build>
@@ -351,10 +337,51 @@ Set `<exeris.integrationTests>true</exeris.integrationTests>` to emit integratio
 `src/test/generated-it/java` (ADR-058 Amendment 1). `mvn verify` runs them through Failsafe: they
 boot the generated application on an in-memory H2 database and call its routes over HTTP. Add
 `com.h2database:h2` at `test` scope beside JUnit 5 and AssertJ; `exeris-app-bom` manages its
-version, and the build block above binds Failsafe. They are emitted only for an application whose
-entities are all `GLOBAL` and that has no graph entity, `@Blob` field or `@CapabilityModule`; any
-other application gets a warning (`EXT-GEN-3105`) and no tree. `-Dexeris.it.application=<class>`
-boots a subclass of the generated `Application` instead.
+version. They are emitted only for an application whose entities are all `GLOBAL` and that has no
+graph entity, `@Blob` field or `@CapabilityModule`; any other application gets a warning
+(`EXT-GEN-3105`) and no tree. `-Dexeris.it.application=<class>` boots a subclass of the generated
+`Application` instead.
+
+Failsafe is bound by `exeris-app-parent`'s `exeris-integration-tests` profile, which is active only
+when `src/test/generated-it/java` exists as the build starts. An application without that directory
+binds no Failsafe, so an `*IT` class of its own runs, or does not, exactly as before. Maven decides
+activation before `exeris:generate` runs: the build that first writes the directory compiles the
+integration tests, and every build after it, including one from a checkout that committed the
+directory, runs them. An application that moves the root with `exeris.integrationTestOutputDir`
+binds Failsafe itself. On route 2, copy the profile into your own `<profiles>`:
+
+```xml
+<profiles>
+    <!-- BEGIN exeris integration-test profile: identical to exeris-app-parent's -->
+    <profile>
+        <id>exeris-integration-tests</id>
+        <activation>
+            <file>
+                <exists>${basedir}/src/test/generated-it/java</exists>
+            </file>
+        </activation>
+        <build>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-failsafe-plugin</artifactId>
+                    <version>3.2.5</version>
+                    <executions>
+                        <execution>
+                            <id>exeris-integration-tests</id>
+                            <goals>
+                                <goal>integration-test</goal>
+                                <goal>verify</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
+            </plugins>
+        </build>
+    </profile>
+    <!-- END exeris integration-test profile -->
+</profiles>
+```
 
 ## Running the Java generator without Maven
 

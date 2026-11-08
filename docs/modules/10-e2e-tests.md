@@ -67,9 +67,9 @@ The surefire run reads `e2e.groups` and `e2e.excludedGroups`. By default nothing
 
 | Fixture | What it builds |
 |---|---|
-| `app-on-starter` | An application on `exeris-app-parent` and `exeris-app-starter`: the two-pass build, then `verify`, then the effective POM under `-P release` |
+| `app-on-starter` | An application on `exeris-app-parent` and `exeris-app-starter`: the two-pass build, then `verify`, then the effective POM under `-P release`. With `exeris.integrationTests` off, its own `NoteArchiveIT` must not run and no Failsafe may be bound |
 | `app-off-starter` | An application without the starter, which must fail at `javac` after `exeris:generate` named the one missing artifact (`EXT-PLUG-2004`) |
-| `app-integration-tests` | An application on `exeris-app-parent` with `exeris.integrationTests` on: the two-pass build, then `verify`, in which Failsafe runs the generated `*IT` classes on H2 the BOM manages and none of them fails |
+| `app-integration-tests` | An application on `exeris-app-parent` with `exeris.integrationTests` on: the two-pass build, which writes the integration-test root, then a second `verify`, which starts with the root in place, so the parent's profile binds Failsafe and it runs the generated `*IT` classes on H2 the BOM manages and none of them fails |
 | `initializr-backend`, `initializr-e2e` | The projects `exeris-initializr` writes, built the same two-pass way |
 
 `-DskipTests` skips the fixture builds as well.
