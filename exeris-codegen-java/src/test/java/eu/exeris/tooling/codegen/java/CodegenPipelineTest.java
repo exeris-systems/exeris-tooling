@@ -2,6 +2,7 @@ package eu.exeris.tooling.codegen.java;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import eu.exeris.sdk.sourcemodel.ast.CapabilityModuleMetadata;
+import eu.exeris.sdk.sourcemodel.ast.DataScope;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.EnumMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
@@ -174,6 +175,88 @@ class CodegenPipelineTest {
             assertThat(pipeline.runTests(metadataDir, testOutputDir, "com.shop")).isZero();
 
             assertThat(owned).exists();
+        }
+    }
+
+    @Nested
+    @DisplayName("generated integration tests (ADR-058 Amendment 1)")
+    class GeneratedIntegrationTests {
+
+        @TempDir
+        Path itOutputDir;
+
+        @Test
+        @DisplayName("a GLOBAL build gets the support classes and a CRUD test per entity, in its own root")
+        void emitsIntoItsOwnRoot() throws IOException {
+            writeDomainJson("Product.json", productDomain());
+
+            CodegenPipeline.IntegrationTestRun run = pipeline.runIntegrationTests(metadataDir, itOutputDir, null);
+
+            assertThat(run.withheld()).isFalse();
+            assertThat(run.filesWritten()).isEqualTo(3);
+            assertThat(itOutputDir.resolve("com/shop/testsupport/ApplicationUnderTest.java")).exists();
+            assertThat(itOutputDir.resolve("com/shop/testsupport/IntegrationHttp.java")).exists();
+            assertThat(itOutputDir.resolve("com/shop/handler/ProductCrudIT.java")).exists();
+            assertThat(itOutputDir.resolve(".exeris-codegen-manifest")).exists();
+            assertThat(outputDir.resolve("com/shop")).doesNotExist();
+        }
+
+        @Test
+        @DisplayName("a route that demands an identity adds the tokens and the route-policy test")
+        void identityAddsTheRoutePolicyTest() throws IOException {
+            writeDomainJson("Product.json", DomainMetadata.builder("Product", "com.shop.domain")
+                    .module("catalog").path("/products").permissions(List.of("product:read")).build());
+
+            CodegenPipeline.IntegrationTestRun run = pipeline.runIntegrationTests(metadataDir, itOutputDir, "com.shop");
+
+            assertThat(run.filesWritten()).isEqualTo(5);
+            assertThat(itOutputDir.resolve("com/shop/testsupport/IntegrationTokens.java")).exists();
+            assertThat(itOutputDir.resolve("com/shop/GeneratedRoutePolicyIT.java")).exists();
+        }
+
+        @Test
+        @DisplayName("a build outside the scope writes nothing, prunes nothing and says why")
+        void outOfScopeIsWithheld() throws IOException {
+            writeDomainJson("Product.json", DomainMetadata.builder("Product", "com.shop.domain")
+                    .module("catalog").path("/products").dataScope(DataScope.TENANT).build());
+            Path owned = itOutputDir.resolve("com/shop/handler/ProductCrudIT.java");
+            Files.createDirectories(owned.getParent());
+            Files.writeString(owned, "class ProductCrudIT {}");
+
+            CodegenPipeline.IntegrationTestRun run = pipeline.runIntegrationTests(metadataDir, itOutputDir, "com.shop");
+
+            assertThat(run.withheld()).isTrue();
+            assertThat(run.filesWritten()).isZero();
+            assertThat(run.withheldReason()).contains("com.shop.domain.Product", "TENANT");
+            assertThat(owned).hasContent("class ProductCrudIT {}");
+        }
+
+        @Test
+        @DisplayName("zero domains is a no-op, neither written nor withheld")
+        void zeroDomainsIsANoOp() throws IOException {
+            CodegenPipeline.IntegrationTestRun run = pipeline.runIntegrationTests(metadataDir, itOutputDir, "com.shop");
+
+            assertThat(run).isEqualTo(new CodegenPipeline.IntegrationTestRun(0, null));
+        }
+
+        @Test
+        @DisplayName("their needs add H2 on the test classpath, once each, and only for a build they are written for")
+        void requirementsAddH2() throws IOException {
+            writeDomainJson("Product.json", productDomain());
+
+            assertThat(pipeline.requiredCompileArtifacts(metadataDir, true, true))
+                    .extracting(RequiredCompileArtifacts.Requirement::coordinate)
+                    .containsExactly("eu.exeris:exeris-kernel-spi", "eu.exeris:exeris-kernel-core",
+                            "org.junit.jupiter:junit-jupiter-api", "org.assertj:assertj-core", "com.h2database:h2");
+            assertThat(pipeline.requiredCompileArtifacts(metadataDir, false, true))
+                    .extracting(RequiredCompileArtifacts.Requirement::coordinate)
+                    .endsWith("com.h2database:h2");
+
+            writeCapabilityJson("Billing",
+                    desc("com.app.Billing", List.of(ProvidesMetadata.of("com.api.PaymentApi", "1.0")), List.of()));
+            assertThat(pipeline.requiredCompileArtifacts(metadataDir, false, true))
+                    .extracting(RequiredCompileArtifacts.Requirement::coordinate)
+                    .doesNotContain("com.h2database:h2");
         }
     }
 

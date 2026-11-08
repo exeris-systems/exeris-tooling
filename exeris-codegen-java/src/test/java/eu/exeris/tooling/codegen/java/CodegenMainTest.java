@@ -121,6 +121,33 @@ class CodegenMainTest {
         }
 
         @Test
+        @DisplayName("--integration-tests writes the generated integration tests into their own root")
+        void integrationTestsWriteTheirRoot() throws IOException {
+            writeProduct();
+            Path itRoot = testOutputDir.resolve("it");
+
+            assertThat(run(argsFor("--tests", "--test-output-dir=" + testOutputDir.resolve("unit"),
+                    "--integration-tests", "--integration-test-output-dir=" + itRoot))).isEqualTo(CodegenMain.EXIT_OK);
+            assertThat(stderr()).isEmpty();
+            assertThat(itRoot.resolve("com/shop/handler/ProductCrudIT.java")).exists();
+            assertThat(itRoot.resolve(OutputWriter.MANIFEST_NAME)).exists();
+            assertThat(testOutputDir.resolve("unit/com/shop/handler/ProductHandlerTest.java")).exists();
+        }
+
+        @Test
+        @DisplayName("a build the integration tests do not boot is a success that writes no integration test")
+        void withheldIntegrationTestsExitZero() throws IOException {
+            mapper.writeValue(metadataDir.resolve("Product.json").toFile(),
+                    DomainMetadata.builder("Product", "com.shop.domain").module("catalog").path("/products")
+                            .tenantScoped(true).build());
+            Path itRoot = testOutputDir.resolve("it");
+
+            assertThat(run(argsFor("--integration-tests", "--integration-test-output-dir=" + itRoot)))
+                    .isEqualTo(CodegenMain.EXIT_OK);
+            assertThat(itRoot).doesNotExist();
+        }
+
+        @Test
         @DisplayName("--allow-empty prunes the tree a previous run owns when no @ExerisDomain is found")
         void allowEmptyPrunesTheOwnedTree() throws IOException {
             Path owned = ownedTree();
@@ -272,6 +299,18 @@ class CodegenMainTest {
             assertThat(stderr())
                     .startsWith(DiagnosticId.CLI_GENERATION_FAILED.format("Test generation failed (testOutputDir="));
             assertThat(outputDir.resolve("com/shop/Application.java")).exists();
+        }
+
+        @Test
+        @DisplayName("an integration-test root that cannot be written prints EXT-GEN-3001")
+        void unwritableIntegrationTestRoot() throws IOException {
+            writeProduct();
+            Path notADirectory = Files.writeString(testOutputDir.resolve("file"), "x");
+
+            assertThat(run(argsFor("--integration-tests", "--integration-test-output-dir=" + notADirectory)))
+                    .isEqualTo(CodegenMain.EXIT_FAILED);
+            assertThat(stderr()).startsWith(DiagnosticId.CLI_GENERATION_FAILED.format(
+                    "Integration-test generation failed (integrationTestOutputDir="));
         }
 
         @Test

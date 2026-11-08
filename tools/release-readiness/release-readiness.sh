@@ -25,7 +25,7 @@
 #
 # exeris-app-bom has no parent and so states the tooling, kernel and SDK versions as literals
 # (ADR-091). This gate fails when any of them is a -SNAPSHOT, when the tooling version or the BOM's
-# own version is not the reactor version, and when its kernel, SDK or Jackson 3 version differs
+# own version is not the reactor version, and when its kernel, SDK, Jackson 3 or H2 version differs
 # from exeris-tooling-bom's, the versions this release was built and tested against. It also fails
 # when that Jackson 3 version is below the one exeris-kernel-bom or exeris-sdk-bom manages at the
 # pinned kernel and SDK versions, read from the local repository (~/.m2/repository, or
@@ -391,7 +391,7 @@ if 'exeris-app-bom' in poms:
     if app_bom_version != reactor_version:
         failures.append(f'exeris-app-bom: its own <version> is {app_bom_version}, '
                         f'the reactor version is {reactor_version}')
-    for key in ('exeris.kernel.version', 'exeris.sdk.version', 'jackson3.version'):
+    for key in ('exeris.kernel.version', 'exeris.sdk.version', 'jackson3.version', 'h2.version'):
         if app.get(key) != internal.get(key):
             failures.append(f'<{key}> is {app.get(key)} in exeris-app-bom and {internal.get(key)} in '
                             'exeris-tooling-bom; the app BOM must name what this release was tested against')

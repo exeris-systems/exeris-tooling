@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+        An application that switches the generated integration tests on (ADR-058 Amendment 1):
+        exeris-app-parent, whose integration-test profile binds Failsafe once the generated root
+        exists, the starter, and what the integration tests need at test scope, which is JUnit 5,
+        AssertJ and H2. H2 carries no version: exeris-app-bom manages it. Any other dependency here
+        would hide a need the contract does not state.
+    -->
+    <parent>
+        <groupId>eu.exeris</groupId>
+        <artifactId>exeris-app-parent</artifactId>
+        <version>@project.version@</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>eu.exeris.fixture</groupId>
+    <artifactId>app-integration-tests</artifactId>
+    <version>1.0.0</version>
+    <description>An application whose generated integration tests run under Failsafe.</description>
+
+    <url/>
+    <licenses>
+        <license/>
+    </licenses>
+    <developers>
+        <developer/>
+    </developers>
+    <scm>
+        <connection/>
+        <developerConnection/>
+        <tag/>
+        <url/>
+    </scm>
+
+    <properties>
+        <exeris.integrationTests>true</exeris.integrationTests>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-app-starter</artifactId>
+            <type>pom</type>
+        </dependency>
+
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.11.4</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.27.7</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

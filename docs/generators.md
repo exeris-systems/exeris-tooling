@@ -25,9 +25,11 @@ them.
 
 A tool that explains a generated tree reads the `.exeris-codegen-manifest` at the root of that tree
 and matches the paths it lists, and nothing else: not a directory listing, and not a prediction from
-the metadata. The pipeline writes two trees, each with its own manifest: `main`, the tree
-`exeris:generate` writes (`src/main/generated/java` by default), and `test`, the tree written under
-`-Dexeris.tests=true` (`src/test/generated/java`, ADR-058). A manifest path is relative to its tree
+the metadata. The pipeline writes three trees, each with its own manifest: `main`, the tree
+`exeris:generate` writes (`src/main/generated/java` by default), `test`, the tree written under
+`-Dexeris.tests=true` (`src/test/generated/java`, ADR-058), and `integration-test`, the tree written
+under `-Dexeris.integrationTests=true` (`src/test/generated-it/java`, ADR-058 Amendment 1). A
+manifest path is relative to its tree
 and uses forward slashes. The TypeScript generator's manifest records its project-root scaffold
 files with a leading `./` (`./package.json`), as composed; strip a leading `./` before matching. The
 Java manifests never carry one.
@@ -149,6 +151,20 @@ existing key is removed or changes meaning or type.
 | `service-test` | `KernelServiceTestGenerator` | The generated tests of the entity's service. | `{base}/service/{E}ServiceTest.java` | one | every entity | ADR-058 |
 | `repository-test` | `KernelRepositoryTestGenerator` | The generated tests of the entity's repository. | `{base}/repository/{E}RepositoryTest.java` | one | every entity | ADR-058 |
 | `saga-flow-test` | `KernelSagaTestGenerator` | The generated tests of the saga's flow definition. | `{base}/saga/{Flow}Test.java` | zero-or-one | `@Saga` | ADR-058 |
+
+### Integration test root, project scope
+
+| Row | Generator | Artefact | Path template | Cardinality | Condition | ADR |
+|---|---|---|---|---|---|---|
+| `integration-test-support` | `KernelIntegrationSupportGenerator` | The class that boots the generated application once per test JVM on in-memory H2, and the HTTP helper the integration tests send their requests through. | `{app}/testsupport/{ApplicationUnderTest,IntegrationHttp}.java` | fixed-set | every entity `GLOBAL`, none with graph metadata or a `@Blob` field, and no `@CapabilityModule`; otherwise nothing is written (`EXT-GEN-3105`) | ADR-058 |
+| `integration-test-tokens` | `KernelIntegrationSupportGenerator` | The RSA key pair made at test runtime, its JWKS document, and the RS256 tokens the integration tests present. | `{app}/testsupport/IntegrationTokens.java` | zero-or-one | as `integration-test-support`, and some route demands a verified identity (ADR-105) | ADR-058 |
+| `route-policy-integration-test` | `KernelRoutePolicyIntegrationTestGenerator` | The integration test of the route policy the booted application binds: 401, 403 and admission per declared requirement. | `{app}/GeneratedRoutePolicyIT.java` | zero-or-one | as `integration-test-support`, and some route demands a verified identity (ADR-105) | ADR-058 |
+
+### Integration test root, entity scope
+
+| Row | Generator | Artefact | Path template | Cardinality | Condition | ADR |
+|---|---|---|---|---|---|---|
+| `crud-integration-test` | `KernelCrudIntegrationTestGenerator` | The integration test of the entity's CRUD routes on the booted application. | `{base}/handler/{E}CrudIT.java` | one | every entity, when `integration-test-support` is written | ADR-058 |
 
 ## Ambiguous rows
 
