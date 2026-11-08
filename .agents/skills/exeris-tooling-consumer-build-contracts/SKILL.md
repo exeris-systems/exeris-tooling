@@ -54,8 +54,8 @@ A third root, `src/test/generated-it/java` (its own `OutputWriter` + manifest), 
 `exeris.integrationTests`, holds the integration tests (ADR-058 Amendment 1). They boot the
 generated application on in-memory H2 and call it over HTTP:
 
-1. They may import **JUnit 5, AssertJ and the JDK** (`java.net.http`, `com.sun.net.httpserver`,
-   `java.security`, `java.sql`) and nothing else; H2 and the kernel driver are test-runtime needs,
+1. They may import **JUnit 5, AssertJ and the JDK** (any `java.*` package, and
+   `com.sun.net.httpserver`) and nothing else; H2 and the kernel driver are test-runtime needs,
    which `RequiredCompileArtifacts.forGeneratedIntegrationTests` names. No kernel testkit.
 2. Every test class ends in `IT` and no support class matches a Surefire or Failsafe default
    include. `exeris-app-parent` binds Failsafe only where the root exists, so an application with
