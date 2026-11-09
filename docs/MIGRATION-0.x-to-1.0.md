@@ -3933,7 +3933,1291 @@ text for these statuses needs the new one.
 
 ## 0.11.0 train — regeneration deltas
 
-<!-- BEGIN migration-fragments 0.11.0 -->
-Until 0.11.0 is cut, each step of this train is a file of its own under `docs/migration/0.11.0/`,
-and the release assembles them here ([how a step is written](migration/README.md)).
-<!-- END migration-fragments 0.11.0 -->
+### `exeris-app-bom` pins SDK 0.13.0 and kernel 0.13.0
+
+`exeris.sdk.version` and `exeris.kernel.version` in `exeris-app-bom` are `0.13.0`, the versions this
+release's suites ran against. An application on `exeris-app-parent` or importing the BOM moves to
+both on its next build.
+
+After regenerating, every `exeris-metadata/<entity>.json` writes both `inCreate` and `inUpdate`
+on every field, a `false` included, and its `schemaVersion` is `0.13.0`. The generated code does not
+change for either: both loaders already read an absent flag as `false`.
+
+The SDK's `pluralName()` counts an uppercase vowel before a trailing `y` as a vowel, so an entity
+named like `Ay` without an explicit `path` is served under `/ays`, where it was `/aies`. The
+generated frontend follows it.
+
+Kernel 0.13.0 asks an `HttpRoutePolicy` about a request's path without its query string, and about
+a `HEAD` request as the `GET` route that serves it. An application that binds its own policy and
+matched on a query string, or on `HEAD`, adjusts that policy.
+
+Kernel 0.13.0 refuses an event published under a tenant's bound storage context unless that tenant's
+isolation key is registered with the event engine (`EX-EVENT-6009`, reason
+`unregistered-isolation-key`). The generated publishers publish under the request's context, so an
+application with a `TENANT` entity that publishes events registers every tenant key before the first
+request is served, with an ordinal it keeps for the life of the deployment, for example in its
+`RuntimeComponents` subclass, which runs inside the boot scope:
+
+```java
+@Override
+public HttpHandler decorate(HttpRouter router) {
+    IsolationKeyRegistry isolation = KernelProviders.eventEngine().isolationRegistry();
+    isolation.register(IsolationKeySpec.of(tenantKey, ordinal));
+    return super.decorate(router);
+}
+```
+
+Without it, a generated `@Action` that publishes answers 500 for every tenant-bound request, and a
+streaming one sends a `stream-error` frame. The kernel's `MIGRATION.md` (0.12.x → 0.13) has the full
+step.
+
+### An entity's static and transient fields are not entity fields
+
+The processor skips an `@ExerisDomain` class's `static` and `transient` fields, so a constant such
+as `public static final String CHARGING = "CHARGING";` reaches neither the metadata nor the migration,
+DTOs, OpenAPI or TypeScript model. Before, it became a column, and the generated repository called
+accessors that did not exist, so the application did not compile. `@Field` on such a field is
+reported as warning `EXT-PROC-1108` and has no effect.
+
+After regenerating, a migration, DTO or TypeScript model that carried such a field no longer does. A
+field meant to be persisted is declared as an instance field without `transient`.
+
+### The Java writer refuses an output path outside the output directory
+
+`exeris-codegen-core`'s `OutputWriter` resolves every file it writes, claims or prunes against the
+output directory and refuses one that lands outside it. A package name with an empty, `.` or `..`
+segment or a path separator, and a class name with a path separator, are refused before anything is
+written; the build fails with an `IOException` naming the path. An empty package name is the
+default package and writes at the output root, as before.
+
+Metadata written by the annotation processor holds Java identifiers and is unaffected. Metadata
+authored by hand or by another tool uses Java identifiers for entity and package names.
+
+### A parameter of an `@Action` method without `@ActionParam` or `@QueryParam` is refused
+
+The processor refuses a parameter of an `@Action` method that carries neither `@ActionParam` nor
+`@QueryParam`, with the compile error `EXT-PROC-1020` naming the entity, the method and the parameter.
+Before, an unannotated parameter was dropped: the generated handler called the method with fewer
+arguments, and the application either failed to compile or called another overload with fewer
+parameters, without a warning.
+
+Annotate every parameter of an `@Action` method with `@ActionParam(label = "...")` to bind it from the
+request body, or with `@QueryParam("key")` to bind it from the request query string. A zero-argument
+`@Action` that delegated to an unannotated overload to work around the drop can call it with
+annotated parameters instead.
+
+### Field-level `@PrimaryKey` names the entity's primary key
+
+The annotation processor reads the field-level `@PrimaryKey` marker into
+`SystemFieldsMetadata.primaryKeyField`, matching the SDK's source-model reader. Until 0.11.0 the
+marker had no effect on emitted code and `-Aexeris.strict` reported it as unread.
+
+#### Refused strategies
+
+The marker accepts `strategy = Strategy.UUID` (the default) and `Strategy.UUID_DATABASE`. The
+strategies `SEQUENCE`, `IDENTITY` and `NONE` are refused at build time with the compile error
+`EXT-PROC-1021`, naming the entity, the field and the strategy. All primary keys in the Exeris
+ecosystem are UUIDs ([ADR-104](adr/ADR-104-declared-primary-key-uuid-only.md)).
+
+#### Unintended key renames
+
+A project that annotated a field with `@PrimaryKey` before 0.11.0 while relying on an `id` field, or
+on a field other than the intended key, now has that annotated field resolved as the entity's
+primary key. Check the generated metadata (`target/classes/exeris-metadata/<Entity>.json`) or the
+`CREATE TABLE` migration to confirm the effective key matches the intended column. If an entity
+declares both a marked key and a field `id`, the processor refuses the declaration with `EXT-PROC-1019`.
+
+### The metadata carries `graph.properties` and `ui.groups`
+
+The processor reads `@GraphProperty` (on fields of a `@Graph` type) into `graphMetadata.properties`,
+`[]` when the type declares none, and `@UIGroup` into `uiMetadata.groups`, in the shape the SDK 0.13
+reader reads. `-Aexeris.strict` reports neither as unread; it reports `@UIGroup.columns`,
+`cssClass` and `visibleWhen` as having no effect.
+
+After regenerating, `target/classes/exeris-metadata/<Entity>.json` carries the two lists. No
+generated Java or TypeScript file changes: the graph sync and the generated forms read them in
+later 0.11.0 rows.
+
+### Generated tenant policy raises on absent tenant and pins shared scope on write
+
+Regenerating the application emits a forward Flyway migration for each tenant-partitioned table
+(`KernelTenantPolicyMigrationGenerator`): `V5<nnnnnn>__tenant_policy_<table>.sql`.
+A `GLOBAL` entity gets no such file, and on H2, where the migrations' row-level security does not run,
+nothing changes.
+
+The initial CREATE table migration (`V1...` or `V2...`) remains byte-identical, so databases that have
+already applied it do not suffer Flyway checksum verification errors. On application startup, Flyway
+applies the tier 5 migration forward:
+
+1. **Absent tenant raises instead of returning empty results:** The tenant policy's `USING` and
+   `WITH CHECK` expressions drop `NULLIF`, using the unguarded cast
+   `current_setting('exeris.tenant_id', true)::uuid`. When a connection executes without a tenant
+   bound to the session, the kernel publishes `exeris.tenant_id` as `''`. The unguarded `::uuid`
+   cast raises PostgreSQL error `22P02` (`invalid input syntax for type uuid: ""`), which the kernel
+   reports as `EX-PERS-5003`. Unbound reads fail closed and loudly instead of silently returning an
+   empty result (kernel ADR-012 §4c.3).
+2. **Write check pins the shared-scope tag:** For `@ExerisDomain(dataScope = UNIVERSE)` tables
+   carrying a `@SharedScope` column, `WITH CHECK` also pins the tag:
+   - On `UUID` scope columns: `AND (shared_scope IS NULL OR shared_scope = NULLIF(current_setting('exeris.shared_scope', true), '')::uuid)`
+   - On `TEXT`/`VARCHAR` scope columns: `AND COALESCE(shared_scope, '') IN ('', current_setting('exeris.shared_scope', true))`
+   An `INSERT` or `UPDATE` tagging a scope the session does not publish is refused by PostgreSQL with
+   SQLSTATE `42501` (`insufficient_privilege`). Un-sharing a row (`NULL` or `''`) remains admitted
+   (kernel ADR-012 §4c.2).
+
+The forward `V5...` migration is generated under `src/main/generated/`, committed with the rest of
+the tree, and applied by Flyway at boot; no hand-written SQL is needed.
+
+Code that reads a tenant-partitioned table with no tenant bound, such as a scheduled job that ran
+outside a request, got an empty result before and gets `EX-PERS-5003` after the migration. Bind the
+tenant's `StorageContext` around that work, or read the rows it needs through a request that carries
+the tenant.
+
+### `exeris-app-bom` pins SDK 0.13.2 and kernel 0.13.1
+
+`exeris.sdk.version` in `exeris-app-bom` is `0.13.2` and `exeris.kernel.version` is `0.13.1`. Neither
+release changes an SPI type or the shape of the metadata, so regenerating changes no generated file.
+
+Kernel 0.13.1's Community security provider reads its verification keys from configuration:
+`security.jwks.uri`, `security.jwt.issuer` and `security.jwt.audience`, all three or none. On kernel
+0.13.0 the Community provider held no key, so every route the generated route policy marks as
+requiring identity answered `401` for every token. An application on the Community driver whose
+routes demand identity sets the three keys; with none set it keeps denying every token, and any
+other combination fails the boot with `EX-BOOT-0002`. The kernel's `docs/subsystems/security.md`
+describes the keys.
+
+### A `@QueryParam` action parameter is read from the query string
+
+A parameter of a respond-once `@Action` method that carries `@QueryParam` is bound from the request's
+query string, under its query key (the annotation's `value`, else the parameter's name), and
+converted to its declared type. A missing required value, or one that does not convert, answers
+`400`; `required` and `defaultValue` are honoured. An action whose parameters all carry `@QueryParam`
+decodes no request body. The generated OpenAPI document declares each such parameter `in: query`.
+
+Two shapes are refused at compile time:
+
+- a `@QueryParam` parameter whose type has no conversion from text (`EXT-PROC-1022`). Accepted types
+  are the primitives and their boxes, `String`, `BigDecimal`, `UUID`, `LocalDate`, `LocalDateTime`,
+  `Instant`, `OffsetDateTime` and enums; a collection or another type is bound from the body with
+  `@ActionParam` alone;
+- a `@QueryParam` parameter on an `@Action(streaming = true)` method (`EXT-PROC-1023`): a streaming
+  action reads its parameters from the request body only.
+
+A parameter that already carried both `@ActionParam` and `@QueryParam` was bound from the request
+body, because `@QueryParam` was not read. After regenerating it is bound from the query string: the
+generated handler reads it there, the OpenAPI document declares it `in: query`, and the TypeScript
+client sends it as a query parameter. A caller that posts it in the body, rather than through the
+generated client, moves it to the query string, or drops `@QueryParam` to keep it in the body.
+
+`@ActionParam(name)` must be a Java name (`EXT-PROC-1024`), because the generated record, handler and
+client use it as an identifier.
+
+### The metadata carries each action's label as its `displayName`
+
+The processor writes `@Action.label` into the action's `displayName`, as the SDK's source-model reader
+reads it. After regenerating, every action in `target/classes/exeris-metadata/<Entity>.json` carries
+`displayName`. No generated Java or TypeScript file changes: the emitted action controls are labelled
+from the action's name.
+
+### The metadata carries each action's return type as `resultType`
+
+The processor extracts each `@Action` method's return type into `ActionMetadata.resultType`, matching
+the shape the SDK's source-model reader extracts (fully qualified, nested types joined by `.`, generic
+arguments joined by `,` with no space, primitives as keywords, `void` for void, type variables by
+simple name, and type-use annotations stripped).
+
+After regenerating, every action in `target/classes/exeris-metadata/<Entity>.json` carries `resultType`.
+No generated Java or TypeScript file changes: the action route continues answering with the updated
+aggregate on both sides.
+
+### Generated handler tests for actions, versioning, and soft delete
+
+When test generation is enabled (`-Dexeris.tests=true`), generated `{E}HandlerTest` suites include test cases covering:
+- `@Action` routes: respond-once success (200 OK with updated entity), missing aggregate row (404 Not Found), undecodable request body (400 Bad Request), version conflict on versioned entities (409 Conflict), and missing required query parameter (400 Bad Request).
+- Versioned entities: stale update requests (`PUT`) answering 409 Conflict.
+- Soft-delete entities: read and update requests on soft-deleted rows answering 404 Not Found, and exclusion of soft-deleted rows from list queries.
+
+Applications with test generation disabled (the default) are unaffected. Applications with test generation enabled will see additional test cases executed in their test phase.
+
+### Graph sync emits edge direction and weight, and node properties
+
+The processor writes the eight `GraphEdgeMetadata` components SDK 0.13 adds, each only when the
+source declares it. A field may now carry more than one `@GraphEdge`: each edge is named after the
+field and its relation type (`relatedId` + `SIMILAR_TO` → `relatedIdSimilarTo`) and shares the
+field. `EXT-PROC-1013`, which refused that declaration, is retired: the constant
+`DiagnosticId.GRAPH_EDGE_REPEATED_ON_FIELD` leaves `exeris-diagnostics`, and the number is never
+allocated again. Code that referenced the constant drops the reference; there is no replacement.
+
+A regenerated `*GraphSync`:
+
+- declares a `GraphEdgeDescriptor` with the edge's direction, `bidirectional` flag and static
+  weight when any of them is declared, and the `create(...)` form otherwise;
+- passes the `weightField` value as the `upsertEdge` weight, else the static weight, else `1.0`;
+- on an entity with `@GraphProperty` fields, lists their names in `NODE_DESCRIPTOR` and passes their
+  values to `upsertNode` as a UTF-8 JSON object in a buffer from a `MemoryAllocator`. Its
+  constructor takes that allocator as a second argument:
+
+```java
+new ArticleGraphSync(graphEngine, allocator)
+```
+
+An entity without `@GraphProperty` keeps the one-argument constructor and passes `null` properties.
+
+### Sagas: the compensation hook takes the declared name, step order is checked, triggers are read
+
+**Compensation.** The generated saga flow names each step's compensation hook after
+`@SagaStep.compensation` and registers it: `builder.step("reserveStock", this::reserveStock,
+this::releaseStock)` with `protected FlowOutcome releaseStock(FlowContext context)`, where it emitted a
+`compensateReserveStock` stub. A subclass that overrode `compensate<Step>` renames its override to the
+declared name. The `@Saga` host type must declare that method, with no parameter or one `FlowContext`
+parameter; otherwise `javac` fails with `EXT-PROC-1025`. Two steps may name one compensation method,
+which is emitted once and registered for both; a compensation naming a step fails with `EXT-PROC-1029`.
+
+**Step order.** `@SagaStep.order` runs 1..N without a gap, and a value is shared only by steps that are
+all `parallel = true`. A saga numbered from 0 fails with `EXT-PROC-1028`, a gap with `EXT-PROC-1027`, and
+a shared order among sequential steps with `EXT-PROC-1026`. Renumber from 1.
+
+**Trigger.** `@Saga.trigger` is written to `SagaMetadata.trigger` (type by constant name, `schedule`,
+`source`/`sourceName`, `topic`). The deprecated constants `SCHEDULE`, `HTTP` and `COMMAND` are read as
+`SCHEDULED`, `API` and `MANUAL` with the warning `EXT-PROC-1109`. No emitter reads the trigger yet, and
+`-Aexeris.strict` reports it, together with the seven `@Saga` compensation attributes that are now written
+to `SagaMetadata` and read by no emitter.
+
+**Retries and timeout.** A declared `maxRetries = 0` emits `MAX_RETRIES = 0`, where it emitted 3. A
+`@Saga` without `timeout` keeps the SDK default `PT30M`.
+
+### `@Schedule` is refused at build time
+
+The processor refuses `@Schedule`, on whatever element it is declared, with the compile error `EXT-PROC-1030`.
+At 1.0 the kernel issues no service principal (kernel ADR-057 Amendment A1), so a declared background
+job is refused whatever its action requires: with no principal bound, role and permission requirements
+cannot be satisfied. A source with `@Schedule` no longer compiles.
+
+Remove `@Schedule`. Schedule the work outside the generated application (for example
+via an external scheduler or orchestrator) until the kernel issues a service principal.
+
+### The metadata carries `navMenu` and `tabs`
+
+The processor reads `@NavMenu` (on an entity class) into `DomainMetadata.navMenu` and `@Tab` (on
+entity fields) into `uiMetadata.tabs`, matching the SDK 0.13 reader. Both leave the unread pass of
+`-Aexeris.strict`; unconsumed attributes are reported as having no effect.
+
+After regenerating, `target/classes/exeris-metadata/<Entity>.json` carries the two facets. No Java
+output changes.
+
+### Declared route access becomes the generated route policy
+
+The processor writes `@RouteAccess` and `permissions`, on the entity and on each action, into the
+metadata, and the generated `GeneratedRoutePolicy` compiles them into the kernel route policy
+(ADR-105). Every route of an entity carries the entity's requirement; an action that declares its
+own replaces it on that action's route:
+
+| The entity or action declares | The route requires |
+| --- | --- |
+| `@RouteAccess(PUBLIC)` | nothing (`permitAll()`) |
+| a non-empty `permissions` | an identity holding any one of them |
+| `@RouteAccess(AUTHENTICATED)`, no `permissions` | an identity |
+| nothing, and neither does its entity | whatever `Application.unmatchedRoutes()` answers, `permitAll()` unless overridden |
+
+An application that declares no access anywhere regenerates byte-identically and every route stays
+public. Once a route demands an identity, `Application.subsystems()` lists `security`, and a
+request without a valid bearer token answers `401` on it (`403` when the token lacks the scopes).
+Without a security provider on the classpath such a route answers `401` to everyone: add the kernel
+security provider, `eu.exeris:exeris-kernel-community` in the open-core tree, and configure
+`security.jwks.uri`, `security.jwt.issuer` and `security.jwt.audience`.
+
+A route the application adds in `configureRoutes` and that a generated template also matches is
+answered by the generated row unless `applicationPolicy()` answers for it first.
+
+Under `-Aexeris.strict`, `@RouteAccess` and the `permissions` attributes no longer report as having
+no effect.
+
+### `@Blob` is extracted into domain metadata
+
+The processor extracts `@Blob` (`eu.exeris.sdk.annotation.Blob`) on entity fields into
+`FieldMetadata.blob()` (`BlobMetadata`), matching the SDK reader (ADR-042). A `@Blob` field is
+admitted into metadata whether or not it carries `@Field`, recording its optional `container`
+(blank normalised to `null`) and declared `contentTypes` in declaration order. Dedicated routes
+for `@Blob` fields arrive in the same release (ADR-108).
+
+Two invalid declarations are now refused at build time:
+
+- `EXT-PROC-1031`: `@Blob` on a field of an entity whose `dataScope` is `GLOBAL` (SDK ADR-072
+  obligation 30). Global scope leaves `StorageContext.isolationKey` empty, and the kernel blob
+  store terminally denies blob operations without an isolation key. To fix, declare
+  `dataScope = TENANT` or `UNIVERSE` on the entity, or remove `@Blob` from the field.
+- `EXT-PROC-1032`: `@Blob` on a field whose type is not `eu.exeris.kernel.spi.storage.blob.BlobRef`.
+  The generated application serves `@Blob` fields on dedicated routes backed by the kernel blob
+  store. To fix, declare `private BlobRef <fieldName>;` on the field, or remove `@Blob`.
+
+Under `-Aexeris.strict`, `@Blob` no longer reports as an inert or unread annotation.
+
+**Where it applies.** Only to sources that declare `@Blob`; every other entity extracts exactly as
+before. **What breaks.** A build whose `@Blob` sits on a `GLOBAL` entity or on a field of another
+type, which compiled before because the annotation was inert, now fails with one of the two errors
+above. Fix the declaration as each error says. The bytes of a field that was a column before are
+not migrated: the generated application no longer stores them in the row (see
+[A `@Blob` field is served on its own routes and is no longer a column](#a-blob-field-is-served-on-its-own-routes-and-is-no-longer-a-column)).
+
+### A `@Blob` field is served on its own routes and is no longer a column
+
+A field whose metadata carries the `@Blob` facet, declared as the kernel's `BlobRef`, keeps its
+bytes in the kernel's blob store (ADR-108). For each such field `f` of an entity at `{base}` the
+generated application serves:
+
+| Route | Answers |
+| --- | --- |
+| `PUT {base}/{id}/blobs/f` | stores the raw body under its `Content-Type`: `204`; `400` for an empty body, `415` for a media type outside a non-empty `contentTypes`, `404` for an absent row |
+| `GET {base}/{id}/blobs/f` | the stored bytes with their stored `Content-Type`; `404` for an absent row or object |
+| `HEAD {base}/{id}/blobs/f` | no body, the stored object's `Content-Type` and `Content-Length`; `404` as for `GET` |
+| `DELETE {base}/{id}/blobs/f` | `204` whether or not an object was stored; `404` for an absent row |
+
+The object's key is `<id>/f` in the field's `@Blob.container`, or in the entity's table name when
+none is declared, so a second upload replaces the first. A hard delete of the row deletes its
+objects afterwards, logging a failed object delete at warning level without failing the request; a
+soft delete keeps them. Every route carries the entity's route requirement.
+
+This is breaking for an entity that already declared such a field:
+
+- The field is no column. The generated migration, repository, finders, list filters and sort
+  properties leave it out; a table created by an earlier migration keeps its column, which nothing
+  reads or writes any more. Drop it with a migration of your own when you are ready.
+- The field is out of the create and update bodies and their OpenAPI schemas. A value a body names
+  is reset to `null` before the service sees it, and the entity's JSON always carries the field as
+  `null`; read the descriptor with `HEAD` on the field's route.
+- `<Entity>Handler` takes a `BlobStore` as its last constructor argument, and
+  `RuntimeComponents.create<Entity>Handler()` passes `KernelProviders.BLOB_STORE.get()`, which
+  `COMPOSITION_SCOPES` lists. An override of that factory passes a store too.
+- `Application.subsystems()` lists `storage`, and `exeris:verify-runtime` requires a
+  `BlobStorageProvider`. Configure `storage.blob.provider` (and `storage.blob.location`): without a
+  provider the kernel binds no store and the composition fails at boot. The open-core drivers are in
+  `eu.exeris:exeris-kernel-community`.
+
+Uploads are bounded by the kernel's `maxRequestBodyBytes`; there is no multipart and no signed-URL
+redirect. An application without a `@Blob` field regenerates byte-identically.
+
+### The OpenAPI document declares bearer security on the routes that demand an identity
+
+The emitted `openapi/<entity>-api.yaml` states the requirement the generated `GeneratedRoutePolicy`
+binds for each route (ADR-079 Amendment 2, ADR-105). An operation whose route demands an identity
+carries its own `security`, and its response set gains the statuses the kernel answers at the edge,
+before the handler runs:
+
+| The route requires | `security` on the operation | Added responses |
+| --- | --- | --- |
+| an identity (`@RouteAccess(AUTHENTICATED)`) | `[{ bearerAuth: [] }]` | `401` |
+| any one of `permissions` `s1`, …, `sn` | `[{ bearerAuth: [s1] }, …, { bearerAuth: [sn] }]`, in declaration order | `401`, `403` |
+| nothing (`@RouteAccess(PUBLIC)`), or no declaration | none | none |
+
+An action route, streaming or not, takes its action's declaration when it has one, and its
+entity's otherwise; the collection, item, `@Blob` field, live-view and spectate routes take the
+entity's. Neither added response has a
+body. A document with such an operation declares
+`components.securitySchemes.bearerAuth: { type: http, scheme: bearer }`; no document sets a
+root-level `security`.
+
+This applies only to an application that declares access. One that declares none regenerates a
+byte-identical document, and every operation stays unauthenticated.
+
+For a consumer of the document, a client generator fed it sends an `Authorization: Bearer`
+header on the secured operations and on no other, and a scoped operation's alternatives read as
+"any one of these scopes", which is what the policy enforces. A tool that treated the document as
+having no security, or that reads only a root-level `security`, sees the requirements on the
+operations instead.
+
+### An entity outside a `.domain` package, or without an accessor the generated code calls, is refused at build time
+
+The generated application places an entity's repository, service, handler and event types in
+sibling packages it derives by replacing the trailing `.domain` of the entity's package, and it
+calls JavaBean accessors on the entity to bind, read, reset and validate its fields. Both were
+assumed and never checked: an entity outside a `.domain` package failed generation with an
+unidentified exception after the per-entity files were written, and a missing accessor surfaced as
+a compile error in the generated sources. The processor now refuses both on the declaration:
+
+- `EXT-PROC-1033`: an `@ExerisDomain` entity whose package does not end in `.domain`. To fix, move
+  the entity into a package ending in `.domain`, such as `com.shop.order.domain`.
+- `EXT-PROC-1034`: an `@ExerisDomain` entity without a public instance accessor the generated
+  application calls. Every column needs a getter and a setter: the primary key, every field that
+  is a column, and the owning tenant (`TENANT` and `UNIVERSE`), audit times, soft-delete flag and
+  version the entity enables, whether or not it declares them as fields. A primitive `boolean`
+  field and the soft-delete flag read as `is<Name>()`. A `@Blob` field needs a setter only, and a
+  static or transient field needs nothing. The error sits on the field, or on the type when the
+  entity declares no field for the property, and names the methods to add.
+
+The code-generation pipeline refuses metadata whose package does not end in `.domain` with the same
+`EXT-PROC-1033` before it writes anything, so `exeris:generate` and the `exeris-codegen-cli` jar
+leave the generated tree as it was.
+
+A build whose metadata feeds no generated kernel application, such as a conformance kit, passes
+`-Aexeris.metadataOnly=true` to `javac`, which skips both refusals; the metadata written is the
+same either way.
+
+**Where it applies.** To every `@ExerisDomain` entity. **What breaks.** A build whose entity sits
+outside a `.domain` package, which could not generate before, now fails at compile time with
+`EXT-PROC-1033`. A build whose entity lacks an accessor, whose generated sources did not compile
+before, now fails with `EXT-PROC-1034` on the entity instead. Lombok's `@Getter`, `@Setter`,
+`@Data` and `@Value`, on the entity or on the field, count as the accessors they generate whichever
+processor runs first; a non-`PUBLIC` access level, including `AccessLevel.NONE`, generates none the
+check accepts, and `@Value` generates no setter. See [`docs/diagnostics.md`](diagnostics.md).
+
+### A field typed as another entity is refused
+
+The generated repository stores a reference to another entity as that entity's `UUID` key: an
+explicit field such as `private UUID customerId;`, which `@Relationship(targetEntity =
+Customer.class)` makes a foreign key (`customer_id`, constrained in the foreign-key migration). A
+field typed as the referenced entity itself (`private Customer customer;`) has no column that holds
+it. The repository emitted for such a field bound it with `toString()` and read it back with
+`Customer.valueOf(String)`, which does not compile.
+
+Code generation now refuses such a field with `EXT-GEN-3003` before it writes anything, the same
+refusal an unstorable field type gets. The message names each field, the entity it references, and
+the key field to declare instead:
+
+```
+com.shop.domain.Invoice.customer : com.shop.domain.Customer (a reference to the entity Customer,
+which no column stores; hold its key instead: UUID customerId, with
+@Relationship(targetEntity = Customer.class) for a foreign key)
+```
+
+A field is a reference when its type is an `@ExerisDomain` entity of the same build: by its
+qualified name, or by its simple name when it is in the referencing entity's package. This applies
+whether the field carries `@Relationship`, `@GraphEdge`, or neither. A `List` of entities has a
+step of its own in this release: a `mappedBy` collection holds no column, and any other `List` of
+entities is refused.
+
+**Where it applies.** Only to entities that declare a field typed as another entity of the build,
+or as themselves. Output for every other entity is byte-identical to the previous release.
+
+**What breaks.** Nothing that compiled before. A build with such a field produced a generated tree
+that `javac` rejected, and it now stops at code generation with the message above. To fix, replace
+the field with the referenced entity's key:
+
+```java
+// before
+@Relationship(targetEntity = Customer.class, displayField = "name",
+        relationshipType = Relationship.RelationshipType.MANY_TO_ONE)
+private Customer customer;
+
+// after
+@Relationship(targetEntity = Customer.class, displayField = "name",
+        relationshipType = Relationship.RelationshipType.MANY_TO_ONE)
+private UUID customerId;
+```
+
+The generated schema already named the column `customer_id` for both forms, so moving to the key
+form does not rename it.
+
+### `exeris-app-bom` pins SDK 0.13.3
+
+`exeris.sdk.version` in `exeris-app-bom` is `0.13.3`; `exeris.kernel.version` stays `0.13.1`. SDK 0.13.3
+changes no annotation, no SPI type and no metadata shape, so regenerating changes no generated file.
+
+Its changes are in artefacts an application does not depend on. The `exeris-sdk-tck` corpus types its
+`@Blob` fields `BlobRef`. The `exeris-sdk-examples` entities sit in `<scenario>.domain` packages and
+declare JavaBean accessors, the layout EXT-PROC-1033 and EXT-PROC-1034 require of an entity a generated
+application is built from, and reference another entity by its `UUID` key, which EXT-GEN-3003 requires.
+The parity suite's `actionsAgree` compares each action's `displayName` as well; the processor writes it
+from `@Action.label`, as the reader does, so the processor's binding of the kit passes unchanged.
+
+### Graph sync synchronises edges, and a collection edge is a `List<UUID>`
+
+A `@GraphEdge` field holds the key of the node it points at: a `UUID` for one edge, or a
+`List<UUID>` for a collection edge. This is the same rule a reference follows elsewhere
+(`EXT-GEN-3003`): the field holds the target's `UUID` key, not the target entity.
+
+A regenerated `*GraphSync.syncToGraph(entity)` now synchronises each edge instead of only upserting
+it. For each declared edge it:
+
+1. reads the targets stored from the node along the edge's relation type, in one outgoing hop
+   (`GraphSession.traverseBreadthFirst`). The hop is outgoing whatever direction the descriptor
+   declares, because the sync writes every edge from source to target;
+2. calls `deleteEdge` for each stored target the field no longer holds;
+3. calls `upsertEdge` for each target it holds. For a `List<UUID>` that is one edge per distinct
+   non-`null` key, in list order. Every element gets the edge's single weight: its `weightField`
+   value, else its static weight, else `1.0`.
+
+The same method serves a created and an updated entity, since a new node has no stored targets.
+Edges of one entity that share a relation type are synchronised together, so a target that one of
+them still holds is not deleted for another. `deleteFromGraph` is unchanged: `deleteNode` deletes
+the node's edges with it.
+
+**What changes in behaviour.** An update that changes a single edge's target now deletes the edge
+to the old target. Before, the old edge stayed beside the new one. A field that is `null` now
+deletes the edge it held. Before, the edge was left in place. Each edge sync costs one extra
+traversal per relation type.
+
+**What breaks.** Nothing that compiled before. A collection edge on a `List` of entities produced a
+`*GraphSync` that `javac` rejected:
+
+```java
+@GraphEdge(type = "RELATED_TO", target = Product.class)
+private List<Product> related;
+```
+
+Code generation now refuses it with `EXT-GEN-3003` before it writes anything, and names the field
+to declare instead:
+
+```
+com.shop.domain.Product.related : java.util.List<com.shop.domain.Product> (a collection graph
+edge to the entity Product, which no edge stores; hold the targets' keys instead: List<UUID>
+relatedIds)
+```
+
+A `@GraphEdge` on a `List` of anything other than `UUID`, or on a single field that is not a
+`UUID`, is refused the same way. To fix, hold the keys:
+
+```java
+@GraphEdge(type = "RELATED_TO", target = Product.class)
+private List<UUID> relatedIds;
+```
+
+The `List<UUID>` is stored as a JSON column, like any other `List` field.
+
+**Where it applies.** Only to entities with a `@GraphEdge`. Every other generated file is
+byte-identical to the previous release.
+
+### A system-field marker without its flag is an ordinary column
+
+A system role is switched on by its `@ExerisDomain` flag, never by a field: the owning tenant by a
+`TENANT` or `UNIVERSE` data scope, the audit times and actors by `audited = true`, the soft-delete
+flag, time and actor by `softDelete = true`, the version by `versioned = true`. A field marked
+`@Version`, `@AuditCreatedAt`, `@SoftDelete` or another system marker, or named after a role
+(`version`, `createdAt`, `deleted`, `tenantId`, …), on an entity whose flag for that role is off is
+an ordinary domain column. The repository already read and wrote it as one. The create-table
+migration left it out, so the repository's first query named a column the table did not have.
+
+A regenerated `V{tier}{nnnnnn}__create_{table}.sql` now declares that column from the field's type,
+like any other field: `NOT NULL` when it is `required`, an index when it is `searchable`, `unique`
+or `filterable`, a `CHECK` for its bounds. It carries no default, and the repository neither stamps
+nor locks on it. For example, an entity with neither `versioned` nor `audited` that declares
+
+```java
+@Version private Long version;
+@AuditCreatedAt private Instant createdAt;
+```
+
+gains, in its create-table migration:
+
+```sql
+    version BIGINT,
+    created_at TIMESTAMPTZ
+```
+
+An entity whose flag is on is unchanged: the system column is declared once, as before.
+
+**What breaks.** The create-table migration of an affected entity changes, so a database that has
+already applied the earlier one fails Flyway's checksum validation. That database also lacks the
+column, which the generated repository reads and writes. First decide what the marker meant:
+
+- the role: set the flag with the marker (`versioned = true`, `audited = true`, …). The
+  create-table migration then declares the system column, with its default, and the repository
+  stamps or locks on it;
+- an ordinary field: leave the entity as it is.
+
+Then, on a database that applied the earlier migration, add the column with a forward migration of
+your own, such as `ALTER TABLE customers ADD COLUMN version BIGINT;`, and run `flyway repair` to
+accept the changed checksum. A database that has not applied it needs neither.
+
+**Where it applies.** Only to entities that declare a field in a system role whose flag is off.
+Every other generated file is byte-identical to the previous release.
+
+### A system-field marker without its flag is a client-writable field
+
+A field in a system role whose `@ExerisDomain` flag is off is an ordinary domain field in the
+generated API as well as in the migration and the repository. That is a field marked `@Version`,
+`@AuditCreatedAt`, `@SoftDelete` or another system marker, or named for a role in the entity's
+`systemFields` (`version`, `createdAt`, `deleted`, `tenantId`, …), on an entity whose flag for that
+role is off: `versioned`, `audited`, `softDelete`, or a `TENANT` or `UNIVERSE` data scope for the
+owning tenant. The generated API left such a field out of the create and update request bodies,
+never offered it as a sort key or a filter, and the repository's `UPDATE` never wrote it, so
+nothing could set the column.
+
+After regenerating, for every such field:
+
+- the `<Entity>CreateDto` and `<Entity>UpdateDto` schemas of the OpenAPI document carry it, and the
+  create and update handlers validate it by its `@Field` rules;
+- the list route accepts it as a `sort` key when it is sortable and as a filter when it is
+  filterable, like any other field of its type;
+- the repository's `UPDATE` writes it from the entity, and the `updateFromRequest` statement keeps
+  it only when it is `readOnly` or `inUpdate = false`.
+
+For example, an entity with neither `versioned` nor `audited` that declares
+
+```java
+@Version private Long version;
+@AuditCreatedAt private Instant createdAt;
+```
+
+now updates with `UPDATE customers SET name = ?, version = ?, created_at = ? WHERE id = ?`, and a
+client may send `version` and `createdAt` in both bodies.
+
+An entity whose flag is on is unchanged: the field stays server-owned, out of the bodies, the sort
+keys and the filters.
+
+**What breaks.** A client that relied on the server dropping such a field from a request body now
+has the value it sends stored, and a `PUT` without it stores `null`. Decide what the marker meant:
+
+- the role: set the flag with the marker (`versioned = true`, `audited = true`, …). The field is
+  then server-owned again, and the repository stamps or locks on it;
+- an ordinary field: send its value in the create and update bodies like any other field.
+
+**Where it applies.** Only to entities that declare a field in a system role whose flag is off.
+
+### Generated tests for the stream handlers and the route policy
+
+When test generation is enabled (`-Dexeris.tests=true`), the regenerated test tree gains:
+
+- In `{E}HandlerTest` of an entity with a stream handler, cases for the live view (`GET {base}/stream`), the spectate stream (`GET {base}/{id}/stream`) and each streaming action: the `stream-error` frame of a malformed id, an absent row, an undecodable body and a refused write; the frames of the events each stream forwards, and the spectate stream's filter on the row id; and the stream closed once with its subscriptions dropped.
+- `ApplicationRoutePolicyTest` in the base package, beside `Application`: `routePolicy()` hands every policy it folds the path without its query string and a `HEAD` request as `GET`, `applicationPolicy()` answers ahead of the generated policy, and `unmatchedRoutes()` answers a route no policy describes, `permitAll()` by default. When an entity declares access, a further case asserts the generated policy answers that entity's routes through the fold.
+- `RecordingStreamExchange` in the `testsupport` package, the stream exchange double these cases drive.
+
+`RecordingEventEngine` in the `testsupport` package delivers a publish to the subscribers of the event's registered type, on the publishing thread, where it only recorded it, and returns a subscription token from `subscribe`, where it returned `null`. A test of your own that subscribes on it and publishes on it receives the event. No step is needed.
+
+Applications with test generation disabled (the default) are unaffected. The new cases import only JUnit 5, AssertJ and the kernel SPI.
+
+### A body-bound action parameter's `defaultValue` is applied
+
+`@ActionParam(defaultValue = "...")` on a parameter bound from the request body is applied when the
+body omits the member or sends it as `null`, as it already was for a `@QueryParam` parameter whose
+key the query string omits. Before, nothing read it on the body path: a primitive member the body
+omitted reached the entity method as `0` or `false`, and a reference member as `null`.
+
+The generated action request record carries the default. A defaulted component is declared with its
+boxed type, so that an omitted value is told apart from an explicit zero, and the record's compact
+constructor sets the default when the component is `null`. For example,
+
+```java
+@Action(name = "issue", label = "Issue")
+public void issue(
+        @ActionParam(label = "Due in days", required = false, defaultValue = "30") int dueInDays) {
+}
+```
+
+generates, in the entity's handler,
+
+```java
+public static record IssueRequest(Integer dueInDays) {
+    public IssueRequest {
+        if (dueInDays == null) {
+            dueInDays = Integer.valueOf("30");
+        }
+    }
+}
+```
+
+The default is converted from its text when the record is built, by the conversion the query path
+applies. A default that does not convert to the parameter's type, such as `"soon"` for a `boolean`,
+fails every request that omits the member, and the Community JSON decoder reports it as a malformed body:
+`400`.
+
+**What breaks.** A caller that omits a defaulted member, or sends `null`, now reaches the entity
+method with the default instead of `0`, `false` or `null`. A caller that relied on the zero value
+sends it explicitly. Code of your own that names a generated `<Action>Request` record sees the
+defaulted component's accessor return the boxed type; a record without a `defaultValue` on any body
+parameter is byte-identical to the previous release.
+
+### A mappedBy collection holds no column, and any other List of entities is refused
+
+A `List` field that `@Relationship(relationshipType = ONE_TO_MANY, mappedBy = "…")` declares is the
+inverse side of the target's `MANY_TO_ONE`: its rows are the target's rows, held through the key
+column `mappedBy` names. The generated code stored the field anyway, as a `VARCHAR(255)` JSON column
+of the owner's table with an index on it, and bound and read it as JSON, so the collection was a
+copy that no constraint, no tenant scope and no write of the target kept in step.
+
+A regenerated tree now holds an inverse collection outside the owner's row:
+
+- `V{tier}{nnnnnn}__create_{table}.sql` declares no column and no index for it;
+- `{Entity}Repository` neither binds nor reads it. A repository whose only `List` field was the
+  inverse no longer imports Jackson;
+- `{Entity}Handler` resets it to `null` after decoding a create or an update, after the `@Blob`
+  fields, so a value a client sends never reaches the service;
+- the OpenAPI document declares it `readOnly`, an array or `null` with no `items` (the entity's own
+  document defines no schema of the target), with the
+  description `Always null: the rows are listed on GET /invoice-lines?invoiceId={id}`, and leaves it
+  out of the create and update schemas. The rows are read from the target's list route with the
+  back-reference's key filter, which every list route already serves;
+- the processor requires its setter and no getter (`EXT-PROC-1034`), as for a `@Blob` field: the
+  handlers reset it, and nothing generated reads it.
+
+`mappedBy` is matched against the target's `MANY_TO_ONE` relationships back to the owner, by
+relationship name, field name, or key base: `invoiceId` and `invoice` both name
+`@Relationship(targetEntity = Invoice.class) UUID invoiceId`.
+
+`cascadeDelete = true` on the collection side now sets `ON DELETE CASCADE` on the target's
+foreign key, the constraint the back-reference holds, as `cascadeDelete` on the `MANY_TO_ONE`
+side already did. For the SDK example `Invoice.lines`:
+
+```sql
+ALTER TABLE invoice_lines ADD CONSTRAINT fk_invoice_lines_invoice_id FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE;
+```
+
+A cascading constraint does not remove the children of a `softDelete` entity, since its delete
+keeps the row.
+
+Every other `List` whose element is an entity of the build is refused with `EXT-GEN-3003` before
+anything is written: one without `@Relationship`, a `ONE_TO_MANY` without `mappedBy`, a
+`MANY_TO_MANY`, and an inverse whose `mappedBy` names no `MANY_TO_ONE` of the target back to the
+owner, whose target is no entity of the build, or whose element is not its `targetEntity`. The
+message names the field and the remedy:
+
+```
+com.shop.domain.Invoice.lines : java.util.List<com.shop.domain.InvoiceLine> (a collection of the
+entity InvoiceLine, which no column stores; read it from InvoiceLine's rows with
+@Relationship(targetEntity = InvoiceLine.class, relationshipType = ONE_TO_MANY, mappedBy =
+"invoiceId"), or hold their keys: List<UUID> invoiceLineIds)
+```
+
+A `List` of values that are not entities (`List<String>`, `List<UUID>`, a record) is unchanged: a
+JSON column. A `MANY_TO_MANY` held as `List<UUID>` keys stays such a column. No join table is
+emitted for it, and its `cascadeDelete` has no effect.
+
+**What breaks.**
+
+- The create-table migration of an entity with an inverse collection loses a column and an index,
+  and the foreign-key migration `V3000000__foreign_keys.sql` changes when an inverse declares
+  `cascadeDelete`. A database that has applied the earlier files fails Flyway's checksum
+  validation. Either keep the earlier files and add a forward migration of your own, such as
+
+  ```sql
+  DROP INDEX IF EXISTS idx_invoices_lines;
+  ALTER TABLE invoices DROP COLUMN lines;
+  ALTER TABLE invoice_lines DROP CONSTRAINT fk_invoice_lines_invoice_id;
+  ALTER TABLE invoice_lines ADD CONSTRAINT fk_invoice_lines_invoice_id FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE;
+  ```
+
+  or commit the regenerated files and run `flyway repair`, per your Flyway policy. A database that
+  has not applied them needs neither.
+- A client that sent the collection in a create or update body, or read it from a response, gets
+  `null`: read the rows from the target's list route, `GET {target path}?{key}={id}`, and write
+  them through the target's own routes.
+- A build with a refused `List` of entities stops at code generation. Declare the target's key to
+  the owner and make the field the inverse of it, or hold the targets' keys as `List<UUID>`.
+
+**Where it applies.** Only to entities that declare a `List` of entities, and to the foreign-key
+migration when an inverse declares `cascadeDelete`. Every other generated file is byte-identical to
+the previous release.
+
+### The generated application registers and calls the graph sync
+
+A regenerated application wires each `@Graph` entity's `<Entity>GraphSync` itself
+([ADR-070](adr/ADR-070-generated-composition-root-seam.md), Amendment 4). Before, the class was
+generated and nothing built, registered or called it.
+
+- `RuntimeComponents` gains `create<Entity>GraphSync()` and the memoised `<entity>GraphSync()` for
+  every `@Graph` entity. The factory reads `GraphKernelProviders.GRAPH_ENGINE`, and
+  `KernelProviders.MEMORY_ALLOCATOR` when the entity declares `@GraphProperty`. `GRAPH_ENGINE` is
+  listed in `COMPOSITION_SCOPES`.
+- `<Entity>GraphSync` gains `registerDescriptors()`, and `RuntimeLifecycle.run()` calls it for
+  every graph entity before it builds anything else.
+- For an entity whose `dataScope` is neither `TENANT` nor `UNIVERSE`, `<Entity>Service` takes the
+  graph sync as a second constructor argument. `save`, `update` and `updateFromRequest` call
+  `syncToGraph` on the entity the repository returned, and `delete` calls `deleteFromGraph`, hard
+  or soft. Each call runs after the repository returns.
+
+**What breaks.**
+
+- The one-argument constructor `<Entity>Service(<Entity>Repository)` is gone for such an entity. A
+  subclass passes the graph sync to `super`, and an override of `create<Entity>Service()` passes the
+  accessor:
+
+  ```java
+  @Override
+  protected ProductService createProductService() {
+      return new MyProductService(productRepository(), productGraphSync());
+  }
+  ```
+
+- A graph failure now fails the write route with `500`, after the row has committed. A client that
+  retries a failed create writes a second row. To let the write stand instead, override
+  `create<Entity>GraphSync()` and return a graph sync whose `syncToGraph` and `deleteFromGraph`
+  catch:
+
+  ```java
+  @Override
+  protected ProductGraphSync createProductGraphSync() {
+      return new ProductGraphSync(GraphKernelProviders.GRAPH_ENGINE.get(), KernelProviders.MEMORY_ALLOCATOR.get()) {
+          @Override
+          public void syncToGraph(Product entity) {
+              try {
+                  super.syncToGraph(entity);
+              } catch (RuntimeException e) {
+                  // logged by the graph sync; the node catches up on the entity's next write
+              }
+          }
+
+          @Override
+          public void deleteFromGraph(UUID entityId) {
+              try {
+                  super.deleteFromGraph(entityId);
+              } catch (RuntimeException e) {
+                  // logged by the graph sync; the node stays until it is deleted again
+              }
+          }
+      };
+  }
+  ```
+
+  Drop the `MemoryAllocator` argument for an entity with no `@GraphProperty`, as its graph sync's
+  constructor does.
+
+- A graph failure after a delete has committed skips the route's later steps: the `DELETE` events
+  are not published, and a retried `DELETE` answers `404`, so they are not published for that row.
+  The handler of a hard-deleted entity with `@Blob` fields deletes the row's stored objects on that
+  failure when the row is gone, so they are not orphaned. The override above, catching in
+  `deleteFromGraph`, lets the route finish and publish.
+
+**What changes in behaviour.**
+
+- On PostgreSQL, the Community graph engine creates `graph_nodes` and one `<edge type>_edges` table
+  per edge type at boot (`CREATE TABLE IF NOT EXISTS`), in the schema the application's role writes
+  to. That role needs `CREATE` on the schema.
+- Every create, update and delete of a synced entity pays the graph's round trips.
+- A `syncToGraph` or `deleteFromGraph` call you added by hand, for example in a service subclass or
+  after calling the service, now runs twice. The sync is idempotent, so remove the hand-written call.
+
+**Where it applies.** Only to applications with a `@Graph` entity. A tenant-partitioned `@Graph`
+entity's service is unchanged and its graph sync is not called, because the Community graph engine
+cannot scope a traversal to the acting tenant on a request thread; the service's Javadoc says so.
+Every file of an application without a `@Graph` entity is byte-identical to the previous release.
+
+### The list route reads `search` over the searchable String fields
+
+`GET {base}` reads one more query parameter, `search=<term>` (ADR-096 Amendment 4). A row matches
+when any searchable column contains the term, compared case-insensitively, and the term combines
+with the filters, the sort and the paging: `totalElements` counts the rows that match both. A term
+is stripped of surrounding whitespace, a blank one is no search, and `%`, `_` and `\` in it match
+only themselves.
+
+A field is searchable when its type is `String` and it carries `@Field(searchable = true)`, or no
+`@Field` at all, which the processor records as searchable. A system field is never searchable. An
+entity with no searchable field answers `400` to a non-blank `search`, and every entity answers
+`400` to a term longer than 100 characters or to `search` given twice.
+
+A regenerated `<Entity>ListQuery` gains a last component `String search`, and the constants
+`SEARCHABLE` and `MAX_SEARCH_LENGTH`. Its constructor without `search` remains, so code that builds
+a query with five arguments compiles unchanged. `toQueryString()` writes the term, so the generated
+client sends it. The generated repository's `findPage` appends the match to its `WHERE` and the
+OpenAPI list operation declares `search` when the entity has a searchable field. The generated
+handler and repository tests gain a search case or the refusal of one.
+
+**What breaks.**
+
+- A record pattern or deconstruction of `<Entity>ListQuery` names five components and no longer
+  matches. Add the sixth, `String search`.
+- `search` is reserved, like `page`, `size` and `sort`. An entity with a filterable field named
+  `search` loses that equality filter: `?search=x` is now the text search, and the field's
+  component leaves `<Entity>ListQuery.Filter`. Rename the field to keep filtering on it by equality.
+- A request to an entity with nothing searchable that sent `search` was already refused as an
+  unknown parameter and is still refused with `400`.
+
+**Indexing.** The generated migration adds no index for the match: a substring match cannot use
+the btree index a searchable column already has. On PostgreSQL, an application with enough rows to
+need one adds a trigram index on the expression the predicate uses, in a migration of its own:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX idx_customers_name_trgm ON customers USING gin (lower(name) gin_trgm_ops);
+```
+
+**Where it applies.** To every entity: each `<Entity>ListQuery` and repository changes. The
+OpenAPI document changes only for an entity with a searchable field.
+
+### Generated integration tests, opt-in
+
+`exeris:generate` takes `-Dexeris.integrationTests=true` (`--integration-tests` with
+`--integration-test-output-dir` on the command line) and writes integration tests into their own
+root, `src/test/generated-it/java` (`exeris.integrationTestOutputDir`), with their own manifest.
+They boot the generated `Application` once per test JVM on an in-memory H2 database in PostgreSQL
+mode, apply the generated migrations to it, and call the routes over HTTP: per entity
+`<Entity>CrudIT` (the CRUD round trip, `404`, `400`, the stale-version `409`, the foreign-key `422`
+and `409`, the `@Validation` boundaries), and `GeneratedRoutePolicyIT` when a route demands an
+identity (`401`, `403`, admission), with tokens verified against a key set the test serves on a
+loopback port.
+
+Nothing changes for an application that leaves the flag off, which is the default: it has no
+`src/test/generated-it/java`, so `exeris-app-parent` binds no Failsafe, and an `*IT` class of its
+own runs, or does not, as before. To turn it on:
+
+- Add `com.h2database:h2` at `test` scope beside JUnit 5 and AssertJ. `exeris-app-bom` manages its
+  version. `exeris:generate` warns with `EXT-PLUG-2004` when it is missing.
+- Run them with Failsafe: `exeris-app-parent`'s `exeris-integration-tests` profile binds
+  `maven-failsafe-plugin` when `src/test/generated-it/java` exists as the build starts. The build
+  that first writes the directory compiles the integration tests; the builds after it run them. An
+  application on README route 2 copies the profile from the README; one that moves the root with
+  `exeris.integrationTestOutputDir` binds Failsafe itself. `mvn test` does not run them;
+  `mvn verify` does.
+- Keep the generated migrations on the test classpath, as `exeris-app-parent`'s `<resource>` entry
+  does.
+- Add `src/test/generated-it/** text eol=lf` to `.gitattributes` beside the other generated trees.
+
+They are written only for an application whose entities are all `GLOBAL` and that has no graph
+entity, no `@Blob` field and no `@CapabilityModule`. Any other application gets the warning
+`EXT-GEN-3105`, naming the reason, and its integration-test root is left as it was.
+`-Dexeris.it.application=<class>` boots a subclass of the generated `Application` in its place.
+
+### A `List` field is a `TEXT` column
+
+A `List<X>` field is stored as one JSON text value. The create-table migration declared its column
+`VARCHAR(255)`, so the JSON of a list could not exceed 255 characters. A `UUID` key takes 39 of
+them with its quotes and separator, so a `List<UUID>` held at most six keys. A
+regenerated `V{tier}{nnnnnn}__create_{table}.sql` declares it `TEXT`, with no declared width:
+
+```sql
+    related_ids TEXT
+```
+
+`NOT NULL`, `UNIQUE` and an index on the column are emitted as before. The repository writes and
+reads the value as it did, as a string.
+
+An index still bounds the column. The migration indexes a field that is `searchable`, `unique` or
+`filterable`, which a field without `@Field` is by default, and PostgreSQL refuses a B-tree entry
+larger than a third of a page: 2,704 bytes with the default 8 kB page. A `List<UUID>` reaches it at
+its 70th key. To hold longer lists, annotate the field `@Field`, whose `searchable`, `filterable`
+and `unique` default to `false`, so the column gets no index; the repository neither finds, filters
+nor sorts on a `List` column.
+
+**What breaks.** The create-table migration of an entity with a `List` field changes, so a database
+that has already applied the earlier one fails Flyway's checksum validation. On such a database,
+widen each list column with a forward migration of your own, such as
+`ALTER TABLE products ALTER COLUMN related_ids TYPE TEXT;`, and run `flyway repair` to accept the
+changed checksum. A database that has not applied it needs neither.
+
+**Where it applies.** Only to entities that declare a `List` field. Every other generated file is
+byte-identical to the previous release.
+
+### `exeris-codegen-ts`: an uppercase vowel before a trailing `y` counts as a vowel
+
+The plural of an entity name ending in an uppercase vowel and `y` takes a plain `s`, as the SDK's
+`pluralName()` does from 0.13.0: `Ay` becomes `Ays`, where it was `Aies`. For such an entity the
+generated route path, the store and the list labels that use the plural change after regenerating,
+and match the backend's routes. Hand-written code that names the old path, or imports the store or
+route under the `Aies` name, renames it to the `Ays` one. An entity that sets an explicit `path`, and
+every other name, is unchanged.
+
+### `exeris-codegen-ts`: an output path outside the output directory is refused
+
+The generator resolves every file it writes against the output directory and refuses one that lands
+outside it, under `--overwrite` too, before it creates a directory or writes a byte. The metadata
+schema holds `entityName` to a Java identifier and `packageName` to dotted Java identifiers or the
+empty default package, letters of any script included, so a metadata file whose names carry `/`,
+`\` or `..` is refused when it is read.
+
+Metadata written by the annotation processor is unaffected. Metadata authored by hand or by another
+tool uses Java identifiers for entity and package names.
+
+### `exeris-codegen-ts`: a view route carries the view's name in its `data`
+
+Each `@View` page's route (`pages/<kebab>.route.ts`) carries the view's declared name as
+`data: { view: '<ViewName>' }`. After regenerating, every view route file gains that line; the path,
+the title and the navigation are unchanged. Code that reads the active view from the path can read
+`route.snapshot.data['view']` instead.
+
+### `exeris-codegen-ts`: `render: 'ssg'` under `scaffold: false` emits `view.routes.server.ts`
+
+Under `render: 'ssg'` with `scaffold: false`, the generator emits `view.routes.server.ts` next to
+`view.routes.ts`. It exports `viewServerRoutes: ServerRoute[]`, listing each param-less `@View` route
+that reads no entity data with `renderMode: RenderMode.Prerender`. The server entry, server config
+and builder options stay owned by the application.
+
+An existing application that configured `render: 'ssg'` without the scaffold and maintained a
+hand-written prerender list can spread `...viewServerRoutes` into its `app.routes.server.ts` to keep
+its prerendered routes in step with `@View` pages. An application under `render: 'csr'` (the default),
+or one that generates the scaffold, is unaffected.
+
+### `exeris-codegen-ts`: CUSTOM block props keep their literal types
+
+A CUSTOM block's props field is emitted with a const assertion,
+`protected readonly blockProps<N> = <JSON literal> as const;`, so its strings, numbers and booleans
+keep their literal types, and a custom component whose `props` input declares a literal union
+(`variant: 'primary' | 'secondary'`) type-checks under strict templates. After regenerating, every
+`@View` page with CUSTOM block props carries `as const` on those fields.
+
+An array in the props is readonly under the assertion. A custom component whose `props` input
+declares an array member types it `readonly string[]` (or `ReadonlyArray<T>`); a mutable `string[]`
+no longer accepts it. A view without CUSTOM blocks, or a block without props, is unchanged.
+
+### `exeris-codegen-ts`: generated store and form specs under `generateTests`
+
+When test generation is on (`generateTests: true` or `--tests`), the generator also emits
+`stores/{entity}.store.spec.ts` for each entity when stores and services are generated, and
+`components/{entity}-form.component.spec.ts` for each entity with a form page when forms and
+services are generated. The store
+spec exercises state transitions across CRUD operations and HTTP error status mappings (409 on
+update vs delete, 422). The form spec exercises Signal Forms control inclusion and disabled state
+across create and edit modes (`inCreate` / `inUpdate`), exclusion of server-owned and read-only
+fields, and a required field that starts blank blocking form submission.
+
+Apps with `generateTests` off (the default) are unaffected and their generated output stays byte-identical.
+Apps with `generateTests` on receive the new spec files and execute them through `npm test`.
+
+### `exeris-codegen-ts`: the generated service method sends `@QueryParam` action parameters via `HttpParams`
+
+The generated Angular service method for an entity action now sends query parameters (`@QueryParam`)
+via `HttpParams` under their declared query key. Parameters bound from the request body (`@ActionParam`)
+continue to be sent in the JSON request body.
+
+When an action declares only query parameters, the service sends an empty body object `{}` alongside
+the query parameters.
+
+### `exeris-codegen-ts`: generated create, edit and detail views lay fields out in their `@UIGroup` sections
+
+The generated create/edit form component and detail view component lay fields out into their declared
+`@UIGroup` sections when an entity's `uiMetadata.groups` is non-empty.
+
+Groups render in `order` (ties broken by declaration order) with the group's label (or name when label
+is omitted) as its heading, and description underneath when present. A group declared with
+`collapsible: true` renders as a native `<details>` element with `<summary>` (open unless `collapsed: true`),
+while non-collapsible groups render as `<section>`. Each section carries `data-testid="group-<name>"`.
+
+Fields listed in a group render inside that group in the group's declared field order. Fields listed in a
+group but not rendered by that view (such as fields with `inCreate = false` in a create form, or hidden
+fields in a detail view) are skipped. Fields not assigned to any group continue to render after the groups
+exactly as before. An entity without `@UIGroup` declarations regenerates byte-identically.
+
+### `exeris-codegen-ts`: app shell sidebar renders `@NavMenu` and form/detail views render `@Tab` navigation
+
+When at least one entity declares `navMenu`, the generated app shell sidebar organizes navigation items
+by group (`navMenu.group`, ordered by `navMenu.groupOrder` then group name), with ungrouped entities
+placed first in their existing layout. Within groups, items are sorted by `navMenu.order` then entity name.
+Entity navigation labels fall back to `navMenu.label` when declared, and icons render via `navMenu.icon`
+with `navMenu.groupIcon` displayed on group headers. Entities with `navMenu.hidden = true` are excluded from
+sidebar navigation while preserving their underlying routes. When no entity declares `navMenu`, sidebar emission
+remains byte-identical.
+
+When an entity declares `uiMetadata.tabs`, the generated form and detail views render an accessible tab strip
+(`role="tablist"`, `role="tab"` buttons with `aria-controls`/`aria-selected`, and `role="tabpanel"` with `[hidden]`).
+Tabs are ordered by `order` then declaration order, displaying each tab's icon and label (falling back to its name).
+Active tab state is held in a component `signal`, with the first tab active by default. Tab panels render the fields
+listed in `fields`, with any `@UIGroup` sections restricted to member fields of that tab. Fields not belonging to any
+tab render after the tab strip. Form controls remain within the single `<form>` element, preserving existing validation
+and submission workflows. An entity without declared tabs regenerates byte-identically.
+
+Not covered: nothing switches to the tab that holds an invalid field. While a field on another tab
+is invalid, the submit button stays disabled and the field's error renders inside a hidden panel,
+so the user has to open each tab to find it. The emitter reads only
+`group`, `groupOrder`, `groupIcon`, `label`, `icon`, `order` and `hidden` of `@NavMenu`, and only
+`name`, `label`, `icon`, `order` and the field placement of `@Tab`. The other attributes reach the
+metadata and change nothing in the generated app: `parent`, `roles`, `permissions`, `badge`,
+`badgeColor`, `tooltip`, `openInNewTab`, `routePath`, `queryParams`, `expanded` and `divider` of
+`@NavMenu`, and `lazy`, `badgeField`, `badgeColor`, `disabled`, `disabledWhen`, `visibleWhen` and
+`cssClass` of `@Tab`. `-Aexeris.strict` reports each of them where it is declared.
+
+### `exeris-codegen-ts`: the bearer interceptor follows declared route access
+
+`exeris-codegen-ts` derives each route's requirement from the same `@RouteAccess` and
+`permissions` the generated route policy compiles (ADR-105), held to
+`contract/route-policy.json`. When some route demands an identity, the generated app registers
+the bearer `HttpInterceptorFn`, which adds `Authorization: Bearer <AuthService.token()>` to its
+requests. An app whose routes demand no identity regenerates byte-identically.
+
+### `exeris-codegen-ts`: @Blob fields are served on dedicated routes
+
+A `@Blob` field is server-owned: the kernel application never fills it in the entity's JSON and
+serves its bytes on the field's own routes (ADR-108). An entity without `@Blob` fields generates
+exactly as before. For one with them, the generated TypeScript client:
+
+1. Leaves `@Blob` fields out of the emitted entity interface, `<Entity>Create`, `<Entity>Update`,
+   Zod schemas, form models, and list queries.
+2. Emits `export interface BlobDescriptor { readonly contentType: string; readonly sizeBytes: number; }`
+   once in the shared `types/index.ts` barrel.
+3. Emits dedicated service methods per blob field: `upload<Field>(id, file)`, `download<Field>(id)`,
+   `delete<Field>(id)`, and `stat<Field>(id)` (HEAD returning `BlobDescriptor | null`).
+4. Generates a file input with `accept` attributes on the form, uploading selected files
+   after a successful create or update before navigating.
+5. In the detail view, fetches the descriptor with `stat<Field>` to display content type and
+   size, and provides a download button saving the blob via an object URL.
+6. Registers route requirements for `PUT`, `GET`, `DELETE {base}/{id}/blobs/{field}` matching the
+   entity's access requirement.
+
+**What breaks.** Code that read a `@Blob` field from an entity, or wrote it into a create or update
+payload, no longer compiles, because the field is gone from those types. The server never stored a
+value sent that way. Read the object with `stat<Field>` or `download<Field>`, and send it with
+`upload<Field>` after the row exists.
+
+### `exeris-codegen-ts`: route guards and identity-requiring stream clients follow declared route access
+
+This step applies to an entity or action that declares access: `@RouteAccess(AUTHENTICATED)` or a
+non-empty `permissions`, which the generated route policy compiles (ADR-105). An app whose entities
+and actions declare no access, or only `@RouteAccess(PUBLIC)`, regenerates byte-identically.
+
+When some route demands an identity, the generated tree gains `core/route-guards.ts`, a generated
+file with two functional guards over `AuthService`: `requireAuthenticated`, and
+`requireAnyPermission(...permissions)`, which admits a user holding any one of the names. A refused
+navigation returns `false` and stays on the current page; no sign-in route is generated.
+
+Each entity page is guarded by the requirement of the backend route it calls first: the list page
+by `GET {base}`, the detail page by `GET {base}/{id}`, the create page by `POST {base}` and the edit
+page by `PUT {base}/{id}`. An `AUTHENTICATED` entity's pages take `[requireAuthenticated]`, and an
+entity with `permissions` takes `[requireAnyPermission(...)]` over its names in declaration order.
+
+`app.routes.ts` and `auth.service.ts` are seeds, so regenerating an existing app does not add
+`canActivate` to its routes. A newly generated app has the guards in place. In an existing app, add
+the import and a `canActivate` entry to each page route of such an entity, for example:
+
+```ts
+import { requireAnyPermission, requireAuthenticated } from './core/route-guards';
+
+  {
+    path: 'invoices',
+    loadComponent: () => import('./components/invoice-list.component')
+      .then(m => m.InvoiceListComponent),
+    title: 'Invoices - My App',
+    canActivate: [requireAnyPermission('invoice:read', 'invoice:write')]
+  },
+  {
+    path: 'products/:id',
+    loadComponent: () => import('./components/product-detail.component')
+      .then(m => m.ProductDetailComponent),
+    title: 'Product - My App',
+    canActivate: [requireAuthenticated]
+  },
+```
+
+The guards call `AuthService.isAuthenticated()` and `AuthService.hasAnyPermission(string[])`, both
+present in the seed. A consumer who rewrote `auth.service.ts` keeps both members, or the guards do
+not compile.
+
+The live-view client `services/<entity>.stream.ts` of a `realTimeApi` entity that declares access
+opens `GET {base}/stream` and `GET {base}/{id}/stream` with `fetch` and
+`Authorization: Bearer <AuthService.token()>` instead of a native `EventSource`, which cannot send
+that header. The file is generated, so regenerating applies it. Its class, `STREAM_EVENT_TYPES`,
+`stream()` and `spectate(id)` keep their types, named-event handling and reconnect behaviour.
+
+A per-action stream client `services/<entity>.action-streams.ts` whose action route demands an
+identity, by the entity's declaration or the action's own, sends
+`Authorization: Bearer <AuthService.token()>` on its `POST` while a token is held. Its class and
+`stream(id)` are unchanged. A client on a public or undeclared action route is unchanged.
+
+Both kinds of client inject `AuthService` where they send the token, so code that constructs one
+with `new` outside an injection context gets it through `inject()` or `TestBed` instead.
+
+### `exeris-codegen-ts`: generated route guard and bearer interceptor specs under `generateTests`
+
+When test generation is on (`generateTests: true` or `--tests`) and some route demands an
+identity, so that `core/route-guards.ts` and `core/auth.interceptor.ts` are emitted, the generator
+also emits `core/route-guards.spec.ts` and `core/auth.interceptor.spec.ts` beside them. The guards
+spec runs `requireAuthenticated` and `requireAnyPermission(...)` against an `AuthService` double
+and asserts each guard's answer and the permission names it asks about. The interceptor spec sends
+requests through Angular's testing HTTP backend and asserts the `Authorization: Bearer` header on
+a request under `apiBasePath` while a token is held, and its absence with no token, for another
+host and for a protocol-relative URL.
+
+Both specs provide their own `AuthService` double, so a completed `core/auth.service.ts` seed does
+not change their outcome. Apps with `generateTests` off (the default), and apps with no route that
+demands an identity, are unaffected and their generated output stays byte-identical. Apps with
+`generateTests` on and such a route receive the two spec files and execute them through `npm test`.
+
+### `exeris-codegen-ts`: a system-field marker without its flag is an ordinary field of the request types and the views
+
+The generated TypeScript client follows the kernel application on a field in a system role whose
+`@ExerisDomain` flag is off: a field the entity's `systemFields` names for the version, an audit
+time or actor, a soft-delete field or the owning tenant, on an entity that is not `versioned`,
+`audited`, `softDelete` or tenant-partitioned respectively. Such a field is an ordinary field of the
+API, so for every one of them:
+
+1. `<Entity>Create` and `<Entity>Update`, and their Zod schemas, carry it instead of omitting it.
+2. The list query offers it as a sort key when it is sortable and as a filter when it is
+   filterable: `<Entity>SortField` and `<Entity>Filter` gain it.
+3. The form renders a control for it, the detail view lists it in its field table, and the list
+   may pick it as a default column. The detail view's system panel no longer shows a declared
+   `createdAt` or `updatedAt` of an entity that is not `audited`; the field table shows it instead.
+
+A `tenantId` field of a `GLOBAL` entity, and a field named `createdAt`, `updatedAt`, `version` or
+`deleted` on an entity whose flag for that role is off, count the same way: they were left out of
+the form and the views by name, and are now ordinary fields.
+
+The other way round, a `softDelete` entity's `deletedAt` and `deletedBy` and an `audited` entity's
+`createdBy` and `updatedBy` are system fields under their declared or canonical names whether or
+not a `systemFields` block names them. Where the form or the views showed such a field, they now
+leave it out, as the request types already did.
+
+An entity whose flag is on is otherwise unchanged, and so is an entity without such a field.
+
+**What breaks.** A `<Entity>Create` or `<Entity>Update` built without the field no longer compiles
+when the field is `required`; an optional one may stay absent, and the server then stores `null`.
+Code that switched exhaustively over `<Entity>SortField` gains a case. A test that relied on the form
+offering no `field-<name>` control for such a field, or on the field's row in the system panel,
+follows the new layout. Where the field was meant to be server-owned, set the entity's flag for its
+role and regenerate both sides.
+
+### `exeris-codegen-ts`: a mappedBy collection leaves the entity types
+
+A `List` field that a `ONE_TO_MANY` relationship with `mappedBy` declares is held by the target's
+rows: the generated server answers it as `null` and takes it from neither request body. The
+generated TypeScript client therefore leaves it out of the entity interface, `<Entity>Create`,
+`<Entity>Update` and the Zod schemas, as it does a `@Blob` field. The type and the schema of the
+target are no longer imported for it, and the list and the detail view show no field for it. Peer
+DTOs follow the same rule.
+
+The detail view's related-records panel is unchanged: it lists the rows through the target's
+service, `findAll({ size: 10 }, { <key>: id })`, filtered by the back-reference that `mappedBy`
+names. An entity without such a field generates exactly as before.
+
+**What breaks.** Code that read the collection from an entity, or set it on a create or update
+payload, no longer compiles, because the member is gone from those types. The server never
+returned or stored a value there. Read the rows from the target's service with the key filter
+instead, for example `invoiceLineService.findAll({ size: 20 }, { invoiceId: invoice.id })`.
+
+### `exeris-codegen-ts`: the relationship picker searches a searchable target, and the service sends `search`
+
+The list route reads `search` over an entity's searchable `String` fields (ADR-096 Amendment 4),
+the fields marked `@Field(searchable = true)` and those without `@Field`.
+
+`services/<entity>.service.ts` of an entity with a searchable field accepts a `search` term in the
+first argument of `findAll`:
+
+```ts
+this.customerService.findAll({ size: 20, sort: 'name', search: 'kow' });
+```
+
+The service trims the term and sends it only when it is not blank. An entity with nothing
+searchable keeps `findAll` without `search`, because the route would refuse it. `search` is a
+reserved name, so a field named `search` is no longer a key of `<Model>Filter`.
+
+The create and edit form's select for a `MANY_TO_ONE` foreign key whose target has a searchable
+field gains a search box in front of it (`data-testid="field-<field>-search"`, at most 100
+characters). Typing narrows the options: 250 ms after the last keystroke the form asks the target's
+list route for the first 100 rows matching the term. The select keeps the options it holds while
+the next term loads, and the value it holds stays an option, under the label it was chosen by,
+whether or not a later term matches it. Its truncation hint reads "Showing the first 100 matches; type to
+narrow." A select whose target has nothing searchable is unchanged and lists the target's first 100
+rows.
+
+The form, service and types are generated files, so regenerating applies the step. An end-to-end
+test that drives such a select by its `data-testid` still finds it; a test that counts the
+controls of a form, or the arguments of `findAll`'s request type, sees the additions.
+
+### `exeris-codegen-ts`: a declared Material icon name renders as a glyph
+
+The SDK documents `@NavMenu(icon, groupIcon)` and `@Tab(icon)` as Material icon names (`badge`,
+`shopping_cart`). The generated sidebar, form tabs and detail tabs render a declared value that is
+such a name, lowercase letters, digits and underscores only, through the Material Symbols font:
+
+```html
+<span class="material-symbols-outlined mr-3 text-xl" aria-hidden="true">badge</span>
+```
+
+The name is a ligature, so it renders as a glyph only with the font loaded, and `aria-hidden`
+keeps a screen reader from reading it beside the label. Any other declared text, an emoji for
+example, renders as itself, as before.
+
+When an emitted template names that class, a newly generated app's `package.json` lists
+`"material-symbols": "^0.48.0"` and its `src/styles.css` imports the font after the ui-kit entries:
+
+```css
+@import "@exeris/ui-kit/styles";
+@import "material-symbols/outlined.css" layer(components);
+```
+
+The import goes into the `components` layer so that a utility on the same element, such as
+`text-xl`, sizes the icon. The font file, `material-symbols-outlined.woff2` (4.0 MB), is fetched
+when an icon first renders and is not part of the initial bundle.
+
+**What to change.** `package.json`, `src/styles.css` and `src/app/app.component.ts` are seeds, so an
+existing app keeps them on regeneration. Its sidebar keeps rendering the declared name as a word.
+Its form and detail components are regenerated and name the class, and their tab icons render as a
+word until the app loads the font. To render glyphs in both, add the dependency and the import above,
+run `npm install`, and in `app.component.ts` give each declared icon's `<span>` the
+`material-symbols-outlined` class and `aria-hidden="true"`, or delete the file and regenerate it.
+
+**Where it applies.** Only to apps where some entity declares a Material icon name on `@NavMenu` or
+`@Tab`. An app that declares none, or declares only emoji, regenerates byte-identically.
