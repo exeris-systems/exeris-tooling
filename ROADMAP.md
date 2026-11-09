@@ -3575,6 +3575,86 @@ exeris-sdk#191; the `@PrimaryKey` marker (J5b), Track C, `@SagaTransition` and T
 on upstream releases; the mesh (T12 + T17) was the stretch wave; HERO's look waits on
 `@exeris/ui-kit` 0.5.
 
+## 0.11.0 — shipped
+
+Release PR 2026-11-09; the tag and the Central and npm publication follow it (Versioning policy).
+The train's own entries carry the evidence; this is the close-out.
+
+**What it was about.** Bringing the annotations SDK 0.13 reads back to emitted output, binding
+`exeris-sdk-tck` to the processor and closing every facet it checks, and closing the correctness,
+coverage and hygiene debts of the 0.11.0 plan. It cuts on SDK `0.13.3` and kernel `0.13.1`, both
+final on Maven Central (#447, #464, #496), so no Exeris dependency is a SNAPSHOT.
+
+**Shipped:**
+- *Extractions on the SDK 0.13 reader half (ADR-042):* the `@PrimaryKey` field marker (#461,
+  ADR-104); `@GraphProperty`, `@UIGroup` and the 0.13 `GraphEdgeMetadata` (#462), with edge
+  direction, weight, node properties and collection edges in the graph sync (#474, #495), and the
+  graph sync registered at boot and called from the generated service (#511); `@QueryParam` (#464),
+  `@NavMenu` and `@Tab` (#477); `ActionMetadata.resultType` (#472); saga trigger and compensation
+  with the `@SagaStep` order checks (#475); `@Action.label` as the action's `displayName` (#467).
+- *`@Blob` (ADR-108):* the extraction, the upload, download, `HEAD` and delete routes on the kernel
+  blob store, `storage` among the required subsystems, and the TS file control (#479, #470).
+- *Authorization, the data half (ADR-105 J3-3, J3-4, S3):* declared route access compiled into the
+  generated route policy with `route-policy.json` and its conformance test (#478), bearer security
+  in the OpenAPI document where a route demands an identity (#483, ADR-079), and the TS guards and
+  the `fetch`-based stream client for such a route (#481).
+- *Conformance kit:* the producer, reader and reader-parity bindings of `exeris-sdk-tck` with a
+  shrink-only facet ratchet (#464); `unsupportedFacets()` is empty since `BLOBS` (#479). The SDK
+  example corpus is generated and built at the pinned SDK tag (#485, #496).
+- *Correctness:* generated files stay inside the output directory (#452); static and transient
+  fields are not entity fields (#451); an `@Action` parameter without `@ActionParam` is refused
+  (`EXT-PROC-1020`, #459); the tenant policy raises for an absent tenant and pins the scope tag
+  (#466); `@Schedule` is refused (`EXT-PROC-1030`, #476); an entity outside a `.domain` package or
+  without an accessor it needs is refused (#490), as is a field typed as another entity
+  (`EXT-GEN-3003`, #486); a system-role field whose flag is off is an ordinary column, request
+  member and view field (#504, #509); a `mappedBy` collection holds no column (#510); a body-bound
+  `@ActionParam.defaultValue` applies (#507); the SDK-example gaps (#513, #514).
+- *List route search (ADR-096 Amendment 4):* server-side search on the generated list route and
+  the relationship picker (#515).
+- *`@View` page gaps (TS wave S6):* the view's name in its route (#456), the prerender list under
+  `scaffold: false` (#458), `viewHeading` per view (#457), CUSTOM block props with their literal
+  types (#460).
+- *Coverage:* generated Java tests for actions, versioning, soft delete, the stream handlers and the
+  route policy (#473, #505); generated TS store, form, guard and interceptor specs (#463, #506);
+  opt-in generated integration tests on H2 (#512, ADR-058 Amendment 1); a per-file vitest
+  threshold for every generator (#453); processor-compiled fixtures for `@GraphEdge`,
+  `@RouteAccess`, `@UI` and `@View` (#495, #522).
+- *Hygiene and documentation:* the migration assembler refuses a link between fragments (#450);
+  accepted ADRs point at MIGRATION steps (#508); committed generated trees pinned to LF (#454,
+  #455); `ng build (generated sample app)` a required check; the documentation set and the
+  developer guides on the SDK example corpus (#494, #497).
+
+**Regenerating changes the output.** 0.11.0 carries breaking changes to both emitters, recorded in
+MIGRATION's "0.11.0 train — regeneration deltas", which this release assembles from its 50
+fragments, in the `since 0.11` entries of the root `accepted-api-changes.json` for the processor and
+the Java pipeline, and in those of `exeris-codegen-ts/api/accepted-api-changes.json` for the
+TypeScript emitter (ADR-092). A consumer regenerates and reads that section before upgrading.
+
+**Follow-ups, open at the cut:**
+- *In this repository:* #489 (the layout and accessor refusals for a standalone `@Saga`), #493 and
+  #526 (code and docs drifts found while writing and re-verifying the documentation), #516 (an
+  initializr option for the generated integration tests), #517 (a migration index on a `List`
+  column the repository never queries), #518 (generated integration tests on PostgreSQL and tenant
+  scopes, the #408 second slice), #524 (TS event interfaces declare fields the Java publisher never
+  sends), #441 (a whole static site from the View IR), #412 and #417 (the S6 stretch items: SEO
+  fields, `customBlocks`), #438 (`@Channel` only) and #425 (event `STATE_TRANSITION` and
+  `condition`).
+- *Upstream:* exeris-sdk#276 (the `Employee` example's Javadoc), exeris-sdk#277 (the `@Version`
+  and audit markers' Javadoc), exeris-sdk#278 (the 1.0 freeze withdrawal list);
+  exeris-kernel#825 (the graph document's L1/L2 rollback claim), exeris-kernel#826 (a
+  tenant-scoped graph write on the Community driver), exeris-kernel#827 (a JWKS from a file or
+  inline configuration), exeris-kernel#828 to #831 (the coverage plan's kernel asks K1 to K4);
+  exeris-ai-bridge#91 (the generator catalogue's `integration-test` output root).
+
+**Not in it, and why:** `@Channel` (J4, S3): SDK 0.13 has no reader half for it and the kernel's
+WebSocket SPI is preview; generated integration tests on PostgreSQL and tenant scopes; `@Encrypted`
+and `@RowLevelSecurity` wait on exeris-kernel#585, then exeris-sdk#165; `@GraphQuery` waits on a
+decision between the kernel and the SDK. Wave 0's `customBlocks` (#417) stays a stretch item.
+
+**Next scope.** [`docs/1.0.0-annotation-coverage-plan.md`](docs/1.0.0-annotation-coverage-plan.md)
+places every SDK annotation and attribute the 1.0 freeze holds across 0.12.0, 0.13.0 and the 1.0.0
+cut, starting with the 0.12.0 disposition registry and its catalogue test (G1).
+
 ## 0.9.0 sequencing
 
 ### Scope — set 2026-09-30

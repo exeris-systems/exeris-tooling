@@ -39,13 +39,13 @@ Source: `exeris-app-bom/pom.xml`, the `<properties>` block (adapted, the Jackson
 
 ```xml
 <properties>
-    <exeris.tooling.version>0.11.0-SNAPSHOT</exeris.tooling.version>
+    <exeris.tooling.version>0.11.0</exeris.tooling.version>
     <exeris.kernel.version>0.13.1</exeris.kernel.version>
     <exeris.sdk.version>0.13.3</exeris.sdk.version>
 </properties>
 ```
 
-These are the pins on `main`, which builds 0.11.0. The published 0.10.0 BOM pins kernel and SDK `0.12.0`, so the README's snippets, which name 0.10.0, give you the older pair until 0.11.0 is released. Overriding `exeris.kernel.version` or `exeris.sdk.version` leaves the combination the tooling's suites ran against ([ADR-091](../adr/ADR-091-opt-in-application-starter.md)).
+These are the pins of the 0.11.0 BOM, the version the README's snippets name. The 0.10.0 BOM pins kernel and SDK `0.12.0`. Overriding `exeris.kernel.version` or `exeris.sdk.version` leaves the combination the tooling's suites ran against ([ADR-091](../adr/ADR-091-opt-in-application-starter.md)).
 
 ### 3. Put each entity in a `.domain` package
 
