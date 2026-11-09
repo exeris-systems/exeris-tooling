@@ -582,14 +582,17 @@ contract-less; the missing half is ours.
 
 #### The 1.0 GA commitment
 
-The commitment is recorded below as annotation-level: every SDK annotation the kernel makes
-buildable reaches emitted output. **The target is 51 of 51** — `@Blob` was the single exclusion and
-its gate is answered at 0.12. Reachable is not covered: `@Blob` reaches emitted output in 0.11.0,
-in the four pieces its entry in the GA section lists.
+The commitment is recorded below. **Every annotation and every attribute in the SDK's 1.0 freeze
+reaches emitted output, or the SDK withdraws it or lists it outside the freeze before its 1.0.0-RC.**
+Removed and Preview annotations are not in the target. `@Schedule` is Preview and refused at build
+time (`EXT-PROC-1030`), so it is answered rather than covered. The measurement, the placement of what
+remains and the SDK withdrawal list are in
+[`docs/1.0.0-annotation-coverage-plan.md`](docs/1.0.0-annotation-coverage-plan.md). At the cut, a test
+reading the pinned SDK's annotation catalogue replaces the hand count.
 
-That metric and this measurement are not the same thing. Reading one attribute of `@Saga` scores
-`@Saga` as covered while ≥72 of its 81 do nothing; the same surface is at **10%** in the attribute
-unit, against a ~30% ceiling. Both numbers are true and only one is what a consumer experiences.
+That metric and this measurement are not the same thing. Reading one attribute of `@Saga` scored
+`@Saga` as covered while most of its attributes did nothing. SDK 0.13.0 has since deprecated 76
+`@Saga` elements for removal at 1.0, and the coverage plan counts what survives in the attribute unit.
 
 Most of C is surface designed ahead of any runtime contract — circuit breakers, Kafka topic
 patterns, GraphQL exposure, alert thresholds, embedding services. The open question is whether the
@@ -2360,6 +2363,10 @@ Each now has the status the code settles, and every other mention in this file a
 
 > Goal: any 1.x release produces source-compatible output; user apps' generated code keeps compiling across 1.x bumps.
 
+What 0.11.0 does not place — the remaining annotations, every attribute that reaches no emitted
+output, and the SDK withdrawals due before its freeze — is placed in
+[`docs/1.0.0-annotation-coverage-plan.md`](docs/1.0.0-annotation-coverage-plan.md).
+
 - [ ] **Annotation-surface coverage — every SDK annotation the kernel makes buildable reaches emitted
       output.** Founder scope call, 2026-08-18. Measured the same day against `exeris-sdk` `main`:
       **51 annotation types** are declared (55 files under `annotation/**` less four `package-info`),
@@ -2463,10 +2470,13 @@ Each now has the status the code settles, and every other mention in this file a
       `@Schedule` has its subsystem and is gated on the identity a declared job runs as, which the
       kernel answers at 1.0 by issuing none.
 
-      **So the 1.0 target is 51 of 51.** `@Blob` was the single exclusion and its kernel gate is
-      answered at 0.12. Reachable is not covered — an annotation counts when it reaches emitted
-      output. `@Blob` reaches it in 0.11.0 (rows J3 + S2 of
-      [`docs/0.11.0-release-plan.md`](docs/0.11.0-release-plan.md), ADR-108), in four pieces:
+      **So the 1.0 target is the SDK's 1.0 freeze, not a count.** `@Blob` is in the freeze since
+      kernel 0.13.0 (ADR-072 obligation 29). `@Schedule` is Preview and refused at build time, so it
+      is answered rather than covered. The target is measured in
+      [`docs/1.0.0-annotation-coverage-plan.md`](docs/1.0.0-annotation-coverage-plan.md). Reachable
+      is not covered — an annotation counts when it reaches emitted output. `@Blob` reaches it in
+      0.11.0 (rows J3 + S2 of [`docs/0.11.0-release-plan.md`](docs/0.11.0-release-plan.md), ADR-108),
+      in four pieces:
 
       1. **Extraction.** The processor reads `@Blob` on an entity field, and it has left
          `INERT_ANNOTATIONS`. It refuses `@Blob` on a `GLOBAL` entity (`EXT-PROC-1031`) and on a
