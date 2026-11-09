@@ -143,7 +143,7 @@ checks for registered providers, not for a particular artefact.
 <parent>
     <groupId>eu.exeris</groupId>
     <artifactId>exeris-app-parent</artifactId>
-    <version>0.10.0</version>
+    <version>0.11.0</version>
     <relativePath/>
 </parent>
 
@@ -197,7 +197,7 @@ and why the tooling version is a property of your own.
 
 ```xml
 <properties>
-    <exeris.tooling.version>0.10.0</exeris.tooling.version>
+    <exeris.tooling.version>0.11.0</exeris.tooling.version>
     <maven.compiler.release>25</maven.compiler.release>
 </properties>
 
