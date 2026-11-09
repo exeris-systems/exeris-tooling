@@ -189,6 +189,25 @@ jobs:
       - name: Purge cached eu.exeris artefacts
         run: rm -rf ~/.m2/repository/eu/exeris
 
+      # SdkExamplesE2ETest (exeris-e2e-tests) generates from the SDK's example sources at the tag
+      # of the SDK version the build pins, and under CI=true it fails rather than skips when the
+      # checkout is absent. The same two steps as build.yml, so the release runs the gate CI runs.
+      - name: Read the pinned SDK version
+        id: sdk
+        run: |
+          version=$(sed -n 's:.*<exeris.sdk.version>\(.*\)</exeris.sdk.version>.*:\1:p' exeris-tooling-bom/pom.xml)
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout exeris-sdk examples (v${{ steps.sdk.outputs.version }})
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: exeris-systems/exeris-sdk
+          ref: v${{ steps.sdk.outputs.version }}
+          path: .sdk-examples
+          sparse-checkout: exeris-sdk-examples
+          persist-credentials: false
+
       - name: Set the release version — or, on a tag, check it
         # On a dispatch the tree is a -SNAPSHOT development line and setting the version is the
         # point of the dry run. On a tag the release PR has already set it, so a tag whose version
@@ -261,6 +280,7 @@ jobs:
           CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
           CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
           UPLOAD: ${{ steps.rel.outputs.upload }}
+          EXERIS_SDK_EXAMPLES_DIR: ${{ github.workspace }}/.sdk-examples
         run: |
           set -euo pipefail
           if [ "$UPLOAD" = "true" ]; then
