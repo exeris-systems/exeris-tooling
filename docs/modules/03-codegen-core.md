@@ -4,7 +4,7 @@ type: module
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-11-03
+last-verified: 2026-11-08
 ---
 
 # Codegen core
@@ -46,7 +46,7 @@ The build-time pipeline in `exeris-codegen-java` iterates `generateMultiple(meta
 
 | Type | Derives | Read by |
 |---|---|---|
-| `driver.RequiredSubsystems` | The subsystem names the emitted `Application.subsystems()` returns: `http`, `persistence` and `crypto` always; `graph`, `flow`, `events`, `security`, `storage` when some entity needs them. The order is fixed whatever order the domains arrive in | `KernelApplicationGenerator` |
+| `driver.RequiredSubsystems` | The subsystem names the emitted `Application.subsystems()` returns: `http`, `persistence` and `crypto` always; `graph`, `flow`, `events`, `security`, `storage` when some entity needs them. The order is fixed whatever order the domains arrive in | `KernelApplicationGenerator`; `KernelIntegrationScope`, which withholds the generated integration tests from a build that boots `graph` or `storage` |
 | `driver.RequiredDrivers` | The kernel SPIs a provider must be registered for: `SubsystemProvider`, `PersistenceProvider` and `HttpProvider` always; `EventProvider`, `GraphProvider`, `FlowProvider`, `BlobStorageProvider` on the same predicates as the subsystems. `crypto` is deliberately absent: no emitted artifact uses it | `exeris:verify-runtime` |
 | `driver.RuntimeDriverCheck` | Which of those SPIs have no `META-INF/services` entry anywhere on a classpath. A file lookup: no consumer class is loaded | `exeris:verify-runtime` |
 | `access.RouteRequirements` | The requirement each generated route carries: `PERMIT_ALL`, `AUTHENTICATED`, `ANY_SCOPE` over the declared scopes, or none. The nearest declaration wins, and an action's list replaces its entity's | `KernelApplicationGenerator`, the OpenAPI security builders |

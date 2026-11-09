@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-11-03
+last-verified: 2026-11-08
 ---
 
 # Glossary
@@ -57,7 +57,7 @@ Terms as `exeris-tooling` uses them, in alphabetical order. Each entry names the
 
 **Seed file.** A file the TypeScript generator writes once for the application to edit, such as `package.json` or `app.routes.ts`, and keeps afterwards unless `--overwrite`.
 
-**Server-owned field.** A field whose value the server sets or keeps rather than taking it from a request body. The primary key, the owning tenant, the audit and soft-delete fields and every `@Blob` field are in neither the create nor the update body; the version and a `UNIVERSE` entity's shared scope are left out of the create body and stamped by the server, and an update body carries the version only as the version the edit was loaded at. `ServerOwnedFields` derives the Java sets, and `contract/update-parity/` holds the TypeScript side to them ([ADR-090](adr/ADR-090-reject-mismatched-tenant.md), [ADR-108](adr/ADR-108-blob-field-routes.md)).
+**Server-owned field.** A field whose value the server sets or keeps rather than taking it from a request body: the primary key, a `UNIVERSE` entity's shared-scope field, and the field of each system role the entity's flags switch on: the owning tenant under a `TENANT` or `UNIVERSE` data scope, the audit times and actors under `audited`, the soft-delete flag, time and actor under `softDelete`, the version under `versioned`. A field named for a role whose flag is off, by a `systemFields` entry, a system marker or the role's canonical name, is an ordinary domain field ([ADR-090](adr/ADR-090-reject-mismatched-tenant.md) Amendment 7). The primary key, the owning tenant, the audit and soft-delete fields are in neither the create nor the update body; the version and the shared scope are left out of the create body and stamped by the server, and an update body carries the version only as the version the edit was loaded at. A `@Blob` field and an inverse collection (a `List` whose `ONE_TO_MANY` relationship names `mappedBy`) are in neither body either, and the handlers reset them to `null` after decoding. `ServerOwnedFields` derives the Java sets, `src/core/system-columns.ts` the TypeScript ones, and `contract/update-parity/` holds the two to each other ([ADR-090](adr/ADR-090-reject-mismatched-tenant.md), [ADR-108](adr/ADR-108-blob-field-routes.md)).
 
 **Strict mode.** `-Aexeris.strict=true`: the processor's completeness audit, warning on what is set but changes no output (`EXT-PROC-1201` to `1203`).
 

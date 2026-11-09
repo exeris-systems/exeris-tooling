@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-11-03
+last-verified: 2026-11-08
 ---
 
 # Contributing to Exeris Tooling
@@ -42,8 +42,9 @@ The `@Tag("postgres")` classes in `exeris-e2e-tests` need a real PostgreSQL: H2 
 row-level security, reports a foreign-key violation with another SQL state and constraint-name case,
 and does not run the Community SQL graph's `jsonb` and `ON CONFLICT` statements. They are the
 shared-scope access matrix, the field-type matrix, the booted tenant-isolation test, the booted
-foreign-key refusal test (422 for a missing referenced row, 409 for a delete of a referenced one) and
-the booted graph-sync test (each write projected into `graph_nodes` and the edge table). The default build excludes the tag. The `e2e-postgres` profile selects it and nothing else, and
+foreign-key refusal test (422 for a missing referenced row, 409 for a delete of a referenced one), the
+booted inverse-cascade test (an inverse collection's `cascadeDelete` removes the child rows) and the
+booted graph-sync test (each write projected into `graph_nodes` and the edge table). The default build excludes the tag. The `e2e-postgres` profile selects it and nothing else, and
 the `e2e-postgres` CI job runs it on JDK 25. Without `-Dexeris.e2e.postgres.url` the profile fails at
 `validate`, and a `postgres` class selected some other way fails rather than skipping.
 
@@ -59,7 +60,8 @@ docker stop exeris-e2e-pg
 
 The login must be allowed to create schemas and roles. Each class creates its own schema and drops
 it afterwards. `SharedScopePostgresE2ETest`, `TenantIsolationPostgresBootE2ETest`,
-`ForeignKeyRefusalPostgresBootE2ETest` and `GraphSyncPostgresBootE2ETest` also create a
+`ForeignKeyRefusalPostgresBootE2ETest`, `InverseCascadePostgresBootE2ETest` and
+`GraphSyncPostgresBootE2ETest` also create a
 `NOSUPERUSER NOBYPASSRLS` role to act as and drop it afterwards; `PostgresTypeMatrixE2ETest` creates
 no role.
 
@@ -76,6 +78,8 @@ the build pins. It covers:
   is served by an emitted handler, service and repository;
 - the emitted main and test trees compile with no error or warning under `-Xlint:all`, and the emitted
   tests pass when run against the emitted code and the example entities;
+- `invoicing`'s `Invoice.lines` is held by the `invoice_lines` rows: no column of `invoices`, and a
+  foreign key with `ON DELETE CASCADE`;
 - `capability` is refused by the capability graph: `LedgerCap` requires `AuditTrail`, which no module
   of the scenario provides;
 - a second run in a fresh workspace writes the same metadata and emitted trees, file for file.

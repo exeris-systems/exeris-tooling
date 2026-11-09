@@ -4,7 +4,7 @@ type: module
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-11-03
+last-verified: 2026-11-08
 ---
 
 # Codegen CLI
@@ -39,13 +39,13 @@ java -jar exeris-codegen-cli-<version>.jar --metadata-dir=<path> --output-dir=<p
 | `--output-dir=<path>` | The root the main sources are written to. Required unless `--print-catalogue` |
 | `--base-package=<pkg>` | The package of `Application` and its siblings; default the first domain's package by qualified name, without `.domain` |
 | `--tests` | Also write the generated tests; requires `--test-output-dir` |
-| `--test-output-dir=<path>` | The root the generated tests are written to; read only with `--tests` |
+| `--test-output-dir=<path>` | The root the generated tests are written to; an argument error without `--tests` |
 | `--integration-tests` | Also write the generated integration tests (ADR-058 Amendment 1); requires `--integration-test-output-dir`. A build they do not boot prints `EXT-GEN-3105`, writes nothing into that root, and still exits `0` |
-| `--integration-test-output-dir=<path>` | The root the generated integration tests are written to; read only with `--integration-tests` |
+| `--integration-test-output-dir=<path>` | The root the generated integration tests are written to; an argument error without `--integration-tests` |
 | `--allow-empty` | Permit the teardown that prunes a previously generated main tree when no `@ExerisDomain` is found |
 | `--print-catalogue` | Write the bundled generator catalogue to standard output and exit; needs no other switch |
 
-Every argument is a `--switch` or `--switch=value`. A value switch without its value, a flag given one, an unknown switch and a positional argument are argument errors, so a flag a release does not know fails instead of being ignored. The command line validates the capability graph fail-fast; it has no equivalent of `exeris:generate`'s deferral.
+Every argument is a `--switch` or `--switch=value`. A value switch without its value, a flag given one, an output-root switch without its flag, an unknown switch and a positional argument are argument errors, so a flag a release does not know fails instead of being ignored. The command line validates the capability graph fail-fast; it has no equivalent of `exeris:generate`'s deferral.
 
 | Exit status | Meaning |
 |---|---|

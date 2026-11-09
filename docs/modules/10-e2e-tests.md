@@ -4,7 +4,7 @@ type: module
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-11-03
+last-verified: 2026-11-08
 ---
 
 # End-to-end tests
@@ -37,7 +37,7 @@ Unit tests of each module stay in that module. These modules test the seams betw
 | `GeneratedTestsE2ETest` | The emitted tests run against the emitted services |
 | `boot/GeneratedIntegrationTestsE2ETest` | The emitted integration tests compile against JUnit, AssertJ and the kernel alone, and pass against the emitted application booted on in-memory H2, with tokens from a loopback key set; a `TENANT` build gets no tree |
 | `boot/*BootE2ETest` | The emitted `Application` booted through `KernelBootstrap`, on in-memory H2 or, in the `postgres` group, on PostgreSQL, and driven over a real socket |
-| `GeneratorCatalogueConformanceE2ETest` | Every path the processor and pipeline write, main and test roots, reaches its row in the [generator catalogue](../generators.md), and every row is reached ([ADR-097](../adr/ADR-097-generator-catalogue-and-launchable-generator.md) obligation 8) |
+| `GeneratorCatalogueConformanceE2ETest` | Every path the processor and pipeline write, main, test and integration-test roots, reaches its row in the [generator catalogue](../generators.md), and every row is reached ([ADR-097](../adr/ADR-097-generator-catalogue-and-launchable-generator.md) obligation 8) |
 | `RoutePolicyRouterConformanceE2ETest` | `GeneratedRoutePolicy` answers for the route the kernel's `HttpRouter` actually dispatches to |
 | `RoutePolicyFromProcessorE2ETest` | The `RoutePolicyFixture` declarations as annotated source through the processor: `@RouteAccess` and `permissions` reach the metadata as `RoutePolicyFixture` builds it, the emitted `GeneratedRoutePolicy` equals the fixture's and answers `route-policy.json`, and each OpenAPI operation declares its row's security |
 | `UiMetadataFromProcessorE2ETest` | `@UI`, `@UIGroup`, `@Tab` and `@NavMenu` through the processor: every declared value reaches `UIMetadata` and `NavMenuMetadata` |

@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-11-03
+last-verified: 2026-11-08
 ---
 
 # Tooling stability matrix
@@ -43,7 +43,7 @@ A row with no ADR in its ruling column is governed by those two rules alone.
 | Metadata JSON: `schemaVersion` and `sourceDigest` beside the record fields | Written as siblings of the record's fields in each entity file | [ADR-042](adr/ADR-042.link.md) | The TCK parity suite |
 | Metadata JSON: the file names (`<Entity>.json`, `enum_*.json`, `capability_*.json`, `view_*.json`) and the capability and view envelopes | No ADR fixes them. They are the processor's output layout, read by both generators | Versioning policy | Both generators' tests, which read processor-written fixtures |
 | Maven plugin goals and parameters (`generate`, `verify-capabilities`, `verify-runtime`, `detach`) | No ADR fixes the goals or their parameters; the versioning policy calls the plugin API secondary to output compatibility, and ADR-092 names the plugin goals out of its scope | Versioning policy; [ADR-078](adr/ADR-078-runtime-driver-gate.md) for what `verify-runtime` checks | Plugin unit tests; `exeris-app-starter-it` |
-| `exeris-codegen-cli` arguments and exit status | `--metadata-dir`, `--output-dir`, `--base-package`, `--tests`, `--test-output-dir`, `--allow-empty`, `--print-catalogue`; an unknown switch is an error; exit `0`, `1`, `2`; the version only in log output, never in a generated file | ADR-097 obligations 11 to 13 | `CliArgsTest`, `CodegenMainTest`, `CodegenCliJarIT` |
+| `exeris-codegen-cli` arguments and exit status | `--metadata-dir`, `--output-dir`, `--base-package`, `--tests`, `--test-output-dir`, `--integration-tests`, `--integration-test-output-dir`, `--allow-empty`, `--print-catalogue`; an unknown switch is an error; exit `0`, `1`, `2`; the version only in log output, never in a generated file | ADR-097 obligations 11 to 13; [ADR-058](adr/ADR-058-generated-test-emission-channel.md) Amendment 1 for the integration-test switches | `CliArgsTest`, `CodegenMainTest`, `CodegenCliJarIT` |
 | `exeris-gen` flags and `exeris-codegen.json` keys | Part of ADR-092's surface: removing or renaming a flag or key, or changing its default so the same invocation emits less, is breaking | ADR-092 obligations 2 and 3 | `cli.spec.ts`, `config.spec.ts` |
 | `@exeris/codegen-ts` version | Equals the reactor version at every commit and releases on the same tag | ADR-092 obligation 1 | `npm run check:version` |
 | `exeris-initializr` command line | Follows ADR-097's command line: `--switch=value` only, exit `0`, `1`, `2`, an identifier on every non-zero exit; topologies `backend-only` and `e2e` | [ADR-091](adr/ADR-091-opt-in-application-starter.md) Amendment 5; ADR-095 Amendment 2 | The initializr unit tests; the `initializr-backend` and `initializr-e2e` invoker fixtures |
@@ -52,7 +52,7 @@ A row with no ADR in its ruling column is governed by those two rules alone.
 
 | Surface | Commitment | Ruling | Gate |
 |---|---|---|---|
-| `exeris-app-bom`, `exeris-app-parent`, `exeris-app-starter` | The BOM names the tested tooling, kernel and SDK triple as literal versions; the parent binds the processor and the codegen goals; the starter carries the dependencies emitted code imports and no JDBC driver, logging backend or test library | ADR-091 obligations 1 to 4 and Amendments 2 and 4 | `exeris-app-starter-it`; `tools/release-readiness/release-readiness.sh` |
+| `exeris-app-bom`, `exeris-app-parent`, `exeris-app-starter` | The BOM names the tested tooling, kernel and SDK triple as literal versions, and manages H2 for the generated integration tests; the parent binds the processor and the codegen goals, and Failsafe where the integration-test root exists; the starter carries the dependencies emitted code imports and no JDBC driver, logging backend or test library | ADR-091 obligations 1 to 4 and Amendments 2, 4 and 7 | `exeris-app-starter-it`; `tools/release-readiness/release-readiness.sh` |
 | Public types of `exeris-codegen-core` and `exeris-codegen-java`, for example `KernelArtifactGenerator` and `CodegenPipeline` | ADR-097 records that `KernelArtifactGenerator` is public and carries a 1.0 stability commitment. No ADR enumerates the rest | Versioning policy; ADR-097 obligation 9 | None: the reactor runs no binary-compatibility check |
 | Maven coordinates | Every module is published as `eu.exeris:<artifactId>` from 0.10.0; releases up to 0.9.0 used `eu.exeris.tooling`, with no relocation POM | ADR-091 Amendment 4; ADR-095 Amendment 1 | None |
 

@@ -4,7 +4,7 @@ type: explanation
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-11-03
+last-verified: 2026-11-08
 ---
 
 # Architecture
@@ -64,6 +64,7 @@ graph TD
     java --> core
     java --> diag
     cli --> java
+    cli -. test .-> proc
     plug --> java
     plug --> diag
     init --> diag

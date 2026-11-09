@@ -4,7 +4,7 @@ type: module
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-11-03
+last-verified: 2026-11-08
 ---
 
 # Application BOM, parent and starter
@@ -19,7 +19,7 @@ The generators never emit any of them, nor any other build file. An application 
 
 | Module | Parent | Holds |
 |---|---|---|
-| `exeris-app-bom` | none | `dependencyManagement` for `exeris-processor`, `exeris-app-starter`, `exeris-kernel-spi`, `exeris-kernel-core`, `exeris-kernel-community`, `exeris-kernel-community-testkit`, `exeris-sdk-annotations`, `exeris-sdk-composition-runtime` and Jackson 3 `jackson-databind`; `pluginManagement` for `exeris-codegen-maven-plugin` |
+| `exeris-app-bom` | none | `dependencyManagement` for `exeris-processor`, `exeris-app-starter`, `exeris-kernel-spi`, `exeris-kernel-core`, `exeris-kernel-community`, `exeris-kernel-community-testkit`, `exeris-sdk-annotations`, `exeris-sdk-composition-runtime`, Jackson 3 `jackson-databind` and `com.h2database:h2`; `pluginManagement` for `exeris-codegen-maven-plugin` |
 | `exeris-app-parent` | `exeris-app-bom` | The build, below |
 | `exeris-app-starter` | `exeris-app-bom` | The dependencies, below |
 
@@ -56,7 +56,7 @@ The parent declares Exeris's own `url` and inherits `licenses`, `developers` and
 | `exeris-sdk-composition-runtime` | compile | The composed `Application` imports `CompositionConductor` |
 | `tools.jackson.core:jackson-databind` | compile | The repository of an entity with a `List<X>` column imports Jackson 3; a `mappedBy` collection is no column |
 
-It declares no JDBC driver, no logging backend and no test library. Those are the application's: generated code logs through `System.Logger` and binds no facade, and the generated tests need JUnit 5 and AssertJ in the application's test scope.
+It declares no JDBC driver, no logging backend and no test library. Those are the application's: generated code logs through `System.Logger` and binds no facade, and the generated tests need JUnit 5 and AssertJ in the application's test scope, and the generated integration tests H2 as well.
 
 ## Hot path
 

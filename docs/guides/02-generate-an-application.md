@@ -4,7 +4,7 @@ type: howto
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-11-04
+last-verified: 2026-11-08
 ---
 
 # Generate an application from an entity
@@ -13,7 +13,7 @@ last-verified: 2026-11-04
 
 **Goal:** generate the application of the `ordering` scenario's `Order`, read its routes, its persistence and its events, run its emitted tests, and decide whether to keep regenerating or detach.
 
-> **Verified against** exeris-tooling `main` at commit `dc4564a2` (`0.11.0-SNAPSHOT`) and `exeris-sdk-examples` at tag `v0.13.3`, 2026-11-04. Generated snippets are quoted from the `SdkExamplesE2ETest` workspace, `exeris-e2e-tests/target/sdk-examples/app/`, with base package `eu.exeris.sdk.examples.app`. If a snippet and its source disagree, **the source wins and this guide is the defect**.
+> **Verified against** exeris-tooling `main` at commit `b70edc67` (`0.11.0-SNAPSHOT`) and `exeris-sdk-examples` at tag `v0.13.3`, 2026-11-08. Generated snippets are quoted from the `SdkExamplesE2ETest` workspace, `exeris-e2e-tests/target/sdk-examples/app/`, with base package `eu.exeris.sdk.examples.app`. If a snippet and its source disagree, **the source wins and this guide is the defect**.
 
 ## Prerequisites
 
