@@ -5221,3 +5221,10 @@ run `npm install`, and in `app.component.ts` give each declared icon's `<span>` 
 
 **Where it applies.** Only to apps where some entity declares a Material icon name on `@NavMenu` or
 `@Tab`. An app that declares none, or declares only emoji, regenerates byte-identically.
+
+## 0.12.0 train — regeneration deltas
+
+<!-- BEGIN migration-fragments 0.12.0 -->
+Until 0.12.0 is cut, each step of this train is a file of its own under `docs/migration/0.12.0/`,
+and the release assembles them here ([how a step is written](migration/README.md)).
+<!-- END migration-fragments 0.12.0 -->
