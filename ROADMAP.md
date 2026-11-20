@@ -3651,9 +3651,10 @@ WebSocket SPI is preview; generated integration tests on PostgreSQL and tenant s
 and `@RowLevelSecurity` wait on exeris-kernel#585, then exeris-sdk#165; `@GraphQuery` waits on a
 decision between the kernel and the SDK. Wave 0's `customBlocks` (#417) stays a stretch item.
 
-**Next scope.** [`docs/1.0.0-annotation-coverage-plan.md`](docs/1.0.0-annotation-coverage-plan.md)
-places every SDK annotation and attribute the 1.0 freeze holds across 0.12.0, 0.13.0 and the 1.0.0
-cut, starting with the 0.12.0 disposition registry and its catalogue test (G1).
+**Next scope.** [`docs/0.12.0-release-plan.md`](docs/0.12.0-release-plan.md) is the 0.12.0 scope.
+[`docs/1.0.0-annotation-coverage-plan.md`](docs/1.0.0-annotation-coverage-plan.md) places every SDK
+annotation and attribute the 1.0 freeze holds across 0.12.0, 0.13.0 and the 1.0.0 cut, starting
+with the 0.12.0 disposition registry and its catalogue test (G1).
 
 ## 0.9.0 sequencing
 
@@ -4321,6 +4322,53 @@ carrier (exeris-sdk#186).
 Not in 0.11.0: `@Channel` (J4, S3 — SDK 0.13 has no reader half for it; 0.12.0, with its RFC/ADR),
 generated integration tests on PostgreSQL and tenant scopes (0.12.0), `@Encrypted` /
 `@RowLevelSecurity` (C2) and `@GraphQuery`, with the reasons in the plan.
+
+## 0.12.0 — the coverage guard, static sites and services, scope set 2026-11-20
+
+Pins SDK 0.13.3 and kernel 0.13.2, both final on Maven Central. Order, gates and the Java/TS
+pairing are in [`docs/0.12.0-release-plan.md`](docs/0.12.0-release-plan.md). It does not wait for
+an SDK release: the coverage rows that need a carrier or a reader half SDK 0.13.3 lacks are in
+0.13.0 ([`docs/1.0.0-annotation-coverage-plan.md`](docs/1.0.0-annotation-coverage-plan.md)).
+
+- [ ] **A0, A1 pins**: the 0.12.0 cycle (#530); kernel 0.13.2 in both BOMs, with Jackson 3.3.0 and
+      the PostgreSQL driver its BOM manages.
+- [ ] **Wave 0, decisions**: the disposition registry ADR (W1); RFC-2026-06-28 accepted and the
+      view emitter-shape ADR, `customBlocks` included (W2, W3, #417); ADR-048 Amendment 3 for the
+      contract of a backend without `@CapabilityModule` (W4, #391); an ADR-091 amendment for the
+      service workspace and run (W5, #423); the RFC and ADR for events across services (W6); the
+      event-envelope ADR (W7, #524); the API-surface ADR (W8); the `@Saga.trigger` ADR (W9); the
+      rules of #401, #489, #424, #409 and #517 (W10).
+- [ ] **G1, G2 coverage guard**: the disposition registry and its catalogue test against the
+      pinned SDK's `annotation-catalog.json`; the registry repair, with an audit call for every
+      annotation family that has none.
+- [ ] **J1, J2, J6, J14 + S2, S4, S7**: `@ActionParam.description` and `required`;
+      `@Field.indexed`; saga descriptions and `@Saga.trigger`; `@ExerisDomain.restApi` and
+      `internalClient`; the `@Tab` and `@NavMenu` presentation attributes, action labels from
+      `displayName` and the list search box.
+- [ ] **B1–B10 defects**: initializr input (#532); TS event interfaces (#524); an entity-bound
+      `LIST` without children; a form with no editable field (#492); an index on a `List` column
+      (#517); the two-pass build (#424); a standalone `@Saga` (#489); absent `inCreate` and
+      `inUpdate` (#401); `zod`; a nested `<main>`.
+- [ ] **V1–V10 static site from views** (#441): a view added after the first generation; a
+      not-found page; content blocks with typed props; a site shell from `@View.layout`;
+      `sitemap.xml` and `robots.txt`; custom blocks without a hand-kept map (#417); unread `@View`
+      attributes in the strict audit; a processor-compiled view through to `ng build`.
+      *Conditional:* SEO per view (V9, #412), on a final SDK patch that carries the fields.
+- [ ] **M1–M6 services**: every backend publishes its contract (#391); Java peer types and the
+      peer client, the client and registry slice of ADR-048 (T12, T17); a `@Requires` on a kernel
+      SPI type (#409); an initializr workspace of several services; one command to run a generated
+      backend, with Dockerfiles and compose services (#423); a broker in the scaffold.
+- [ ] **R1–R3 events across services**: the event specification in the contract; a generated
+      subscriber for a peer's events, on `EventEngine` SPI types only; an e2e test of two generated
+      services and a broker.
+- [ ] **T1, T2, H1, H2**: the initializr option for the generated integration tests (#516);
+      integration tests on PostgreSQL and tenant scopes (#518); fragment paths in accepted ADRs
+      (#528); the code and documentation drifts (#526, #493).
+
+Not in 0.12.0: the coverage rows that wait on an SDK half, `@Channel` among them (#438); a
+replicated table of a peer's entity, `@Projection` and `@EventHandler` (#425); entity pages and
+build-time data in a prerendered site; #443 and #445, which go with the SDK 1.0 pin. The reasons
+are in the plan.
 
 ## Versioning policy
 
