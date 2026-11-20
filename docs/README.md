@@ -33,7 +33,7 @@ last-verified: 2026-11-08
 | What changes on regeneration after an upgrade? | [MIGRATION-0.x-to-1.0.md](MIGRATION-0.x-to-1.0.md), and the open train's fragments in [migration/](migration/README.md) |
 | Why was a decision made? | The records in [`adr/`](adr), for example [ADR-015](adr/ADR-015-codegen-emission-strategy.md) |
 | Which options were weighed before a decision? | The records in [`rfc/`](rfc), for example [RFC-2026-10-08](rfc/RFC-2026-10-08-route-authorization-policy-emission.md) |
-| What is in the release being built now? | [0.11.0-release-plan.md](0.11.0-release-plan.md) |
+| What is in the release being built now? | [0.12.0-release-plan.md](0.12.0-release-plan.md) |
 | What is planned, and in what order? | [ROADMAP.md](../ROADMAP.md) |
 | What does review check in this repository? | [repo-review-rules.md](repo-review-rules.md) |
 | How is the repository built, tested and contributed to? | [CONTRIBUTING.md](../CONTRIBUTING.md) |
