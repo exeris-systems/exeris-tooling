@@ -414,7 +414,7 @@ const JAVA_TO_TS_MAP: Record<string, TypeMapping> = {
     tsType: 'Record<string, unknown>',
     formControl: 'textarea',
     inputType: 'text',
-    zodType: 'z.record(z.unknown())',
+    zodType: 'z.record(z.string(), z.unknown())',
     defaultValue: '{}',
   },
 
@@ -493,7 +493,7 @@ export class DslMapper {
           tsType: `Record<string, ${valueType.tsType}>`,
           formControl: 'textarea',
           inputType: 'text',
-          zodType: `z.record(${valueType.zodType})`,
+          zodType: `z.record(z.string(), ${valueType.zodType})`,
           defaultValue: '{}',
         };
       }

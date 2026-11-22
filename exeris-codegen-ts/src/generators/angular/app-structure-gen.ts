@@ -880,7 +880,7 @@ function runtimeDependencies(needs: ScaffoldNeeds, ssg: boolean): string {
     ['material-symbols', '^0.48.0', needs.materialSymbols === true],
     ['rxjs', '~7.8.1', true],
     ['tslib', '^2.8.1', true],
-    ['zod', '^3.24.0', used('zod')],
+    ['zod', '^4.6.6', used('zod')],
   ];
   return entries
     .filter(([, , kept]) => kept)
