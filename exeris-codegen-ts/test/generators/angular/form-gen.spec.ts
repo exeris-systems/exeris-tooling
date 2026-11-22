@@ -102,7 +102,10 @@ describe('FormGenerator emitted content — top-level structure', () => {
   const gen = new FormGenerator();
 
   it('imports Angular core + Signal Forms + service + entity types, and nothing from Reactive Forms', () => {
-    const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [field({ name: 'name', type: 'String' })],
+    }), CTX)!.content;
 
     expect(content).toContain("import { Component, ChangeDetectionStrategy, input, output, signal, computed, effect, inject } from '@angular/core';");
     expect(content).toContain("import { rxResource } from '@angular/core/rxjs-interop';");
@@ -1243,6 +1246,28 @@ describe('FormGenerator — @Field(readOnly = true)', () => {
 
   it('offers no control for it', () => {
     expect(content).not.toContain('[formField]="form.status"');
+  });
+});
+
+describe('FormGenerator — an entity whose every field is server-owned', () => {
+  const gen = new FormGenerator();
+  const content = gen.generate(domain({
+    entityName: 'Invoice',
+    fields: [
+      field({ name: 'id', type: 'java.util.UUID' }),
+      field({ name: 'totalCents', type: 'Long', readOnly: true }),
+      field({ name: 'number', type: 'String', inCreate: false, inUpdate: false }),
+    ],
+  }), CTX)!.content;
+
+  it('renders no control', () => {
+    expect(content).not.toContain('[formField]');
+  });
+
+  it('neither imports FormField nor declares it in the component imports', () => {
+    expect(content).not.toContain('FormField');
+    expect(content).toContain("import { form, submit } from '@angular/forms/signals';");
+    expect(content).not.toContain('imports: [');
   });
 });
 
