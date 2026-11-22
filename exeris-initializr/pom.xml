@@ -33,7 +33,7 @@
              AssertJ are the versions exeris-tooling-bom builds and tests with;
              ScaffoldVersionsTest fails when they differ. -->
         <initializr.h2.version>2.3.232</initializr.h2.version>
-        <initializr.postgresql.version>42.7.13</initializr.postgresql.version>
+        <initializr.postgresql.version>42.7.14</initializr.postgresql.version>
         <initializr.junit.version>5.11.4</initializr.junit.version>
         <initializr.assertj.version>3.27.7</initializr.assertj.version>
     </properties>

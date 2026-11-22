@@ -19,7 +19,7 @@
     <properties>
         <!--
           SDK 0.13.3, the final release on Maven Central (tag `v0.13.3`), the
-          line that pairs with kernel 0.13.1. Both Exeris pins are releases, as
+          line that pairs with kernel 0.13.2. Both Exeris pins are releases, as
           the released-pins rule requires of a tooling cut (ROADMAP "Versioning
           policy"), and both resolve from Central with no settings file.
 
@@ -35,7 +35,7 @@
         -->
         <exeris.sdk.version>0.13.3</exeris.sdk.version>
         <!--
-          Kernel 0.13.1 — the line SDK 0.13 pairs with. Its HTTP dispatcher asks
+          Kernel 0.13.2 — the line SDK 0.13 pairs with. Its HTTP dispatcher asks
           an `HttpRoutePolicy` about the path without its query string, and about
           a `HEAD` as the `GET` that serves it. Kernel 0.12.0 is the floor for
           three things the emitters name:
@@ -63,7 +63,7 @@
           `EventBus` (Javadoc) and `MemoryStats` (the `value` modifier) differ,
           and neither difference reaches a consumer.
         -->
-        <exeris.kernel.version>0.13.1</exeris.kernel.version>
+        <exeris.kernel.version>0.13.2</exeris.kernel.version>
 
         <auto-service.version>1.1.1</auto-service.version>
         <palantir.javapoet.version>0.15.0</palantir.javapoet.version>
@@ -81,7 +81,7 @@
              behind is not. tools/release-readiness fails a release where this value is below
              the jackson-databind version exeris-kernel-bom or exeris-sdk-bom, at the pinned
              versions, manages. -->
-        <jackson3.version>3.2.3</jackson3.version>
+        <jackson3.version>3.3.0</jackson3.version>
         <swagger-parser.version>2.1.45</swagger-parser.version>
         <!-- swagger-core carries the OpenAPI model types and the 3.1 mappers this module
              compiles against directly. It arrives transitively through swagger-parser, so
