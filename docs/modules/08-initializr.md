@@ -45,6 +45,16 @@ java -jar exeris-initializr-<version>.jar [--switch=value ...]
 | `--force` | write into a non-empty directory or over an existing archive |
 | `--version`, `--help` | print and exit |
 
+A request is validated on construction, and each of these is refused, the command line with `EXT-INIT-5001`:
+
+- an entity name that is one of `ProjectScaffoldRequest.RESERVED_ENTITY_NAMES` (`UUID`, `Field`, `ExerisDomain`, `String`, the types the entity template refers to by simple name);
+- a package whose first segment is `java`, or that holds `$`, which a shell expands in the README's run command;
+- an artifact id that does not start with a letter or a digit, ends in a dot, or is longer than `ProjectScaffoldRequest.MAX_ARTIFACT_ID_LENGTH` (100) characters, so the npm name derived from it stays within npm's limit;
+- an entity name, a package segment, a group id or an artifact id that is a Windows device name (`CON`, `PRN`, `AUX`, `NUL`, `COM1` to `COM9`, `LPT1` to `LPT9`), compared without regard to case, which Windows cannot extract; for a Maven id the part before its first dot counts;
+- a name that holds a character XML 1.0 forbids, a line separator or a bidirectional override.
+
+`ZipArchiveGenerator.write` refuses an archive root that is made only of dots, ends in a dot or a space, holds `:`, or starts, before its first dot, with a Windows device name. The database name is written to `docker-compose.yml` as a quoted string, and the README title is escaped.
+
 An unknown switch, a positional argument, a switch given twice, a value switch without its value, a flag with one, and a value the request does not accept are argument errors. `--output-dir` and `--zip` exclude each other.
 
 | Topology | Writes |

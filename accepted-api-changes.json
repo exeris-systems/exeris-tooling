@@ -58,5 +58,11 @@
     "since": "0.11",
     "adr": "ADR-096",
     "justification": "ADR-096 Amendment 4: the list route matches one case-insensitive term as a substring against the String fields @Field(searchable) marks, and every String field without @Field. A record pattern or deconstruction of <Entity>ListQuery breaks on the sixth component, while code calling the five-component constructor compiles unchanged. A field named search, which was an equality filter, is no longer one. docs/migration/0.11.0/java-31-list-route-search.md carries the steps."
+  },
+  {
+    "signature": "ProjectScaffoldRequest (exeris-initializr): IllegalArgumentException for an entityName in RESERVED_ENTITY_NAMES (UUID, Field, ExerisDomain, String) or a Windows device name, a package whose first segment is java, that holds '$', or that holds a Windows device name as a segment, an artifactId that does not start with a letter or a digit, ends in a dot, or is longer than MAX_ARTIFACT_ID_LENGTH (100), a groupId or artifactId that is, or before its first dot is, a Windows device name, a name with a character XML 1.0 forbids, a line separator or a bidirectional override; + RESERVED_ENTITY_NAMES, + MAX_ARTIFACT_ID_LENGTH; ZipArchiveGenerator.write and ProjectWriter.writeArchive: IllegalArgumentException for a root that ends in a dot or a space, holds ':' or is, before its first dot, a Windows device name",
+    "since": "0.12",
+    "adr": "ADR-091",
+    "justification": "Each refused value produced a project that did not build, an archive entry outside its root, or a file that cannot be extracted on Windows, so the request refuses it on construction and the archive writer refuses the root. A caller that passed one of these values gets an IllegalArgumentException where it got a project. docs/migration/0.12.0/java-01-initializr-refuses-unbuildable-input.md carries the steps."
   }
 ]

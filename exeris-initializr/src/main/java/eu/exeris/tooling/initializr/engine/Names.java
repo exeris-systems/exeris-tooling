@@ -50,8 +50,7 @@ final class Names {
 
     /** An npm package name from an artifactId, which holds only {@code [A-Za-z0-9_.-]}. */
     static String npmName(String artifactId) {
-        String name = artifactId.toLowerCase(Locale.ROOT);
-        return name.charAt(0) == '.' || name.charAt(0) == '_' ? "app-" + name : name;
+        return artifactId.toLowerCase(Locale.ROOT);
     }
 
     /** Text escaped for an XML element. */
