@@ -668,6 +668,39 @@ describe('generateView — a LIST renders its items as <li>', () => {
     expect(f.content.match(/<li>/g)).toHaveLength(1);
   });
 
+  it('a childless LIST bound to an entity iterates the store and shows the bound field per row', () => {
+    const f = generateView(ViewMetadataSchema.parse({
+      name: 'Directory',
+      regions: [{ slot: 'main', components: [
+        { type: 'LIST', binding: { source: 'ENTITY', ref: 'Commander', path: 'name' } },
+      ] }],
+    }), DEFAULT_CONFIG);
+    expect(f.content).toMatch(
+      /<ul class="exeris-list space-y-2" data-block="LIST">\n\s*@for \(commander of commanderStore\.entities\(\); track commander\.id\) \{\n\s*<li>\n\s*\{\{ commander\.name \}\}\n\s*<\/li>\n\s*\}\n\s*<\/ul>/,
+    );
+  });
+
+  it('a childless LIST bound to an entity without a path still iterates the store', () => {
+    const f = generateView(ViewMetadataSchema.parse({
+      name: 'Directory',
+      regions: [{ slot: 'main', components: [
+        { type: 'LIST', binding: { source: 'ENTITY', ref: 'Commander' } },
+      ] }],
+    }), DEFAULT_CONFIG);
+    expect(f.content).toMatch(/@for \(commander of commanderStore\.entities\(\); track commander\.id\) \{\n\s*<li>\n\s*<\/li>\n\s*\}/);
+  });
+
+  it('a childless GRID bound to an entity stays an empty element', () => {
+    const f = generateView(ViewMetadataSchema.parse({
+      name: 'Directory',
+      regions: [{ slot: 'main', components: [
+        { type: 'GRID', binding: { source: 'ENTITY', ref: 'Commander', path: 'name' } },
+      ] }],
+    }), DEFAULT_CONFIG);
+    expect(f.content).not.toContain('@for');
+    expect(f.content).toMatch(/data-block="GRID"><\/div>/);
+  });
+
   it('authored text on a LIST is an item too', () => {
     const f = generateView(ViewMetadataSchema.parse({
       name: 'Nav',

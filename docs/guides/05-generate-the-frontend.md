@@ -49,7 +49,13 @@ Generated: `src/app/pages/employee-directory.component.ts`, the `template` and t
         <section class="exeris-hero bg-exeris-primary text-white p-8 rounded-md" data-block="HERO"></section>
       </section>
       <section data-region="body">
-        <ul class="exeris-list space-y-2" data-block="LIST"></ul>
+        <ul class="exeris-list space-y-2" data-block="LIST">
+          @for (employee of employeeStore.entities(); track employee.id) {
+            <li>
+              {{ employee.lastName }}
+            </li>
+          }
+        </ul>
         <article class="exeris-card p-4" data-block="CARD" (click)="invite()"></article>
       </section>
     </main>
@@ -113,7 +119,7 @@ This is the `sdk-examples-app` job of `.github/workflows/build.yml`, which runs 
 
 ## Not available today
 
-- **Block content.** The `LIST` block's `@Bind(path = "lastName")` loads the store and renders an empty `<ul>`; the `HERO` block renders an empty section. The page is structure, filled by you.
+- **Block content.** The `LIST` block's `@Bind(path = "lastName")` loads the store and renders one `<li>` per employee showing `lastName`; the `HERO` block renders an empty section. The page is structure, filled by you.
 - **The `invite` action.** It is a stub, and `Employee` declares no `invite` action for it to call.
 
 ## Where this does not apply
