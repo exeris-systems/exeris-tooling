@@ -162,6 +162,15 @@ with `ng build`; `--view-only` writes the backend-less variant, and `--ssg` the 
 under `render: 'ssg'` with a parameterised page. `EXERIS_UI_KIT_PATH` points the sample
 at a local `exeris-sdk-ui-kit` checkout instead of the published UI kit.
 
+The `ng build (generated sample app)` job also builds an app whose view metadata is not written in
+the script: `ViewSiteFixtureE2ETest` compiles the Java sources in
+`exeris-e2e-tests/src/test/fixtures/view-site` (two `PAGE` views, one with built-in blocks, a form leaf and a
+list bound to an entity and one of authored blocks only) with javac and the processor, and `scripts/gen-sdk-examples-app.mjs` generates
+the app from the `view_*.json` it wrote. The job then runs `ng build` and `ng test` on it, and builds
+the same metadata a second time under `render: 'ssg'` (`gen-sdk-examples-app.mjs ... --ssg`, which
+writes the `exeris-codegen.json` with the sitemap and the site URL): the entity-free `About` page is
+prerendered and listed in `sitemap.xml`, and `/storefront`, which reads `Order`, is left to the browser.
+
 The package version is the Maven reactor's version: one `vX.Y.Z` tag releases both, and
 `check:version` holds them equal on every commit, `-SNAPSHOT` included.
 
