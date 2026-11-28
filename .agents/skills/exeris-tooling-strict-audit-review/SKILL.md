@@ -16,7 +16,7 @@ The audit is backed by two **hand-maintained** registries in
 `ExerisDomainProcessor.java`:
 - `INERT_ATTRIBUTES` — per-attribute (`@Field.dataType`, `@ActionParam.description`,
   `@ActionParam.required` at time of writing).
-- `INERT_ANNOTATIONS` — whole-annotation (`@EventSourced`, until its generator lands).
+- `INERT_ANNOTATIONS` — whole-annotation (`@EventSourced` and `@InternalApi`, until a generator reads them).
 
 The load-bearing rule (CLAUDE.md): **when a generator starts consuming one of these,
 DELETE its registry entry in the same change.** A stale entry produces a *false*

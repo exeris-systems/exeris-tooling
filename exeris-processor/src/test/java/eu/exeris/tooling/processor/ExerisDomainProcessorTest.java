@@ -4416,6 +4416,14 @@ class ExerisDomainProcessorTest {
                     .count();
         }
 
+        private long inertWarningCountFor(Compilation compilation, String attribute) {
+            return compilation.warnings().stream()
+                    .filter(d -> d.getMessage(null) != null
+                            && d.getMessage(null).contains("no code generator consumes it")
+                            && d.getMessage(null).contains(attribute + " is set"))
+                    .count();
+        }
+
         private boolean hasInertWarningFor(Compilation compilation, String attribute) {
             return compilation.warnings().stream()
                     .anyMatch(d -> d.getMessage(null) != null
@@ -4769,12 +4777,11 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("-Aexeris.strict stays silent on @SagaStep.parallel and .timeout — the kernel has no carrier")
-        void strictIsQuietOnKernelGatedSagaStepAttributes() {
-            // Both are extracted and read by no emitter, and both are deliberately unregistered:
-            // a FlowDefinition expresses neither concurrent steps nor a per-step deadline. The
-            // consumed @Saga attributes (timeout, maxRetries, version) and @SagaStep.compensation
-            // must not warn either.
+        @DisplayName("-Aexeris.strict reports @SagaStep.parallel and .timeout with the missing kernel contract")
+        void strictReportsKernelGatedSagaStepAttributes() {
+            // Both are extracted and read by no emitter: a FlowDefinition expresses neither
+            // concurrent steps nor a per-step deadline. The consumed @Saga attributes (timeout,
+            // maxRetries, version) and @SagaStep.compensation must stay quiet.
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.Payment",
                     """
@@ -4805,9 +4812,12 @@ class ExerisDomainProcessorTest {
                     .map(d -> d.getMessage(null))
                     .filter(m -> m != null && m.contains("no code generator consumes it"))
                     .toList())
-                    .as("only the two required attributes nothing dispatches")
-                    .allMatch(m -> m.contains("@SagaStep.service") || m.contains("@SagaStep.command"))
-                    .hasSize(2);
+                    .as("the two attributes nothing dispatches and the two the kernel has no carrier for")
+                    .allMatch(m -> m.contains("@SagaStep.service") || m.contains("@SagaStep.command")
+                            || m.contains("@SagaStep.parallel") || m.contains("@SagaStep.timeout"))
+                    .anyMatch(m -> m.contains("@SagaStep.parallel") && m.contains("FlowDefinition"))
+                    .anyMatch(m -> m.contains("@SagaStep.timeout") && m.contains("FlowStepDescriptor"))
+                    .hasSize(4);
         }
 
         @Test
@@ -5393,6 +5403,187 @@ class ExerisDomainProcessorTest {
 
             assertThat(compilation).succeeded();
             assertThat(inertWarnings(compilation)).isZero();
+        }
+
+        private Compilation strictCompileOf(String className, String source) {
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(JavaFileObjects.forSourceString("com.example." + className, source));
+            assertThat(compilation).succeeded();
+            return compilation;
+        }
+
+        private String entityWithField(String fieldAnnotations) {
+            return """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+                    import eu.exeris.sdk.annotation.Relationship;
+                    import eu.exeris.sdk.annotation.Validation;
+
+                    @ExerisDomain(module = "core", path = "/widgets")
+                    public class Widget { private java.util.UUID id;
+                        %s
+                        private String name;
+                    }
+                    """.formatted(fieldAnnotations);
+        }
+
+        @Test
+        @DisplayName("@Validation: an unread attribute warns under strict on a field with and without @Field")
+        void strictWarnsOnInertValidationAttributes() {
+            assertThat(inertWarningCountFor(strictCompileOf("Widget",
+                    entityWithField("@Field(label = \"Name\") @Validation(email = true)")),
+                    "@Validation.email")).isEqualTo(1);
+            assertThat(inertWarningCountFor(strictCompileOf("Widget",
+                    entityWithField("@Validation(message = \"bad\")")),
+                    "@Validation.message")).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("@Validation: the consumed bounds and an untouched default stay quiet")
+        void strictIsQuietOnConsumedValidationAttributes() {
+            assertThat(inertWarnings(strictCompileOf("Widget",
+                    entityWithField("@Field(label = \"Name\") @Validation(minLength = 2, maxLength = 9, "
+                            + "pattern = \"[a-z]+\")")))).isZero();
+            assertThat(inertWarnings(strictCompileOf("Widget",
+                    entityWithField("@Validation")))).isZero();
+        }
+
+        @Test
+        @DisplayName("@Relationship: an unread attribute warns under strict, the consumed ones do not")
+        void strictReportsInertRelationshipAttributes() {
+            assertThat(inertWarningCountFor(strictCompileOf("Widget",
+                    entityWithField("@Relationship(targetEntity = Object.class, displayField = \"name\", searchable = true)")),
+                    "@Relationship.searchable")).isEqualTo(1);
+            assertThat(inertWarnings(strictCompileOf("Widget",
+                    entityWithField("@Relationship(targetEntity = Object.class, displayField = \"name\")"))))
+                    .isZero();
+        }
+
+        @Test
+        @DisplayName("@PrimaryKey: a refused strategy gets the error alone, not the strict audit as well")
+        void refusedPrimaryKeyStrategyIsNotAudited() {
+            Compilation refused = javac()
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(JavaFileObjects.forSourceString("com.example.Order", """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.system.PrimaryKey;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    public class Order {
+                        @PrimaryKey(strategy = PrimaryKey.Strategy.SEQUENCE) private java.util.UUID orderId;
+                    }
+                    """));
+
+            assertThat(refused).hadErrorContaining("EXT-PROC-1021");
+            assertThat(inertWarningCountFor(refused, "@PrimaryKey.strategy")).isZero();
+        }
+
+        private String graphEntity(String graphAnnotation, String edgeAnnotations) {
+            return """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Graph;
+                    import eu.exeris.sdk.annotation.GraphEdge;
+                    import eu.exeris.sdk.annotation.GraphEdges;
+
+                    @ExerisDomain(module = "core", path = "/orders")
+                    %s
+                    public class Order { private java.util.UUID id;
+                        %s
+                        private String owner;
+                    }
+                    """.formatted(graphAnnotation, edgeAnnotations);
+        }
+
+        @Test
+        @DisplayName("@Graph: an unread attribute warns under strict, nodeClass does not")
+        void strictReportsInertGraphAttributes() {
+            Compilation inert = strictCompileOf("Order",
+                    graphEntity("@Graph(nodeClass = \"Order\", idProperty = \"orderId\")", ""));
+            assertThat(hasInertWarningFor(inert, "@Graph.idProperty")).isTrue();
+            assertThat(hasInertWarningFor(inert, "@Graph.nodeClass")).isFalse();
+            assertThat(inertWarnings(strictCompileOf("Order",
+                    graphEntity("@Graph(nodeClass = \"Order\")", "")))).isZero();
+        }
+
+        @Test
+        @DisplayName("@GraphEdge: an unread attribute warns once per repeated edge, type and target do not")
+        void strictReportsInertGraphEdgeAttributes() {
+            Compilation single = strictCompileOf("Order", graphEntity("@Graph",
+                    "@GraphEdge(type = \"OWNED_BY\", targetLabel = \"User\", upsert = true)"));
+            assertThat(inertWarnings(single)).isEqualTo(1);
+            assertThat(hasInertWarningFor(single, "@GraphEdge.upsert")).isTrue();
+            assertThat(inertWarnings(strictCompileOf("Order", graphEntity("@Graph",
+                    "@GraphEdge(type = \"OWNED_BY\", targetLabel = \"User\", bidirectional = true,"
+                            + " direction = GraphEdge.Direction.INCOMING, staticWeight = 2.0,"
+                            + " weightField = \"score\")")))).isZero();
+
+            Compilation repeated = strictCompileOf("Order", graphEntity("@Graph",
+                    "@GraphEdge(type = \"OWNED_BY\", targetLabel = \"User\", weighted = true)"
+                            + " @GraphEdge(type = \"BILLED_TO\", targetLabel = \"Account\", weighted = true)"));
+            assertThat(inertWarnings(repeated)).isEqualTo(2);
+
+            assertThat(inertWarnings(strictCompileOf("Order", graphEntity("@Graph",
+                    "@GraphEdge(type = \"OWNED_BY\", targetLabel = \"User\")")))).isZero();
+        }
+
+        private String view(String extraAttributes) {
+            return """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.View;
+
+                    @View(name = "Landing", kind = View.Kind.PAGE, route = "/landing", title = "Landing"%s)
+                    public final class Landing {
+                    }
+                    """.formatted(extraAttributes);
+        }
+
+        @Test
+        @DisplayName("@View: titleKey and layout warn under strict, the consumed attributes do not")
+        void strictReportsInertViewAttributes() {
+            Compilation compilation = strictCompileOf("Landing",
+                    view(", titleKey = \"landing.title\", layout = \"wide\""));
+            assertThat(hasInertWarningFor(compilation, "@View.titleKey")).isTrue();
+            assertThat(hasInertWarningFor(compilation, "@View.layout")).isTrue();
+            assertThat(inertWarnings(strictCompileOf("Landing", view("")))).isZero();
+        }
+
+        @Test
+        @DisplayName("@InternalApi: reported once per entity under strict, silent without it")
+        void strictReportsInternalApiAnnotation() {
+            String source = """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.InternalApi;
+
+                    @ExerisDomain(module = "core", path = "/widgets")
+                    @InternalApi
+                    public class Widget { private java.util.UUID id; }
+                    """;
+            Compilation strict = strictCompileOf("Widget", source);
+            assertThat(strict.warnings().stream()
+                    .filter(d -> d.getMessage(null) != null
+                            && d.getMessage(null).contains("@InternalApi is set but no code generator consumes it"))
+                    .count()).isEqualTo(1);
+
+            Compilation quiet = javac()
+                    .withOptions(METADATA_ONLY)
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(JavaFileObjects.forSourceString("com.example.Widget", source));
+            assertThat(quiet).succeeded();
+            assertThat(quiet.warnings().stream()
+                    .filter(d -> d.getMessage(null) != null && d.getMessage(null).contains("@InternalApi"))
+                    .count()).isZero();
         }
     }
 
