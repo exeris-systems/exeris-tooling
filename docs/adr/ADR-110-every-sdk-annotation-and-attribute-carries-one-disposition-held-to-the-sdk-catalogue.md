@@ -10,7 +10,7 @@ slug: adr/ADR-110
 # ADR-110 — Every SDK annotation and attribute carries one disposition, held to the SDK catalogue
 
 - **Status:** ACCEPTED (2026-11-28) · accepted-on-merge per the per-repo pattern (ADR-047 / ADR-058)
-- **Deciders:** `exeris-tooling` (registry format, test placement)
+- **Deciders:** Arkadiusz Przychocki
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / processor — per-repo
 - **Visibility:** public
