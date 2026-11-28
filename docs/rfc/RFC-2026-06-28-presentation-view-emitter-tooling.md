@@ -40,7 +40,7 @@ Precedent this emitter mirrors, one-for-one:
 - SDK records `ViewMetadata` (`name/kind/route/title/titleKey/layout/regions`), `RegionMetadata` (`slot/components`), `ComponentNodeMetadata` (`type/customType/binding/props/children`(recursive)/`field`:`UIFieldMetadata`), `BindingMetadata` (`source/ref/path/expression/language`); enums `ViewKind` / `BlockType` / `BindSource`; `@JsonInclude(NON_NULL)` (deliberate, the boxed-zero trap).
 - Tooling: no `@View` in `@SupportedAnnotationTypes`; no `view_*.json`; no `ViewGenerator`; `ViewMetadataSchema` absent from codegen-ts `domain-model.ts`. `index.ts` already separates `enum_*` files by basename — `view_*` follows the same pattern.
 
-## Recommendation (first slice — DRAFT, provisional)
+## Recommendation (first slice — as shipped, fixed by ADR-111)
 
 ### 1. Class-structure-derived extraction (the authoring convention this slice fixes)
 The SDK resolved "class-structure-derived" but left the exact walk to the emitter RFC. This slice fixes it as:
