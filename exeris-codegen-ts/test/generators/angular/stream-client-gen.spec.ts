@@ -272,7 +272,7 @@ describe('StreamClientGenerator — spectate stream', () => {
 
   it('types each frame by the payload of the @DomainEvent that names it', () => {
     expect(content).toContain('export interface OrderOrderPlacedSpectatePayload {');
-    expect(content).toContain('// sensitive: redacted before publish');
+    expect(content).not.toContain('sensitive: redacted');
     expect(content).toContain("| { readonly event: 'OrderPlaced'; readonly data: OrderOrderPlacedSpectatePayload }");
     expect(content).toContain("| { readonly event: 'OrderCancelled'; readonly data: OrderOrderCancelledSpectatePayload }");
   });
@@ -463,7 +463,7 @@ describe('generateStreamClient — top-level convenience function', () => {
     expect(file!.content).toContain('export class OrderStreamClient');
   });
 
-  it('falls back to unknown for payload fields not declared on the entity and normalises event names', () => {
+  it('leaves out payload fields not declared on the entity and normalises event names', () => {
     const unmapped = domain({
       entityName: 'Order',
       realTimeApi: true,
@@ -474,7 +474,7 @@ describe('generateStreamClient — top-level convenience function', () => {
     const gen = new StreamClientGenerator();
     const out = gen.generate(unmapped, CTX)!.content;
     expect(out).toContain('export interface OrderOrderStatusSpectatePayload {');
-    expect(out).toContain('unmappedField: unknown;');
+    expect(out).not.toContain('unmappedField');
   });
 });
 

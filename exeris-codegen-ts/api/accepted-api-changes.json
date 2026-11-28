@@ -364,5 +364,11 @@
     "since": "0.12",
     "adr": "ADR-092",
     "justification": "Additive: both keys are optional with no default, so a config that sets neither regenerates byte-identical output and init writes neither. With render ssg, the scaffold on and sitemap true, the run writes src/sitemap.xml (the prerendered PAGE views under siteUrl) and src/robots.txt, and angular.json copies both to the build output. sitemap true without siteUrl, or with a siteUrl that is not an absolute http(s) URL, throws SitemapConfigError before any file is written."
+  },
+  {
+    "signature": "events/<entity>.events.ts <Entity><Event>Event: - occurredAt, - userId, - correlationId; DomainEvent (events/event-bus.service.ts): - occurredAt, - userId, - correlationId; <Entity><Event>Payload and <Entity><Event>SpectatePayload: - sensitiveFields members, - members no entity field carries (were unknown)",
+    "since": "0.12",
+    "adr": "ADR-092",
+    "justification": "The generated Java publisher sends the payload record alone: the event's payloadFields without sensitiveFields, and no name the entity does not declare. The interfaces declared occurredAt, userId and correlationId that no frame carries, a redacted member that is never sent, and an unknown member for a name the publisher skips; a consumer that read them got undefined. The interfaces now declare the fields the publisher sends and no other; id, aggregateId, aggregateType and type are unchanged. docs/migration/0.12.0/ts-07-event-interface-declares-sent-fields.md carries the step."
   }
 ]
