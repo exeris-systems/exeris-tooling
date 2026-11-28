@@ -11,7 +11,7 @@ last-verified: 2026-11-08
 
 **Module:** `eu.exeris:exeris-codegen-core`
 
-`exeris-codegen-core` holds what a generator needs that is not Java emission: the generator interface and its registry, the output writer that owns a generated tree, the derivations from `DomainMetadata` that both the emitted code and the build-time checks must agree on (subsystems, drivers, route requirements), and the capability graph with its composition stamp and bytecode Wall scan.
+`exeris-codegen-core` holds what a generator needs that is not Java emission: the generator interface and its registry, the output writer that owns a generated tree, the derivations from `DomainMetadata` that both the emitted code and the build-time checks must agree on (subsystems, drivers, route requirements), the capability graph with its composition stamp and bytecode Wall scan, and the reader of a peer backend's contract artifact.
 
 It depends on no emission library. JavaPoet stays in [codegen-java](04-codegen-java.md), because a helper whose signature exposes `TypeSpec.Builder` would pull it in here ([ADR-015](../adr/ADR-015-codegen-emission-strategy.md), decision 4).
 
@@ -64,6 +64,19 @@ Because the emitted list and the build-time requirement read the same predicates
 
 `CapTierWall` unions the constant pool, field and method descriptors, `Signature` attributes and annotation types. Reflective reach-through by string is not caught, and string constants are deliberately not scanned; the class Javadoc names both limits.
 
+### Peer contracts
+
+The `contract` package reads what another backend publishes under `META-INF/exeris/contract/` ([ADR-048](../adr/ADR-048-cross-app-contract-mesh.md) Amendment 3).
+
+| Type | Guarantee |
+|---|---|
+| `contract.ContractLayout` | The location, `META-INF/exeris/contract`, and which file names carry which meaning: `cap-manifest.json` is the manifest, `enum_*.json` an enum, and any other `*.json` an entity candidate unless it is a `capability_`, `view_` or `events.json` file |
+| `contract.PeerReference` | A peer the consumer declares: a name and exactly one of a path or a `groupId:artifactId:version` coordinate. The name is an ASCII letter followed by letters, digits and single hyphens, because it lands in generated source |
+| `contract.PeerContractReader` | Reads one contract from a contract directory, a directory holding `META-INF/exeris/contract/`, or a `.jar`. The manifest is required and its `schemaVersion` must be at least `2`. Only the manifest, `enum_*.json` and entity files are read, each at most 16 MiB; entities and enums are sorted by qualified name. An entity whose `schemaVersion` differs from the SDK's current one is kept and adds a warning; an entity with none is refused |
+| `contract.PeerContractResolver` | Reads every declared peer, sorted by name. A coordinate goes to a `CoordinateResolver` the caller supplies, which keeps the Maven resolver out of this module. A name declared twice, and a path that lies inside a module of the current reactor, are refused |
+| `contract.PeerContract` | The result: the parsed manifest, the entity and enum files, and the warnings |
+| `contract.PeerContractException` | A refusal; its message begins `peer '<name>'` |
+
 ### Also in the module
 
 `MetadataLoader` reads `exeris-metadata/*.json` into a type the caller names, in file-name order, ignoring unknown properties. The Java pipeline does not call it: `CodegenPipeline.loadMetadata` reads the same files by the same `inCreate` and `inUpdate` rule and additionally resolves enum types and skips the `enum_` and `capability_` files. `CodegenContext` is a record of generation options that no main code in the reactor constructs.
@@ -80,6 +93,7 @@ None: build-time. Everything here runs inside `exeris:generate`, the `verify-*` 
 | A capability module's classes cross the Wall | `CapTierWallException` with its `violations()`, printed as `EXT-PLUG-2203` |
 | A class file cannot be read during the Wall scan | `IOException`, printed as `EXT-PLUG-2204` |
 | An unparseable version range | `IllegalArgumentException` from `VersionRange.parse` |
+| A peer's contract is refused: the location does not exist, is a file that is not a `.jar`, holds no manifest or no contract directory, has a manifest below `schemaVersion` 2 or without one, has an unreadable JSON file, a file over 16 MiB or an entity with no `schemaVersion`, or the peer is declared twice, has an unusable name or lies inside the current reactor | `PeerContractException` naming the peer. The Maven plugin prints it as `EXT-PLUG-2006` |
 | A required SPI has no registration on the runtime classpath | A `RuntimeDriverCheck.Result` whose `missing()` is non-empty; `exeris:verify-runtime` fails with `EXT-PLUG-2302`. `scanned()` is carried so a pass over an empty classpath cannot read as a pass |
 | A metadata file named to `MetadataLoader.load` does not exist | `IOException` naming the path |
 

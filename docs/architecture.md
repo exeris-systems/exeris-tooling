@@ -119,7 +119,7 @@ Generated code is committed into the application's repository ([committed genera
 
 At **L2** the application runs `exeris:detach`, which moves the generated Java into `src/main/java` byte for byte, drops the ignore entry, and leaves a file that already exists at the target in place. From then on the code is the application's and regeneration stops. There is no reattach; the open question is [RFC-2026-06-05](rfc/RFC-2026-06-05-reattach-edit-safety-and-provenance.md).
 
-The Maven build pays for L1 with a two-pass first build: `exeris:generate` runs at `generate-sources`, before the `compile` in which the processor writes the metadata it reads. `exeris-app-parent` binds the goals, `verify-capabilities` and `verify-runtime` at `process-classes` against fresh metadata, and `exeris-initializr` writes a `first-build.sh` that runs the two passes.
+The Maven build pays for L1 with a two-pass first build: `exeris:generate` runs at `generate-sources`, before the `compile` in which the processor writes the metadata it reads. `exeris-app-parent` binds the goals, `verify-capabilities`, `verify-runtime` and `contract` at `process-classes` against fresh metadata, and `exeris-initializr` writes a `first-build.sh` that runs the two passes.
 
 ## Determinism and output stability
 

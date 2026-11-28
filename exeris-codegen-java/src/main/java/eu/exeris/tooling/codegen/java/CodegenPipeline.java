@@ -16,6 +16,7 @@ import eu.exeris.tooling.codegen.core.capability.CapabilityGraph;
 import eu.exeris.tooling.codegen.core.capability.CapabilityGraphException;
 import eu.exeris.tooling.codegen.core.capability.CapabilityModuleDescriptor;
 import eu.exeris.tooling.codegen.core.capability.CompositionStamp;
+import eu.exeris.tooling.codegen.core.contract.ContractLayout;
 import eu.exeris.tooling.codegen.core.driver.RequiredDrivers;
 import eu.exeris.tooling.codegen.core.driver.RuntimeDriverCheck;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
@@ -42,15 +43,18 @@ import eu.exeris.tooling.diagnostics.DiagnosticId;
 import java.io.IOException;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.SortedSet;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.stream.Stream;
 
@@ -73,7 +77,7 @@ public final class CodegenPipeline {
      * emitted by {@link #run}, preserved (not re-emitted) on the T18(a) deferred
      * capability-failure path. Package-private for test visibility.
      */
-    static final String CAP_MANIFEST = "cap-manifest.json";
+    static final String CAP_MANIFEST = ContractLayout.MANIFEST;
 
     /**
      * The order every run sees the domains in: by fully-qualified entity name. Project-wide
@@ -942,12 +946,7 @@ public final class CodegenPipeline {
                                        OutputWriter writer,
                                        boolean deferCapabilityFailure) throws IOException {
         LOG.log(Level.INFO, "Resolving capability graph (" + capabilities.size() + " module(s))");
-        // ADR-024 obligation 7: stamp the composition with its release identity. The
-        // version is a build input (not derivable from the graph) — the build/plugin sets
-        // -Dexeris.composition.version=${project.version}; absent, it degrades to
-        // CompositionStamp.UNVERSIONED. The content binding is always graph-derived.
-        String compositionVersion = System.getProperty("exeris.composition.version",
-                CompositionStamp.UNVERSIONED);
+        String compositionVersion = compositionVersion();
         CapabilityGraph graph;
         try {
             graph = CapabilityGraph.build(capabilities, compositionVersion);
@@ -977,15 +976,108 @@ public final class CodegenPipeline {
             LOG.log(Level.WARNING, DiagnosticId.OPTIONAL_REQUIREMENT_UNSATISFIED.format("capability: " + warning));
         }
 
+        writer.writeResource(CAP_MANIFEST, serializeManifest(graph));
+        LOG.log(Level.INFO, "Wrote " + CAP_MANIFEST + " (init order: " + graph.initOrder() + ")");
+        return 1;
+    }
+
+    /**
+     * The composition release identity the manifest is stamped with (ADR-024 obligation 7). It is a
+     * build input, not derivable from the graph: the build sets
+     * {@code -Dexeris.composition.version=${project.version}}; absent, it is
+     * {@link CompositionStamp#UNVERSIONED}. The content binding is always graph-derived. Both
+     * {@code exeris:generate} and {@code exeris:contract} read it here, so one build stamps one value.
+     */
+    private static String compositionVersion() {
+        return System.getProperty("exeris.composition.version", CompositionStamp.UNVERSIONED);
+    }
+
+    /** The one serialization of {@code cap-manifest.json}, shared by the generated tree and the contract. */
+    private String serializeManifest(CapabilityGraph graph) throws IOException {
         DefaultPrettyPrinter printer = new DefaultPrettyPrinter();
         DefaultIndenter indenter = new DefaultIndenter("  ", "\n");
         printer.indentObjectsWith(indenter);
         printer.indentArraysWith(indenter);
-        String json = mapper.writer(printer).writeValueAsString(graph) + "\n";
+        return mapper.writer(printer).writeValueAsString(graph) + "\n";
+    }
 
-        writer.writeResource(CAP_MANIFEST, json);
-        LOG.log(Level.INFO, "Wrote " + CAP_MANIFEST + " (init order: " + graph.initOrder() + ")");
-        return 1;
+    /**
+     * Writes the backend's contract artifact (ADR-048 Amendment 3): the resolved capability graph of
+     * the build as {@code cap-manifest.json}, one file per entity and each {@code enum_*.json}, byte
+     * for byte as the processor wrote them. A build with no capability module writes the graph of the
+     * empty composition. An existing contract directory is deleted first, so the result holds only
+     * what this call wrote.
+     *
+     * <p>The graph is resolved before anything is touched: one that does not resolve throws and
+     * leaves the previous contract in place. The manifest is the one {@code exeris:generate} writes
+     * for the same metadata and composition version.
+     *
+     * @param metadataDir  directory holding processor-emitted JSON; may be absent, which is the empty
+     *                     composition with no entities
+     * @param contractDir  the contract directory to replace ({@code META-INF/exeris/contract} under
+     *                     the class output); a path that does not end in that is refused
+     * @return the number of files written, the manifest included
+     * @throws IOException if the metadata cannot be read, the contract cannot be written, or
+     *         {@code contractDir} is not a contract location
+     * @throws eu.exeris.tooling.codegen.core.capability.CapabilityGraphException (unchecked) if the
+     *         capability graph cannot be resolved
+     * @since 0.12
+     */
+    public int writeContract(Path metadataDir, Path contractDir) throws IOException {
+        Objects.requireNonNull(metadataDir, "metadataDir");
+        Objects.requireNonNull(contractDir, "contractDir");
+        // The directory is deleted before it is written, so only the one place a contract lives is
+        // accepted: a misconfigured path never reaches a tree this call did not create.
+        if (!contractDir.endsWith(Path.of(ContractLayout.DIRECTORY))) {
+            throw new IOException("the contract directory must end in " + ContractLayout.DIRECTORY
+                    + ", got " + contractDir);
+        }
+
+        CapabilityGraph graph = CapabilityGraph.build(loadCapabilities(metadataDir), compositionVersion());
+        String manifest = serializeManifest(graph);
+
+        // Name -> bytes, in file-name order: the entry set and its order are a function of the
+        // metadata directory's content, not of the filesystem's listing order.
+        Map<String, byte[]> files = new TreeMap<>();
+        if (Files.isDirectory(metadataDir)) {
+            try (Stream<Path> listing = Files.list(metadataDir)) {
+                List<Path> sorted = listing.filter(Files::isRegularFile).sorted(FILE_NAME_ORDER).toList();
+                for (Path file : sorted) {
+                    String name = file.getFileName().toString();
+                    if (ContractLayout.isEnum(name)
+                            || (ContractLayout.isEntityCandidate(name) && declaresEntity(file))) {
+                        files.put(name, Files.readAllBytes(file));
+                    }
+                }
+            }
+        }
+
+        deleteTree(contractDir);
+        Files.createDirectories(contractDir);
+        Files.writeString(contractDir.resolve(ContractLayout.MANIFEST), manifest, StandardCharsets.UTF_8);
+        for (Map.Entry<String, byte[]> file : files.entrySet()) {
+            Files.write(contractDir.resolve(file.getKey()), file.getValue());
+        }
+        LOG.log(Level.INFO, "Wrote contract " + contractDir + " (" + (files.size() + 1) + " file(s))");
+        return files.size() + 1;
+    }
+
+    /** Whether the JSON file is an entity's metadata: it names an entity. */
+    private boolean declaresEntity(Path file) throws IOException {
+        JsonNode name = mapper.readTree(file.toFile()).path("entityName");
+        return name.isTextual() && !name.asText().isBlank();
+    }
+
+    private static void deleteTree(Path root) throws IOException {
+        if (!Files.exists(root)) {
+            return;
+        }
+        try (Stream<Path> walk = Files.walk(root)) {
+            List<Path> paths = walk.sorted(Comparator.reverseOrder()).toList();
+            for (Path path : paths) {
+                Files.delete(path);
+            }
+        }
     }
 
     private static void writeFile(OutputWriter writer, GeneratedFile file) throws IOException {

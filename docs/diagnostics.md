@@ -119,8 +119,8 @@ written is the same either way.
 
 Printed by Maven as the goal's failure or warning. A failure that wraps a user-side exception (an
 unresolved capability graph, a Wall violation, the empty-metadata refusal) keeps that exception's
-text after the identifier; an I/O failure (2002, 2003, 2101, 2202, 2204, 2301) ends with the cause,
-so it is visible without `mvn -e`.
+text after the identifier; an I/O failure (2002, 2003, 2101, 2202, 2204, 2301, 2401) ends with the
+cause, so it is visible without `mvn -e`.
 
 ### 20xx — `exeris:generate`
 
@@ -131,6 +131,8 @@ so it is visible without `mvn -e`.
 | `EXT-PLUG-2003` | Test generation failed reading metadata or writing the generated test tree. | As 2002, for the generated-test output directory. |
 | `EXT-PLUG-2004` | An artefact the generated code needs is not on the classpath it is compiled or run against. A warning: for an artefact the code imports, `javac` fails next, on a missing package; for `com.h2database:h2`, which the generated integration tests need at test runtime and import nowhere ([ADR-058](adr/ADR-058-generated-test-emission-channel.md) Amendment 1), the integration tests fail next, on a missing driver. This line names the jar. Printed once for the main sources (compile, provided or system scope) and once for the generated tests (any scope). | Add each `groupId:artifactId` the message lists: the main-source ones at compile scope, or depend on `eu.exeris:exeris-app-starter` (type `pom`), which declares all of them; JUnit 5, AssertJ and, under `exeris.integrationTests`, H2 at test scope (`exeris-app-bom` manages the H2 version). A dependency at runtime scope does not reach the compile classpath, even through a driver that depends on it. |
 | `EXT-PLUG-2005` | Integration-test generation failed reading metadata or writing the generated integration-test tree (`exeris.integrationTests=true`, ADR-058 Amendment 1). | As 2002, for the generated integration-test output directory (`exeris.integrationTestOutputDir`). |
+| `EXT-PLUG-2006` | A peer's contract was refused ([ADR-048](adr/ADR-048-cross-app-contract-mesh.md) Amendment 3), and nothing was generated. The message names the peer, then one of: the path or coordinate cannot be read or resolved; the location holds neither `cap-manifest.json` nor `META-INF/exeris/contract/`; a downloaded jar whose checksum does not match, or whose repository serves no checksum, which is refused whatever the build's own checksum flags (the message starts `checksum not verified:`); the manifest is missing, is not JSON, or has a `schemaVersion` below 2; an entity file carries no `schemaVersion`; a `<path>` lies inside a module of the current build; a peer is declared twice, with a name that is not a letter followed by letters, digits and single hyphens, or with both or neither of `<path>` and `<coordinate>`. | Fix what the message names. A contract that is missing was never written: build the backend through `process-classes` (`mvn package`, not `mvn compile`). Declare a peer built in the same reactor by `<coordinate>` and list the producer under the plugin's `<dependencies>`; keep `<path>` for a contract built outside this build. Rebuild a v1 peer with a current tooling. |
+| `EXT-PLUG-2007` | A peer entity's `schemaVersion` differs from the one this build reads. A warning that names the peer, the entity and both versions. | Rebuild the peer, or this consumer, with the same SDK line; types generated from a peer on another schema may not match its wire shape. |
 
 ### 21xx — `exeris:detach`
 
@@ -159,6 +161,12 @@ is bound to take the verdict, and by the `CodegenMain` command line, which has n
 |---|---|---|
 | `EXT-PLUG-2301` | Domain metadata could not be read while checking for runtime drivers. | Check the cause; rebuild so the processor rewrites the metadata. |
 | `EXT-PLUG-2302` | The generated application has no kernel driver on its runtime classpath. | Add the driver artefact the message names to the module's dependencies, or set `-Dexeris.verifyRuntime.skip=true` if another module runs the generated code. |
+
+### 24xx — `exeris:contract`
+
+| ID | Meaning | What to do |
+|---|---|---|
+| `EXT-PLUG-2401` | The contract artifact was not written: the capability graph does not resolve (the problems follow the identifier, as in 2201), or the metadata could not be read or `META-INF/exeris/contract/` could not be written. The previous contract is left in place when the graph is the cause. | Fix the listed capability problems, or check the cause for the path, permissions and disk space of `target/classes`. `-Dexeris.contract.skip=true` stops the goal and publishes no contract. |
 
 ## Code-generation pipeline — `EXT-GEN`
 

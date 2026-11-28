@@ -33,12 +33,14 @@ The kernel is not a dependency of this module: generators write source that name
 
 | Type | Guarantee |
 |---|---|
-| `CodegenPipeline` | `createDefault()` wires the per-entity registry of `KernelGeneratorStrategy`, `KernelApplicationGenerator` and a mapper that ignores unknown metadata fields. `run(metadataDir, outputDir, basePackage, allowEmpty, deferCapabilityFailure)` writes the main tree and returns the file count; `runTests(...)` writes the generated tests; `runIntegrationTests(...)` writes the generated integration tests, or reports why it withheld them; `validateCapabilities`, `verifyCapTierWall`, `verifyRuntimeDrivers` and `requiredCompileArtifacts` serve the plugin goals |
+| `CodegenPipeline` | `createDefault()` wires the per-entity registry of `KernelGeneratorStrategy`, `KernelApplicationGenerator` and a mapper that ignores unknown metadata fields. `run(metadataDir, outputDir, basePackage, allowEmpty, deferCapabilityFailure)` writes the main tree and returns the file count; `runTests(...)` writes the generated tests; `runIntegrationTests(...)` writes the generated integration tests, or reports why it withheld them; `writeContract(metadataDir, contractDir)` writes the backend's contract artifact; `validateCapabilities`, `verifyCapTierWall`, `verifyRuntimeDrivers` and `requiredCompileArtifacts` serve the plugin goals |
 | `CodegenMain`, `CliArgs` | The command line packaged by [codegen-cli](07-codegen-cli.md): parses `--switch=value` arguments and maps outcomes to exit status `0`, `1` or `2` |
 | `kernel.KernelGeneratorStrategy` | The registered per-entity generators, in dispatch order |
 | `kernel.KernelApplicationGenerator` | The project-wide files: `generateAll(domains, basePackage, composed)` and `generateForeignKeys(domains)` |
 
 `CodegenPipeline.run` loads every domain from `metadataDir`, skipping the `enum_` and `capability_` files, resolves each field's enum type against the `enum_*.json` files, and sorts the domains by fully qualified name. It refuses before the first write (below), calls every registered generator for every entity with the whole build, writes the project-wide files, writes `cap-manifest.json` when the build has a `@CapabilityModule`, and prunes what the previous run wrote and this run did not.
+
+`CodegenPipeline.writeContract` writes the contract a consuming build reads ([ADR-048](../adr/ADR-048-cross-app-contract-mesh.md) Amendment 3): `cap-manifest.json`, one file per entity and each `enum_*.json`, the last two copied byte for byte from the processor's output. A build with no `@CapabilityModule` gets the manifest of the empty composition. The manifest comes from the serializer and the composition version `run` uses, so both write the same bytes for the same metadata. The capability graph is resolved before anything is touched, and one that does not resolve throws and leaves the previous contract in place. The target must end in `META-INF/exeris/contract`, and the directory is replaced as a whole.
 
 ### The generated application
 

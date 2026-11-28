@@ -73,6 +73,7 @@ The command line prints its errors without an identifier: the `TS` area of [ADR-
 | `--input` exists and holds no metadata, and no peer is declared | A warning, exit status 0; nothing is generated or deleted |
 | A metadata file does not match `DomainMetadataSchema` | `Error:` with the Zod message, exit status 1 |
 | A declared peer has no manifest or a `schemaVersion` below the floor | The run fails; a peer contract that cannot be verified is not emitted from |
+| A declared peer path is a jar, or a Maven coordinate | Not read as a contract: a peer path is a directory, either the contract directory or one that holds `META-INF/exeris/contract/`; resolving a jar or a coordinate is the Java side's |
 | A generated path would escape the output directory | `Target path escapes output directory`, and the run fails |
 | An existing file is not the tool's | It is left in place and not recorded; rerun with `--overwrite` to replace it |
 | `init` finds `exeris-codegen.json` already present | A warning, exit status 1, unless `--force` |

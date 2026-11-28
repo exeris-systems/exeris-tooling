@@ -32,7 +32,10 @@ under `-Dexeris.integrationTests=true` (`src/test/generated-it/java`, ADR-058 Am
 manifest path is relative to its tree
 and uses forward slashes. The TypeScript generator's manifest records its project-root scaffold
 files with a leading `./` (`./package.json`), as composed; strip a leading `./` before matching. The
-Java manifests never carry one.
+Java manifests never carry one. The contract artifact `exeris:contract` writes, `META-INF/exeris/contract/` under
+the class output (`cap-manifest.json`, one file per entity and each `enum_*.json`), is outside these trees: it
+is a copy of the processor's output and the resolved capability graph, owned by no generator and listed in no
+manifest ([ADR-048](adr/ADR-048-cross-app-contract-mesh.md) Amendment 3).
 
 For each path, take the first row, in catalogue order, whose `outputRoot` is the tree the manifest
 sits in and whose `pathPattern` matches the whole path. That row names the generator. When the row

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>eu.exeris.fixture</groupId>
+        <artifactId>contract-reactor</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>reactor-consumer</artifactId>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>eu.exeris</groupId>
+                <artifactId>exeris-codegen-maven-plugin</artifactId>
+                <configuration>
+                    <peers>
+                        <peer>
+                            <name>shipping</name>
+                            <coordinate>eu.exeris.fixture:reactor-producer:1.0.0</coordinate>
+                        </peer>
+                    </peers>
+                </configuration>
+                <!-- Orders the reactor, producer first, without putting the producer on the
+                     consumer's classpath. Its own dependencies are not wanted in the plugin's realm. -->
+                <dependencies>
+                    <dependency>
+                        <groupId>eu.exeris.fixture</groupId>
+                        <artifactId>reactor-producer</artifactId>
+                        <version>1.0.0</version>
+                        <exclusions>
+                            <exclusion>
+                                <groupId>*</groupId>
+                                <artifactId>*</artifactId>
+                            </exclusion>
+                        </exclusions>
+                    </dependency>
+                </dependencies>
+            </plugin>
+        </plugins>
+    </build>
+</project>

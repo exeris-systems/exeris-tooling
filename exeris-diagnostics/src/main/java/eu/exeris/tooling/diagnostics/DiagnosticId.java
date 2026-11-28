@@ -21,10 +21,10 @@ package eu.exeris.tooling.diagnostics;
  * {@code x1xx} warnings on an ordinary build, {@code x2xx} the {@code -Aexeris.strict} audit, {@code x9xx}
  * {@code -Aexeris.verbose} notes. In {@code PLUG} it is the goal: {@code 20xx}
  * {@code exeris:generate}, {@code 21xx} {@code exeris:detach}, {@code 22xx}
- * {@code exeris:verify-capabilities}, {@code 23xx} {@code exeris:verify-runtime}. The group is
- * where an identifier was allocated, not a property it keeps: a diagnostic whose severity changes
- * keeps its identifier. So is the area: an event that two layers report carries the one
- * identifier allocated for it, whichever layer prints it.
+ * {@code exeris:verify-capabilities}, {@code 23xx} {@code exeris:verify-runtime}, {@code 24xx}
+ * {@code exeris:contract}. The group is where an identifier was allocated, not a property it keeps:
+ * a diagnostic whose severity changes keeps its identifier. So is the area: an event that two
+ * layers report carries the one identifier allocated for it, whichever layer prints it.
  *
  * <h2>Stability</h2>
  * <p>An identifier names one meaning for as long as it exists. The message text after it may be
@@ -354,6 +354,14 @@ public enum DiagnosticId {
     INTEGRATION_TEST_GENERATION_FAILED("EXT-PLUG-2005",
             "Integration-test generation failed reading metadata or writing the generated integration-test tree."),
 
+    /** A declared peer's contract artifact could not be read or does not hold up. */
+    PEER_CONTRACT_REFUSED("EXT-PLUG-2006",
+            "A declared peer's contract artifact was refused."),
+
+    /** A peer entity was written against a different metadata schema version than this build's. */
+    PEER_ENTITY_SCHEMA_SKEW("EXT-PLUG-2007",
+            "A peer entity's schemaVersion differs from this build's."),
+
     // -----------------------------------------------------------------------
     // EXT-PLUG-21xx — exeris:detach
     // -----------------------------------------------------------------------
@@ -405,6 +413,14 @@ public enum DiagnosticId {
     /** The generated application has no kernel driver on its runtime classpath. */
     RUNTIME_DRIVER_MISSING("EXT-PLUG-2302",
             "The generated application has no kernel driver on its runtime classpath."),
+
+    // -----------------------------------------------------------------------
+    // EXT-PLUG-24xx — exeris:contract
+    // -----------------------------------------------------------------------
+
+    /** The contract artifact could not be built or written. */
+    CONTRACT_NOT_BUILT("EXT-PLUG-2401",
+            "The contract artifact could not be built."),
 
     // -----------------------------------------------------------------------
     // EXT-GEN-30xx — code-generation pipeline errors

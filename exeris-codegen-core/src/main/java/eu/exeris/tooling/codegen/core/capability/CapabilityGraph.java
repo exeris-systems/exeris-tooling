@@ -49,11 +49,13 @@ public record CapabilityGraph(
 ) {
 
     /**
-     * Manifest schema version. Any breaking shape change to the serialized manifest —
-     * a new/removed/renamed record component on {@link CapabilityGraph} or
-     * {@link Resolution}, or a changed field meaning — must bump this and ship a
-     * migration note for {@code cap-manifest.json} consumers (e.g. the T12 registry,
-     * and the platform composition runtime that asserts {@link CompositionStamp}).
+     * Manifest schema version. Removing or renaming a member of the serialized manifest, or
+     * changing the meaning or type of one, must bump this and ship a migration note for
+     * {@code cap-manifest.json} consumers (the platform composition runtime that asserts
+     * {@link CompositionStamp}, and the readers of a peer's contract). A member that a reader of
+     * this version can ignore, and that is omitted when empty, does not bump it: the composition
+     * runtime reads {@code schemaVersion}, {@code stamp}, {@code modules} and {@code initOrder}
+     * and ignores every other member.
      *
      * <p>v2 introduces the ADR-024 {@link CompositionStamp} (validated verdict +
      * composition version + content binding) the platform composition runtime asserts.

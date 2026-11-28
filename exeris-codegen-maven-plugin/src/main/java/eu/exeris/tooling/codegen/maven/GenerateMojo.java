@@ -1,6 +1,8 @@
 package eu.exeris.tooling.codegen.maven;
 
 import eu.exeris.tooling.codegen.core.capability.CapabilityGraphException;
+import eu.exeris.tooling.codegen.core.contract.PeerContract;
+import eu.exeris.tooling.codegen.core.contract.PeerContractException;
 import eu.exeris.tooling.codegen.java.CodegenPipeline;
 import eu.exeris.tooling.codegen.java.EmptyMetadataException;
 import eu.exeris.tooling.codegen.java.kernel.RequiredCompileArtifacts;
@@ -16,11 +18,15 @@ import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugin.descriptor.PluginDescriptor;
+import org.apache.maven.execution.MavenSession;
+import org.apache.maven.plugins.annotations.Component;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.apache.maven.project.MavenProject;
+import org.eclipse.aether.RepositorySystem;
+import org.eclipse.aether.RepositorySystemSession;
 
 import java.io.File;
 import java.io.IOException;
@@ -192,6 +198,30 @@ public class GenerateMojo extends AbstractMojo {
     @Parameter(defaultValue = "${project}", readonly = true, required = true)
     MavenProject project;
 
+    /**
+     * The contracts of the backends this build consumes (ADR-048 Amendment 3). Each entry names the
+     * peer and gives exactly one of a {@code path} (a contract directory, a directory holding
+     * {@code META-INF/exeris/contract/}, or a {@code .jar}) or a {@code coordinate}
+     * ({@code groupId:artifactId:version} of the backend's main jar). A coordinate is resolved
+     * against the project's remote repositories and is not added to its dependencies. Within one
+     * reactor, declare the peer by coordinate and list the producer under this plugin's
+     * {@code <dependencies>}, which orders the reactor; a path inside the reactor is refused.
+     */
+    @Parameter
+    List<PeerDeclaration> peers;
+
+    /** The running build, for the modules of the current reactor. */
+    @Parameter(defaultValue = "${session}", readonly = true)
+    MavenSession session;
+
+    /** The resolver session coordinates are resolved in. */
+    @Parameter(defaultValue = "${repositorySystemSession}", readonly = true)
+    RepositorySystemSession repositorySession;
+
+    /** The Maven resolver. */
+    @Component
+    RepositorySystem repositorySystem;
+
     /** This plugin's own descriptor — identifies "this plugin" when scanning the
      *  project's build plugins for a bound {@code verify-capabilities} execution. */
     @Parameter(defaultValue = "${plugin}", readonly = true, required = true)
@@ -277,6 +307,8 @@ public class GenerateMojo extends AbstractMojo {
             return;
         }
 
+        readPeers();
+
         // Defer a capability-graph failure to the post-compile gate ONLY when that gate
         // is provably bound in this project — leniency on the stale generate-sources
         // input is sound exactly when the fresh-input hard-fail is guaranteed to run
@@ -320,6 +352,37 @@ public class GenerateMojo extends AbstractMojo {
         generateIntegrationTests();
 
         checkCompileClasspath();
+    }
+
+    /**
+     * Reads the contract of every declared peer, before anything is generated: a refused peer fails
+     * the build with {@code EXT-PLUG-2006} and nothing is written.
+     */
+    private void readPeers() throws MojoFailureException {
+        if (peers == null || peers.isEmpty()) {
+            return;
+        }
+        Set<Path> reactorRoots = new HashSet<>();
+        if (session != null && session.getProjects() != null) {
+            for (MavenProject module : session.getProjects()) {
+                if (!"pom".equals(module.getPackaging()) && module.getBasedir() != null) {
+                    reactorRoots.add(module.getBasedir().toPath());
+                }
+            }
+        }
+        try {
+            List<PeerContract> contracts = PeerContracts.read(peers, reactorRoots,
+                    new AetherCoordinateResolver(repositorySystem, repositorySession,
+                            project == null ? List.of() : project.getRemoteProjectRepositories()));
+            for (PeerContract contract : contracts) {
+                getLog().info("Peer '" + contract.name() + "': contract read ("
+                        + contract.entities().size() + " entity file(s), " + contract.enums().size()
+                        + " enum file(s))");
+                contract.warnings().forEach(w -> getLog().warn(DiagnosticId.PEER_ENTITY_SCHEMA_SKEW.format(w)));
+            }
+        } catch (PeerContractException e) {
+            throw new MojoFailureException(DiagnosticId.PEER_CONTRACT_REFUSED.format(e.getMessage()), e);
+        }
     }
 
     /**

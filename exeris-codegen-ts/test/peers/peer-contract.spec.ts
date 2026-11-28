@@ -8,11 +8,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   CAP_MANIFEST_NAME,
+  CONTRACT_DIRECTORY,
   MIN_MANIFEST_SCHEMA_VERSION,
   PeerContractError,
   loadPeerContract,
@@ -124,6 +125,30 @@ describe('loadPeerContract', () => {
   it('does not read the manifest as an entity', () => {
     const dir = artifact('billing', { entities: ['Order'] });
     expect(loadPeerContract({ name: 'billing', path: dir }).domains).toHaveLength(1);
+  });
+
+  it('reads the META-INF/exeris/contract/ of a class output directory as the same contract', () => {
+    const published = artifact('billing', { entities: ['Order', 'Apple'], enums: ['OrderStatus'] });
+    const classes = join(root, 'classes');
+    mkdirSync(join(classes, CONTRACT_DIRECTORY), { recursive: true });
+    for (const file of ['cap-manifest.json', 'exeris-metadata/Order.json', 'exeris-metadata/Apple.json', 'exeris-metadata/enum_OrderStatus.json']) {
+      const name = file.split('/').pop() as string;
+      writeFileSync(join(classes, CONTRACT_DIRECTORY, name), readFileSync(join(published, file)));
+    }
+    // A sibling metadata copy beside the contract is not read.
+    mkdirSync(join(classes, 'exeris-metadata'), { recursive: true });
+    writeFileSync(join(classes, 'exeris-metadata', 'Stray.json'), JSON.stringify({ packageName: 'x', entityName: 'Stray' }));
+
+    const peer = loadPeerContract({ name: 'billing', path: classes });
+
+    expect(peer.domains.map((d) => d.entityName)).toEqual(['Apple', 'Order']);
+    expect(peer.enums.map((e) => e.name)).toEqual(['OrderStatus']);
+  });
+
+  it('refuses a class output directory that holds no contract, naming the peer', () => {
+    const classes = join(root, 'classes');
+    mkdirSync(join(classes, 'exeris-metadata'), { recursive: true });
+    expect(() => loadPeerContract({ name: 'billing', path: classes })).toThrow(/peer 'billing'.*no cap-manifest\.json/s);
   });
 
   it('refuses a directory that does not exist, naming the peer', () => {

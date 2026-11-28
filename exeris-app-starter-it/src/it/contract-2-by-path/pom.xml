@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+        A consumer that reads a contract from a directory built outside this build. A path is for a
+        contract built elsewhere; the producer is no module of this build. prebuild.groovy lays the
+        directory beside this project.
+    -->
+    <parent>
+        <groupId>eu.exeris</groupId>
+        <artifactId>exeris-app-parent</artifactId>
+        <version>@project.version@</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>eu.exeris.fixture</groupId>
+    <artifactId>contract-by-path</artifactId>
+    <version>1.0.0</version>
+
+    <url/>
+    <licenses>
+        <license/>
+    </licenses>
+    <developers>
+        <developer/>
+    </developers>
+    <scm>
+        <connection/>
+        <developerConnection/>
+        <tag/>
+        <url/>
+    </scm>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>eu.exeris</groupId>
+                <artifactId>exeris-codegen-maven-plugin</artifactId>
+                <configuration>
+                    <peers>
+                        <peer>
+                            <name>billing</name>
+                            <path>${project.basedir}/../contract-2-by-path-peer</path>
+                        </peer>
+                    </peers>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

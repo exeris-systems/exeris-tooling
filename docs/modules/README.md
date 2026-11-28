@@ -18,7 +18,7 @@ One page per tooling module, numbered in dependency order. Each page states the 
 | [03-codegen-core.md](03-codegen-core.md) | `exeris-codegen-core` | Generator interface and registry, output-tree ownership, subsystem, driver and route-requirement derivations, capability graph and Wall. |
 | [04-codegen-java.md](04-codegen-java.md) | `exeris-codegen-java` | `CodegenPipeline` and the `Kernel*Generator`s: the kernel application, its tests, its OpenAPI and migrations. |
 | [05-codegen-ts.md](05-codegen-ts.md) | `@exeris/codegen-ts` | The Angular 22 generator, `exeris-gen`; an npm package outside the Maven reactor. |
-| [06-codegen-maven-plugin.md](06-codegen-maven-plugin.md) | `exeris-codegen-maven-plugin` | `exeris:generate`, `verify-capabilities`, `verify-runtime` and `detach`. |
+| [06-codegen-maven-plugin.md](06-codegen-maven-plugin.md) | `exeris-codegen-maven-plugin` | `exeris:generate`, `verify-capabilities`, `verify-runtime`, `contract` and `detach`. |
 | [07-codegen-cli.md](07-codegen-cli.md) | `exeris-codegen-cli` | The Java generator as one shaded jar, for builds outside Maven. |
 | [08-initializr.md](08-initializr.md) | `exeris-initializr` | Writes a new project on the starter, as a directory or a ZIP. |
 | [09-app-starter.md](09-app-starter.md) | `exeris-app-bom`, `exeris-app-parent`, `exeris-app-starter` | The tested version triple, the application build and the dependency set generated code needs. |
