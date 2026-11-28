@@ -358,5 +358,11 @@
     "since": "0.12",
     "adr": "ADR-092",
     "justification": "The zod 3.x line has no release that fixes its published advisory, so the emitted app moves to the first fixed line. The zod 4 z.record takes a key schema and a value schema, so a Map field is emitted with z.string() as its key. Every other emitted schema has the same text and runs zod 4's validators, which are not zod 3's for the string formats (uuid, email, url): a UUID schema (z.string().uuid()) rejects ids whose version or variant bits are not RFC 9562, where zod 3 accepted any 8-4-4-4-12 hex string; z.guid() is the permissive form. docs/migration/0.12.0/ts-02-zod-four.md carries the step."
+  },
+  {
+    "signature": "GeneratorConfig: + siteUrl (string, optional), + sitemap (boolean, optional); render ssg with sitemap: src/sitemap.xml, src/robots.txt (generator-owned), angular.json + two asset entries; generateSitemapFiles, emitsSitemap, SitemapConfigError (angular/sitemap-gen.ts)",
+    "since": "0.12",
+    "adr": "ADR-092",
+    "justification": "Additive: both keys are optional with no default, so a config that sets neither regenerates byte-identical output and init writes neither. With render ssg, the scaffold on and sitemap true, the run writes src/sitemap.xml (the prerendered PAGE views under siteUrl) and src/robots.txt, and angular.json copies both to the build output. sitemap true without siteUrl, or with a siteUrl that is not an absolute http(s) URL, throws SitemapConfigError before any file is written."
   }
 ]

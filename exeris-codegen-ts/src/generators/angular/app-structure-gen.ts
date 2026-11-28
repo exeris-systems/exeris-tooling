@@ -34,6 +34,7 @@ import { serviceApiPath } from './service-gen.js';
 import { AUTH_INTERCEPTOR_NAME, AUTH_INTERCEPTOR_PATH } from './auth-interceptor-gen.js';
 import { REQUIRE_ANY_PERMISSION, REQUIRE_AUTHENTICATED, ROUTE_GUARDS_PATH } from './guard-gen.js';
 import { requirementFor, type RouteRequirementRow } from '../../core/route-requirements.js';
+import { emitsSitemap, generateSitemapFiles } from './sitemap-gen.js';
 import { fileHeader, lineHeaderLines } from '../file-header.js';
 
 export interface GeneratedFile {
@@ -147,7 +148,7 @@ export function generateAppStructure(
 
   // Config files at the project root
   files.push({ path: 'package.json', content: generatePackageJson(appName, config, { ...needs, materialSymbols }), overwritable: false });
-  files.push({ path: 'angular.json', content: generateAngularJson(appName, config, ssg), overwritable: false });
+  files.push({ path: 'angular.json', content: generateAngularJson(appName, config, ssg, emitsSitemap(config)), overwritable: false });
   files.push({ path: 'tsconfig.json', content: generateTsConfig(), overwritable: false });
   files.push({ path: 'tsconfig.app.json', content: generateTsConfigApp(config, ssg), overwritable: false });
   // T2 (ADR-058): the spec tsconfig only exists when specs do. It is the counterpart of the Java
@@ -164,6 +165,7 @@ export function generateAppStructure(
   files.push({ path: `${srcRoot}/styles.css`, content: generateStylesCss(needs.typography, materialSymbols), overwritable: false });
   files.push({ path: `${srcRoot}/index.html`, content: generateIndexHtml(appName), overwritable: false });
   files.push({ path: `${srcRoot}/favicon.ico`, content: generateFavicon(), overwritable: true });
+  files.push(...generateSitemapFiles(prerenderedViewPaths(sortedViews.filter(isPageView)), config));
   // main.ts under src/
   files.push({ path: `${srcRoot}/main.ts`, content: generateMainTs(), overwritable: false });
   if (ssg) {
@@ -935,11 +937,14 @@ ${runtimeDependencies(needs, config.render === 'ssg')}
 `;
 }
 
-function generateAngularJson(appName: string, config: GeneratorConfig, ssg: boolean): string {
+function generateAngularJson(appName: string, config: GeneratorConfig, ssg: boolean, sitemap: boolean): string {
   const slug = frontendSlug(appName);
   // `outputMode: "static"` writes the prerendered routes as HTML and emits no server bundle to
   // deploy; `server` is the entry the prerender bootstraps.
   const server = ssg ? `\n            "server": "src/main.server.ts",\n            "outputMode": "static",` : '';
+  const sitemapAssets = sitemap
+    ? `,\n              { "glob": "robots.txt", "input": "src", "output": "/" },\n              { "glob": "sitemap.xml", "input": "src", "output": "/" }`
+    : '';
   return `{
   "$schema": "./node_modules/@angular/cli/lib/config/schema.json",
   "version": 1,
@@ -970,7 +975,7 @@ function generateAngularJson(appName: string, config: GeneratorConfig, ssg: bool
             "styles": ["src/styles.css"],
             "scripts": [],
             "assets": [
-              { "glob": "favicon.ico", "input": "src", "output": "/" }
+              { "glob": "favicon.ico", "input": "src", "output": "/" }${sitemapAssets}
             ]
           },
           "configurations": {

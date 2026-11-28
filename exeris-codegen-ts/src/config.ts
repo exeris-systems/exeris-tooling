@@ -171,6 +171,17 @@ export const GeneratorConfigSchema = z.object({
    *  app's `app.routes.server.ts` to spread. */
   render: z.enum(['csr', 'ssg']).default('csr'),
 
+  /** Where the site is served: an absolute `http(s)` URL, such as `https://example.com`, with an
+   *  optional path prefix. The sitemap's `<loc>` entries and the `Sitemap:` line of `robots.txt` are
+   *  built from it. Read only when `sitemap` is on. File-only; it has no CLI flag. */
+  siteUrl: z.string().min(1).optional(),
+
+  /** Emit `src/sitemap.xml` and `src/robots.txt` under `render: 'ssg'` with the scaffold on, and
+   *  the `angular.json` asset entries that copy them to the build output. The sitemap lists the
+   *  prerendered `@View` pages. A run that sets it without `siteUrl` fails. Absent, nothing is
+   *  emitted. File-only; it has no CLI flag. */
+  sitemap: z.boolean().optional(),
+
 });
 
 export type GeneratorConfig = z.infer<typeof GeneratorConfigSchema>;

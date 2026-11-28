@@ -374,6 +374,14 @@ jobs:
           grep -q 'url=/about-us' "$out/index.html"
           test -f "$out/index.csr.html"
           test ! -e "$out/posts"
+          # sitemap.xml lists the two prerendered PAGE views under the configured site URL, and
+          # robots.txt names it; the footer section, the parameterised page and the redirect root
+          # are not listed.
+          test "$(grep -c '<loc>' "$out/sitemap.xml")" = 2
+          grep -q '<loc>https://example.com/docs/home</loc>' "$out/sitemap.xml"
+          grep -q '<loc>https://example.com/docs/about-us</loc>' "$out/sitemap.xml"
+          if grep -q 'footer\|posts' "$out/sitemap.xml"; then exit 1; fi
+          grep -qx 'Sitemap: https://example.com/docs/sitemap.xml' "$out/robots.txt"
 
   # The SDK's example corpus as an Angular application: SdkExamplesE2ETest writes the processor
   # metadata of the examples at the pinned SDK tag, the CLI generates the app from it twice (the two
