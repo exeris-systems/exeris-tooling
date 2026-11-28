@@ -967,14 +967,15 @@ each fix.
       is `@ExerisDomain(dataScope = TENANT)` and role authorization is `roles` / `permissions` /
       `@RouteAccess`. `-Aexeris.strict` reports the ruling and the replacement under `INERT_ANNOTATIONS`
       and `INERT_ATTRIBUTES` (row J9, #435).
-- [ ] **Registry entries are unverified strings.** `INERT_ATTRIBUTES` and `UNREAD_NOTES` are keyed by
+- [x] **Registry entries are unverified strings.** `INERT_ATTRIBUTES` and `UNREAD_NOTES` are keyed by
       hand-written `Annotation#attribute` names that nothing checks against the SDK. A typo does not
       fail a build — it silently disables the `-Aexeris.strict` warning for that attribute, forever,
       which is the one failure the audit cannot report on itself. Only a handful of the ~200 entries
       are pinned by a test that compiles the attribute. Closeable in one test: the annotation
       *types* are on the processor's test classpath (`@Retention(SOURCE)` erases the *use*, not the
       class file), so each key can be resolved reflectively to a declared method. Raised on the C1
-      review; registry-wide, so not folded into C1.
+      review; registry-wide, so not folded into C1. Closed by `StrictAuditRegistryKeysTest`, which
+      resolves every key to a declared attribute.
 
 Deliberately **not** debt: `@Projection`, `@EventHandler`, `@Derived`, `@Rule` — AST carriers and
 `DomainMetadata` components exist, filled and read by nobody, and that reservation is design-gated on
