@@ -150,6 +150,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
     /** Attribute name shared by {@code @Saga} and the capability {@code @Provides}/{@code @Requires}. */
     private static final String VERSION_ATTRIBUTE = "version";
+    private static final String PERMISSIONS_ATTRIBUTE = "permissions";
+    private static final String BADGE_COLOR_ATTRIBUTE = "badgeColor";
+    private static final String NAV_MENU = "NavMenu";
     /** The simple name of the SDK annotation that declares a domain event. */
     private static final String DOMAIN_EVENT = "DomainEvent";
 
@@ -741,7 +744,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                     "UIGroupMetadata carries no CSS class, and no emitted component applies it"),
             new InertAttribute("UIGroup", "visibleWhen",
                     "visibility conditions are not modeled on UIGroupMetadata and no generator reads them"),
-            new InertAttribute("NavMenu", "roles", NAV_MENU_NOT_EMITTED),
+            new InertAttribute(NAV_MENU, "roles", NAV_MENU_NOT_EMITTED),
             new InertAttribute("Tab", "disabledWhen", TAB_NOT_EMITTED),
             new InertAttribute("Tab", "visibleWhen", TAB_NOT_EMITTED),
             new InertAttribute(DOMAIN_EVENT, "description",
@@ -878,7 +881,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             "Action", "ActionParam", "AuditCreatedAt", "AuditCreatedBy", "AuditUpdatedAt",
             "AuditUpdatedBy", "Bind", "Blob", "Block", "CapabilityLifecycle", "CapabilityModule",
             DOMAIN_EVENT, "EventSourced", "ExerisDomain", "Field", "Graph", "GraphEdge",
-            "GraphProperty", "InternalApi", "NavMenu", "PrimaryKey", "Provides", "QueryParam", "Region",
+            "GraphProperty", "InternalApi", NAV_MENU, "PrimaryKey", "Provides", "QueryParam", "Region",
             "Relationship", "Requires", "RouteAccess", "Saga", "SagaStep", "SharedScope", "SoftDelete",
             "SoftDeleteTimestamp", "SoftDeletedBy", "Tab", "TenantId", "UI", "UIGroup", "Validation",
             "Version", "View");
@@ -1790,7 +1793,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
     /** Whether an explicit {@code permissions} attribute names at least one permission. */
     private static boolean declaresPermissions(Map<String, Object> values) {
-        return values.get("permissions") instanceof List<?> permissions && !permissions.isEmpty();
+        return values.get(PERMISSIONS_ATTRIBUTE) instanceof List<?> permissions && !permissions.isEmpty();
     }
 
     /**
@@ -2586,8 +2589,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         }
 
         // Security
-        if (values.containsKey("permissions")) {
-            builder.permissions(getStringArray(values, "permissions"));
+        if (values.containsKey(PERMISSIONS_ATTRIBUTE)) {
+            builder.permissions(getStringArray(values, PERMISSIONS_ATTRIBUTE));
         }
         if (values.containsKey("sensitive")) {
             builder.sensitive((Boolean) values.get("sensitive"));
@@ -3214,8 +3217,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         // channel) with no generator consumer. Extracting it would only create an inert
         // ActionMetadata attribute; add extraction when the consumer exists.
 
-        if (values.containsKey("permissions")) {
-            builder.permissions(getStringArray(values, "permissions"));
+        if (values.containsKey(PERMISSIONS_ATTRIBUTE)) {
+            builder.permissions(getStringArray(values, PERMISSIONS_ATTRIBUTE));
         }
         AnnotationMirror routeAccessAnnotation = findAnnotation(method, ROUTE_ACCESS_FQN);
         if (routeAccessAnnotation != null) {
@@ -3892,7 +3895,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 lazy = getBoolean(values, "lazy", false);
             }
             badgeField = firstNonBlank(badgeField, values, "badgeField");
-            badgeColor = firstNonBlank(badgeColor, values, "badgeColor");
+            badgeColor = firstNonBlank(badgeColor, values, BADGE_COLOR_ATTRIBUTE);
             if (disabled == null && values.containsKey("disabled")) {
                 disabled = getBoolean(values, "disabled", false);
             }
@@ -4688,7 +4691,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         }
 
         Map<String, Object> values = extractAnnotationValues(navMenuAnnotation);
-        warnInertAttributes("NavMenu", values, element, navMenuAnnotation);
+        warnInertAttributes(NAV_MENU, values, element, navMenuAnnotation);
 
         NavMenuMetadata.Builder builder = NavMenuMetadata.builder();
         if (values.containsKey("group")) {
@@ -4716,14 +4719,14 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         if (values.containsKey("roles")) {
             builder.roles(getStringArray(values, "roles"));
         }
-        if (values.containsKey("permissions")) {
-            builder.permissions(getStringArray(values, "permissions"));
+        if (values.containsKey(PERMISSIONS_ATTRIBUTE)) {
+            builder.permissions(getStringArray(values, PERMISSIONS_ATTRIBUTE));
         }
         if (values.containsKey("badge")) {
             builder.badge(getString(values, "badge", null));
         }
-        if (values.containsKey("badgeColor")) {
-            builder.badgeColor(getString(values, "badgeColor", null));
+        if (values.containsKey(BADGE_COLOR_ATTRIBUTE)) {
+            builder.badgeColor(getString(values, BADGE_COLOR_ATTRIBUTE, null));
         }
         if (values.containsKey("tooltip")) {
             builder.tooltip(getString(values, "tooltip", null));
