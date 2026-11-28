@@ -9,7 +9,7 @@ slug: adr/ADR-048
 
 # ADR-048 — A peer's contract is a dependency, and its types are the first thing worth generating from it
 
-- **Status:** ACCEPTED (2026-08-28) · amended 2026-09-26 (Amendment 1 — §6's client-slice gate is additive, not a binary break) · amended 2026-10-02 (Amendment 2 — the T58 precondition is met)
+- **Status:** ACCEPTED (2026-08-28) · amended 2026-09-26 (Amendment 1 — §6's client-slice gate is additive, not a binary break) · amended 2026-10-02 (Amendment 2 — the T58 precondition is met) · amended 2026-11-28 (Amendment 3 — every backend publishes its contract; the registry slice's manifest shape)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / codegen (pipeline input shape)
 - **Visibility:** public
@@ -226,3 +226,227 @@ Kernel 0.12.0 is final on Maven Central, and its `KernelWebClient` has `put` (ex
 The generated `*Client.update` sends `PUT {base}/{id}`, the verb the generated router serves, and
 `CrudRouteParityE2ETest` asserts it with no exemption (T58). Reason 2 no longer gates the client
 slice; reason 1, ADR-074's addressing surface, is available on the same final kernel.
+
+## Amendment 3 — every backend publishes its contract, and the registry slice's manifest shape (2026-11-28)
+
+- **Status:** ACCEPTED (2026-11-28).
+- **Amends:** §1 (where the contract artifact is, what it holds, how a consumer reaches it, and the
+  last sentence of its disclosure note), §1's implementation note on the entity `schemaVersion`,
+  and Amendment 1's "What this amendment does NOT decide", first entry (the T17 manifest shape).
+  §2 to §7 are unchanged.
+- **Issues:** exeris-tooling#391, exeris-tooling#550.
+
+### Context
+
+§1 makes a peer's contract its `cap-manifest.json` plus the full `DomainMetadata` of its entities.
+`CodegenPipeline` writes `cap-manifest.json` only for a build that declares a `@CapabilityModule`,
+and writes it at the root of the generated source tree, which is not on the classpath. A backend
+without a capability module therefore has no contract, and no backend's jar carries one; ADR-091
+Amendment 5 withholds the frontend-only topology for that reason. The entity metadata itself is in
+every jar already: the processor writes `exeris-metadata/*.json` to the class output.
+
+The registry slice needs a place in `cap-manifest.json` for a requirement a peer satisfies.
+`schemaVersion` cannot rise above 2, because the SDK composition runtime refuses any higher value.
+The SDK's manifest record reads `schemaVersion`, `stamp`, `modules` and `initOrder`, and ignores
+every other member.
+
+### Decision
+
+**Every backend publishes its contract inside its own jar, and a consumer reads it by Maven
+coordinate or by path; the registry slice adds members to `cap-manifest.json` that a
+`schemaVersion` 2 reader ignores.**
+
+1. **Content.** The contract artifact is a directory holding:
+   - `cap-manifest.json`, the resolved capability graph of the build. A build with no
+     `@CapabilityModule` writes the graph of the empty composition: `schemaVersion` 2, a stamp
+     with `validated: true` and the content binding of the empty module set, and empty
+     `modules`, `resolutions`, `initOrder` and `warnings`;
+   - one file per `@ExerisDomain` entity of the build, byte for byte as the processor wrote it,
+     under the same file name;
+   - each `enum_*.json`, byte for byte.
+
+   It holds no `view_*.json` and no `capability_*.json`. "The entities it provides" in §1 means
+   every entity the build declares; an application keeps an entity out of its contract by keeping
+   it out of the build.
+2. **Place.** The directory is `META-INF/exeris/contract/` in the backend's main jar.
+3. **Writer.** A goal `exeris:contract` of `exeris-codegen-maven-plugin`, default phase
+   `process-classes`, reads `${project.build.outputDirectory}/exeris-metadata`, deletes
+   `${project.build.outputDirectory}/META-INF/exeris/contract/` and writes it anew. It builds the
+   graph with the same method and serializer as `exeris:generate` and the same
+   `exeris.composition.version` input, so for the same metadata the two manifests are
+   byte-identical. A graph that does not resolve fails the goal and writes nothing. It is skipped
+   by `exeris.codegen.skip` and by `exeris.contract.skip`. The emission logic lives in
+   `CodegenPipeline`; the mojo is a shell.
+4. **Publication reach.** `exeris-app-parent` binds `exeris:contract` after `verify-capabilities`
+   and `verify-runtime`; the opt-out is `exeris.contract.skip`. Three places state the bound goals
+   and change in the same change as the binding, as obligations of M1 (#391):
+   `exeris-app-parent/pom.xml`, the copy of the build block in `README.md`, and the comment that
+   lists the bound goals in the initializr's backend `pom.xml.tmpl`. An application that uses
+   neither the parent nor that build block publishes nothing.
+5. **Unchanged outputs.** `exeris:generate` still writes `cap-manifest.json` into the generated tree
+   only for a build with a `@CapabilityModule`. A build without one emits byte-identically to 0.11.
+6. **Determinism.** The set of entries and the bytes of each are a function of the processor's
+   output and the composition version. Entity and enum files are copied, not re-serialized. An
+   entity file keeps the `schemaVersion` and `sourceDigest` the processor stamped, and the digest
+   is over the Java source. An enum file carries neither. Copying keeps the contract one schema and
+   deterministic.
+7. **What a reference is.** A peer reference is a consumer-declared name (§2, the name rule the
+   TS emitter already applies) and exactly one of:
+   - a **path**: a contract directory; a directory containing `META-INF/exeris/contract/`; or a
+     `.jar` file, of which only entries under `META-INF/exeris/contract/` are read and nothing is
+     extracted to disk;
+   - a **Maven coordinate** `groupId:artifactId:version`, naming the backend's main jar.
+8. **Java consumer.** `exeris:generate` takes a `peers` parameter. A coordinate is resolved through
+   the Maven resolver against the project's remote repositories and is never added to the
+   project's dependencies, so no class of the peer reaches the consumer's classpath.
+   - Maven orders reactor modules by project dependencies, the parent, plugin dependencies and
+     build extensions. A `<path>` reference creates no ordering edge.
+   - A consumer in the same reactor as its producer declares the peer by Maven coordinate and lists
+     the producer under `exeris-codegen-maven-plugin`'s `<dependencies>`. That orders the reactor
+     without putting the producer on the project's classpath.
+   - A `<path>` reference is for a contract built outside the current build. A path that resolves
+     inside a module of the current reactor is refused with a diagnostic.
+9. **npm consumer.** `@exeris/codegen-ts` accepts the same references (`peers[].path` or
+   `peers[].coordinate`; on the command line, `--peer <name>=<path>` or
+   `--peer <name>=mvn:<groupId>:<artifactId>:<version>`). A coordinate is looked up in the local
+   Maven repository, then in the configured repositories (default Maven Central) over HTTPS. The
+   local repository path is configuration, defaulting to `~/.m2/repository`. A remote download is
+   a release version only, is checked against the repository's `.sha1` before use, and is not
+   cached. A SNAPSHOT resolves from the local repository only. No credentials are read. The jar is
+   read without a dependency: the central directory is parsed and DEFLATE entries are inflated
+   with `node:zlib`.
+10. **Readers.** The Java reader in `exeris-codegen-core` and the TS reader apply the same rules:
+    - `schemaVersion` floor 2, refused with a message naming the peer;
+    - a missing manifest refused;
+    - unknown manifest members ignored;
+    - files read by name: `cap-manifest.json`, `enum_*.json` and entity files only;
+    - peers sorted by declared name.
+
+    Entities and enums are sorted by code unit, as `String.compareTo` and the default
+    `Array.prototype.sort` order them, each side by the key its local path already uses. The Java
+    reader sorts entities by qualified name (`CodegenPipeline.DOMAIN_ORDER`) and enums by qualified
+    name (`EnumTypes.sorted`). The TS reader sorts entities by `entityName` and enums by `name`
+    (`exeris-codegen-ts/src/peers/peer-contract.ts`). The sides emit different languages, so the
+    two keys need not agree.
+
+    Every refusal names the peer. A Java refusal carries `EXT-PLUG-2006` (ADR-095). The TS command
+    line prints no identifier until ADR-095 allocates a `TS` area.
+11. **Registry slice, manifest shape.** `cap-manifest.json` stays `schemaVersion` 2 and gains two
+    members, both omitted when empty:
+    - `peers`: one entry per declared peer whose contract was read, sorted by name:
+      `{ "name", "compositionVersion", "contentBinding", "provides": [ { "service", "version",
+      "module" } ] }`, the two stamp values copied from the peer's manifest and `provides` sorted
+      by service, then module.
+    - `peerProviders` on a resolution: `[ { "peer", "module" } ]`, sorted, naming each peer module
+      whose provided version matches the requirement's range.
+
+    A requirement is satisfied when a local provider or a peer provider matches. `providers` lists
+    local modules only. A peer never enters `modules`, `initOrder`, cycle detection or the stamp's
+    `contentBinding`. A requirement nothing in the declared mesh provides fails as it does today.
+12. **The bump rule.** A member a `schemaVersion` 2 reader can ignore does not raise
+    `schemaVersion`. Removing or renaming a member, or changing the meaning or type of one, does.
+    The `CapabilityGraph.SCHEMA_VERSION` documentation states this rule.
+13. **Entity schema skew.** When a peer entity's `schemaVersion` differs from the consumer's
+    `SchemaVersion.CURRENT`, the build warns with `EXT-PLUG-2007`, naming the peer, the entity and
+    both versions. An entity with no `schemaVersion` is refused with `EXT-PLUG-2006`.
+14. **What M2 generates from a contract.**
+    - **Java peer types:** a record per entity and an enum per `enum_*.json`, in
+      `<basePackage>.peers.<segment>`, where `<segment>` is the peer name lowercased with
+      `Locale.ROOT` and its hyphens removed. A segment for which
+      `javax.lang.model.SourceVersion.isName` is false (keywords, and the literals `true`,
+      `false` and `null`) is refused. Two peers whose segments are equal after that step are
+      refused.
+    - **Java peer client:** one per entity that serves an HTTP API, taking a `KernelWebClient` and
+      an authority (`host:port`, kernel ADR-074) and sending every request through
+      `withAuthority(authority)`. It sends the verbs and paths the local client derives for the
+      same entity. It names no resolver (§5).
+    - **An entity with `restApi = false`:** on the Java side it gets no peer client, and gets a peer
+      type only when an entity that has a peer client references it. On the TS side it keeps its
+      peer types. The decision on `restApi` itself is W8's (#539), which has the final word.
+    - **TS peer client:** a client per entity that serves an HTTP API beside the peer types under
+      `peers/<name>/`, exported from that peer's barrel only, reading the entity through the
+      functions the local service emitter uses.
+15. **Room for the event specification.** The name `events.json` at the contract root is reserved
+    for the per-event specification (name, topic, ordinal, payload schema) that the events
+    decision defines. It carries an integer `schemaVersion` of its own, starting at 1, and is
+    written by `exeris:contract`. Readers that predate it skip it by name.
+16. **Diagnostic identifiers (ADR-095).** `EXT-PLUG-2006`, a peer contract refused: an unreadable
+    or missing contract, a missing manifest, a `schemaVersion` below the floor, an entity with no
+    `schemaVersion`, a checksum mismatch, a refused package segment, a segment collision, a
+    `<path>` inside the current reactor. `EXT-PLUG-2007`, a peer entity's `schemaVersion` differs
+    from the consumer's (a warning). `EXT-PLUG-2401`, `exeris:contract` could not build the
+    contract; `24xx` is the group of that goal. The rows enter `docs/diagnostics.md` with M1.
+
+### Consequences
+
+#### Positive Outcomes
+
+- **[+] Every backend is a peer.** A backend scaffolded without capabilities, as `exeris-initializr`
+  writes it, publishes a contract a frontend-only application or another service can consume.
+- **[+] No new disclosure.** The entity metadata in the contract is already in every jar under
+  `exeris-metadata/`.
+- **[+] The composition runtime is untouched.** A manifest with peers passes the SDK assertion
+  unchanged, and a manifest without peers is byte-identical to today's.
+
+#### Trade-offs
+
+- **[-] Two copies of the metadata in a jar**, `exeris-metadata/` and the contract. The contract is
+  the published one; the other remains the processor's output.
+- **[-] A stamp over nothing.** The empty-composition manifest carries `validated: true` over the
+  empty module set. It is a contract header, not a composition anyone boots.
+- **[-] The TS package gains a ZIP reader and network access** for coordinates, both new surfaces.
+- **[-] The contract is as fresh as `exeris-metadata/`.** An incremental build that leaves a
+  deleted entity's file there publishes it.
+
+#### What is NOT in scope
+
+- The event specification's content (the events decision, then R1).
+- Reading `cap-manifest.json` at boot from the jar's contract copy instead of the working directory.
+- Peer references in `exeris-codegen-cli`.
+- Credentials for a private repository in `@exeris/codegen-ts`.
+- The saga remote-dispatch body (§6).
+
+#### Non-Goals
+
+- A contract artifact separate from the jar (a classifier or an npm package).
+- Pruning the contract per consumer.
+- Adding a peer to the consumer's dependency graph.
+- An application identity read from the contract; §2 stands.
+
+#### Risks and Assumptions
+
+- **Assumes:** the SDK composition runtime keeps ignoring members it does not read, and keeps
+  accepting `schemaVersion` 2.
+- **Assumes:** a release version on a Maven repository is immutable, which is what makes a remote
+  resolution reproducible.
+- **Assumes:** the kernel's JSON body codec reads and writes records, which the Java peer client
+  sends and receives.
+- **Assumes:** the reactor resolves the producer's coordinate to its output directory once the
+  producer has run `process-classes`. A build that stops earlier (`mvn compile`) gives the consumer
+  no fresh contract, and fails with the diagnostic that names the missing contract. The M1 invoker
+  fixture with two modules holds the same-build case.
+- **Assumes:** Node's `fetch` reads proxy settings only when `NODE_USE_ENV_PROXY` is set. The
+  default local repository `~/.m2/repository` does not follow a `localRepository` of `settings.xml`
+  or `maven.repo.local`, so the TS side takes the local repository path as configuration.
+- **Risk:** a stale `exeris-metadata/` entry is published. A release built with `clean` does not
+  carry one, and the reader cannot detect it.
+- **Reversed by:** a composition runtime that refuses an unknown manifest member, which would force
+  peer bindings out of `cap-manifest.json`; or a consumer that cannot take the backend's jar,
+  which would move the contract to an attached artifact.
+
+### Verification
+
+- The invoker fixture of ADR-091 obligation 7 asserts that its jar holds
+  `META-INF/exeris/contract/cap-manifest.json` with `schemaVersion` 2 and empty `modules`, and
+  each entity file byte-equal to `target/classes/exeris-metadata/`. A fixture with two modules, the
+  producer listed under the plugin's `<dependencies>`, holds the same-build case.
+- For capability metadata, the contract's manifest is byte-equal to the one `exeris:generate`
+  writes; writing the contract twice gives identical bytes; a file absent from the metadata is
+  absent from the contract.
+- A v1 manifest, a missing manifest and a checksum mismatch are each refused with the peer's name.
+- A manifest with `peers` and `peerProviders` passes `CompositionStampAssertion`; a graph with no
+  peers serializes byte-identically to the 0.11 golden copy.
+- A consumer with two peers that both declare `Order` compiles in Java (`KernelCodegenCompileTest`)
+  and builds in TypeScript (`ng build`).
+- A Java peer client's requests reach a generated producer at the authority it was given, with
+  the verb and path the producer's router serves.
