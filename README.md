@@ -21,8 +21,8 @@ module, glossary and stability matrix.
 - Maven 3.9+ (enforced alongside the JDK rule).
 - Node 18+ to build `exeris-codegen-ts`; the **generated** Angular v22 app targets
   Node 22+.
-- `eu.exeris:exeris-kernel-*:0.13.1` and `eu.exeris:exeris-sdk-*:0.13.3`, both final
-  releases on Maven Central (the pins in `exeris-tooling-bom/pom.xml`). Every dependency
+- `eu.exeris:exeris-kernel-*:0.13.2` and `eu.exeris:exeris-sdk-*:0.13.3`, both final
+  releases on Maven Central, with Jackson 3 `3.3.0` (the pins in `exeris-tooling-bom/pom.xml`). Every dependency
   resolves from Central with no settings file, and nothing is built from source first. A
   local repository that holds a kernel or SDK of the pinned version fetched from GitHub
   Packages, or installed from source, before
@@ -177,7 +177,7 @@ checks for registered providers, not for a particular artefact.
     <dependency>
         <groupId>org.postgresql</groupId>
         <artifactId>postgresql</artifactId>
-        <version>42.7.13</version>
+        <version>42.7.14</version>
         <scope>runtime</scope>
     </dependency>
 </dependencies>

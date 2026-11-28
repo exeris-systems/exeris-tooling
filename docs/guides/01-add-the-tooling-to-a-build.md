@@ -45,7 +45,7 @@ Source: `exeris-app-bom/pom.xml`, the `<properties>` block (adapted, the Jackson
 </properties>
 ```
 
-These are the pins of the 0.11.0 BOM, the version the README's snippets name. The 0.10.0 BOM pins kernel and SDK `0.12.0`. Overriding `exeris.kernel.version` or `exeris.sdk.version` leaves the combination the tooling's suites ran against ([ADR-091](../adr/ADR-091-opt-in-application-starter.md)).
+These are the pins of the 0.11.0 BOM, the version the README's snippets name. The 0.12.0 BOM pins kernel `0.13.2`, SDK `0.13.3` and `jackson3.version` `3.3.0`, the Jackson 3 line that kernel's BOM manages. The 0.10.0 BOM pins kernel and SDK `0.12.0`. Overriding `exeris.kernel.version` or `exeris.sdk.version` leaves the combination the tooling's suites ran against ([ADR-091](../adr/ADR-091-opt-in-application-starter.md)).
 
 ### 3. Put each entity in a `.domain` package
 

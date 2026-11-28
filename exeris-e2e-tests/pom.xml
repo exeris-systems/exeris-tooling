@@ -151,11 +151,11 @@
              and the booted ones connect the kernel to it (e2e-postgres profile, below).
              Test scope, in this module only, and deliberately
              not in exeris-tooling-bom: a consumer importing the BOM should inherit no driver
-             opinion from tooling. 42.7.13 is the version exeris-kernel-bom 0.13.1 pins. -->
+             opinion from tooling. 42.7.14 is the version exeris-kernel-bom 0.13.2 pins. -->
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
-            <version>42.7.13</version>
+            <version>42.7.14</version>
             <scope>test</scope>
         </dependency>
 

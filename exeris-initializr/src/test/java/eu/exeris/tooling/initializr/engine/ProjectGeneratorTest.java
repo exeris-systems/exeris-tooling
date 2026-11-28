@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class ProjectGeneratorTest {
 
-    private static final ScaffoldVersions VERSIONS = new ScaffoldVersions("9.8.7", "2.3.232", "42.7.13", "5.11.4",
+    private static final ScaffoldVersions VERSIONS = new ScaffoldVersions("9.8.7", "2.3.232", "42.7.14", "5.11.4",
             "3.27.7");
 
     private static ProjectTree generate(ProjectTopology topology, DatabaseType database) {
@@ -92,7 +92,7 @@ class ProjectGeneratorTest {
         assertThat(text(tree, "pom.xml")).contains("""
                 <groupId>org.postgresql</groupId>
                             <artifactId>postgresql</artifactId>
-                            <version>42.7.13</version>""");
+                            <version>42.7.14</version>""");
         assertThat(text(tree, "docker-compose.yml")).contains("POSTGRES_DB: order_service",
                 "POSTGRES_USER: exeris", "POSTGRES_PASSWORD: exeris");
         assertThat(text(tree, "README.md")).contains(
