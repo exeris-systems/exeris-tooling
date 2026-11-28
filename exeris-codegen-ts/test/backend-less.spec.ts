@@ -126,7 +126,7 @@ describe('backend-less emission — a view-only app', () => {
 describe('backend-less emission — what the emitted files use is still provided', () => {
   it('an enum emitted with its Zod schema keeps zod, the enum module and a barrel that re-exports it', () => {
     const files = buildGeneratedFiles([], [TIER], DEFAULT_CONFIG, [STATIC_HOME]);
-    expect(JSON.parse(content(files, 'package.json')).dependencies.zod).toBe('^3.24.0');
+    expect(JSON.parse(content(files, 'package.json')).dependencies.zod).toBe('^4.6.6');
     expect(content(files, 'src/app/types/enums.ts')).toContain("import { z } from 'zod';");
     expect(content(files, 'src/app/index.ts')).toContain("export * from './types/enums';");
     expect(paths(files)).not.toContain('src/app/schemas/index.ts');
@@ -142,7 +142,7 @@ describe('backend-less emission — what the emitted files use is still provided
   it('a peer contract keeps zod for its schemas', () => {
     const peer = { name: 'billing', domains: [domain({ entityName: 'Invoice', fields: [{ name: 'id', type: 'java.util.UUID' }] })], enums: [] };
     const files = buildGeneratedFiles([], [], DEFAULT_CONFIG, [STATIC_HOME], [peer]);
-    expect(JSON.parse(content(files, 'package.json')).dependencies.zod).toBe('^3.24.0');
+    expect(JSON.parse(content(files, 'package.json')).dependencies.zod).toBe('^4.6.6');
   });
 });
 

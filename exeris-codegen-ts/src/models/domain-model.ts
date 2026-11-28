@@ -591,11 +591,7 @@ export type BindingMetadata = z.infer<typeof BindingMetadataSchema>;
  * modelled in slice 1 as opaque). A null `type` on the wire means CONTAINER (the
  * SDK's effectiveType default). The recursion is expressed via z.lazy.
  */
-export const ComponentNodeMetadataSchema: z.ZodType<
-  ComponentNodeMetadata,
-  z.ZodTypeDef,
-  ComponentNodeMetadataInput
-> = z.lazy(() =>
+export const ComponentNodeMetadataSchema: z.ZodType<ComponentNodeMetadata, ComponentNodeMetadataInput> = z.lazy(() =>
   z.object({
     type: BlockTypeSchema.optional(),
     customType: z.string().optional(),
@@ -604,7 +600,7 @@ export const ComponentNodeMetadataSchema: z.ZodType<
     children: z.array(ComponentNodeMetadataSchema).default([]),
     // Leaf field-render facet (UIMetadata.UIFieldMetadata). Slice 1 keeps it
     // opaque — modelled, not yet emitted (RFC §1 / §5 leaf-field-form deferral).
-    field: z.record(z.any()).optional(),
+    field: z.record(z.string(), z.any()).optional(),
   }),
 );
 

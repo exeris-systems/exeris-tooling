@@ -352,5 +352,11 @@
     "since": "0.11",
     "adr": "ADR-096",
     "justification": "ADR-096 Amendment 4: the list route reads search over the target's searchable String fields. The service offers it only where the route reads it, and the relationship picker of a searchable target sends the typed term, so it reaches rows beyond the first page. A field named search is reserved and is no longer a filter. An app whose picked targets have no searchable property regenerates its forms byte-identically. docs/migration/0.11.0/ts-17-relationship-picker-search.md carries the step."
+  },
+  {
+    "signature": "emitted package.json: zod ^3.24.0 -> ^4.6.6; Map<K,V> schemas: z.record(V) -> z.record(z.string(), V)",
+    "since": "0.12",
+    "adr": "ADR-092",
+    "justification": "The zod 3.x line has no release that fixes its published advisory, so the emitted app moves to the first fixed line. The zod 4 z.record takes a key schema and a value schema, so a Map field is emitted with z.string() as its key. Every other emitted schema has the same text and runs zod 4's validators, which are not zod 3's for the string formats (uuid, email, url): a UUID schema (z.string().uuid()) rejects ids whose version or variant bits are not RFC 9562, where zod 3 accepted any 8-4-4-4-12 hex string; z.guid() is the permissive form. docs/migration/0.12.0/ts-02-zod-four.md carries the step."
   }
 ]

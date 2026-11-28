@@ -124,6 +124,7 @@ describe('DslMapper.mapType — direct lookup hits', () => {
     const m = DslMapper.mapType('Map');
     expect(m.tsType).toBe('Record<string, unknown>');
     expect(m.defaultValue).toBe('{}');
+    expect(m.zodType).toBe('z.record(z.string(), z.unknown())');
   });
 
   it.each(['JsonNode', 'com.fasterxml.jackson.databind.JsonNode'])(
@@ -183,7 +184,7 @@ describe('DslMapper.mapType — generic parsing', () => {
   it('Map<String, Integer> → Record<string, number | null>', () => {
     const m = DslMapper.mapType('Map<String, Integer>');
     expect(m.tsType).toBe('Record<string, number | null>');
-    expect(m.zodType).toBe('z.record(z.number().int().nullable())');
+    expect(m.zodType).toBe('z.record(z.string(), z.number().int().nullable())');
   });
 
   it('Map<String> with missing value type → Record<string, unknown> fallback', () => {
@@ -191,6 +192,7 @@ describe('DslMapper.mapType — generic parsing', () => {
     // { tsType: "unknown", zodType: "z.unknown()" }.
     const m = DslMapper.mapType('Map<String>');
     expect(m.tsType).toBe('Record<string, unknown>');
+    expect(m.zodType).toBe('z.record(z.string(), z.unknown())');
   });
 
   it('Optional<LocalDate> → string | null + datepicker form control preserved from inner type', () => {
@@ -457,8 +459,8 @@ describe('DslMapper.mapType — types as the processor writes them', () => {
     ['java.util.Set<java.util.UUID>', 'string[]', 'z.array(z.string().uuid())'],
     ['java.util.Collection<java.lang.Long>', '(number | null)[]', 'z.array(z.number().nullable())'],
     ['java.util.List<com.shop.Tag>', 'Tag[]', 'z.array(z.lazy(() => TagSchema))'],
-    ['java.util.Map<java.lang.String,java.lang.Integer>', 'Record<string, number | null>', 'z.record(z.number().int().nullable())'],
-    ['java.util.Map<java.lang.String,java.util.List<java.lang.Long>>', 'Record<string, (number | null)[]>', 'z.record(z.array(z.number().nullable()))'],
+    ['java.util.Map<java.lang.String,java.lang.Integer>', 'Record<string, number | null>', 'z.record(z.string(), z.number().int().nullable())'],
+    ['java.util.Map<java.lang.String,java.util.List<java.lang.Long>>', 'Record<string, (number | null)[]>', 'z.record(z.string(), z.array(z.number().nullable()))'],
     ['java.util.Optional<java.time.Instant>', 'string | null', 'z.string().datetime().nullable()'],
   ])('%s → %s', (type, tsType, zodType) => {
     expect(DslMapper.mapType(type)).toMatchObject({ tsType, zodType });
