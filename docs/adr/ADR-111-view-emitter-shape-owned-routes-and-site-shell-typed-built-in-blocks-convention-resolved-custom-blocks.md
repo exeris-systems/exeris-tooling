@@ -267,8 +267,9 @@ The obligations below extend that contract.
 - ADR-092 — classification of each change and the MIGRATION obligation.
 - ADR-047 — the leaf facet and `FORM`, unchanged.
 - ADR-044 — the sibling emitter-shape decision.
-- `docs/generators.md` — the TS generator table, updated with the owned files.
-- `docs/guides/05-generate-the-frontend.md` — the route-assembly paragraph.
+- `docs/generators.md` — the TS generator table; the rows that implement this decision (V2 to V5
+  and V7) add the owned files to it.
+- `docs/guides/05-generate-the-frontend.md` — its route-assembly paragraph is rewritten by row V2.
 
 ## Engineering Protocol
 
