@@ -33,7 +33,7 @@ import {
 } from './generators/angular/spec-gen.js';
 import { generateSaga } from './generators/angular/saga-gen.js';
 import { generateStore } from './generators/angular/store-gen.js';
-import { generateAppBarrel, generateAppStructure, RETIRED_SCAFFOLD_SEED_PATHS, SCAFFOLD_SEED_PATHS } from './generators/angular/app-structure-gen.js';
+import { generateAppBarrel, generateAppStructure, RETIRED_SCAFFOLD_SEED_PATHS, SCAFFOLD_SEED_PATHS, sidebarUsesPermissions } from './generators/angular/app-structure-gen.js';
 import { AUTH_SERVICE_PATH, GuardGenerator, generateRouteGuards } from './generators/angular/guard-gen.js';
 import { generateAuthInterceptor } from './generators/angular/auth-interceptor-gen.js';
 import { generateViewRoutesAggregate, generateViewServerRoutesAggregate } from './generators/angular/view-routes-gen.js';
@@ -215,10 +215,14 @@ export function buildGeneratedFiles(
   // The bearer interceptor and the route guards exist exactly when the kernel application refuses
   // some route to a caller without a credential. Both read the auth service seed, emitted with them.
   const authInterceptor = demandsIdentity(rows);
-  if (authInterceptor) {
-    appTree.push(generateAuthInterceptor(config));
+  // The sidebar's permission checks read the same service, so a menu that declares permissions has
+  // it even when no route demands identity.
+  if (authInterceptor || sidebarUsesPermissions(domains)) {
     const authService = new GuardGenerator().generateAggregate(domains, ctx).find((f) => f.path === AUTH_SERVICE_PATH);
     if (authService) appTree.push(authService);
+  }
+  if (authInterceptor) {
+    appTree.push(generateAuthInterceptor(config));
     appTree.push(generateRouteGuards());
     if (config.generateTests) {
       appTree.push(generateAuthInterceptorSpec(config));

@@ -155,11 +155,7 @@ export const UI_CONTRACT_COVERAGE = {
   detailView: { state: 'READ', written: true },
   createForm: { state: 'READ', written: true },
   editForm: { state: 'READ', written: true },
-  searchable: {
-    state: 'RESERVED',
-    written: true,
-    reason: 'Written from @UI; no list search box is emitted on either side. The list route\'s search reads @Field(searchable), not this switch.',
-  },
+  searchable: { state: 'READ', written: true },
   filterable: { state: 'READ', written: true },
   exportable: {
     state: 'RESERVED',
@@ -177,7 +173,7 @@ export const ACTION_CONTRACT_COVERAGE = {
     written: true,
     reason: 'The emitted handler invokes this method on the aggregate; the client addresses the action by name.',
   },
-  displayName: { state: 'RESERVED', written: true, reason: 'Written from @Action.label; the emitted action controls label an action by its name on both sides.' },
+  displayName: { state: 'READ', written: true },
   description: { state: 'READ', written: true },
   httpMethod: {
     state: 'RESERVED',
@@ -305,7 +301,7 @@ export const INTERNAL_API_CONTRACT_COVERAGE = {
 
 export const NAV_MENU_CONTRACT_COVERAGE = {
   group: { state: 'READ', written: true },
-  parent: { state: 'RESERVED', written: true, reason: 'Nested submenus in sidebar are reserved for future emission.' },
+  parent: { state: 'READ', written: true },
   label: { state: 'READ', written: true },
   icon: { state: 'READ', written: true },
   order: { state: 'READ', written: true },
@@ -313,15 +309,15 @@ export const NAV_MENU_CONTRACT_COVERAGE = {
   groupIcon: { state: 'READ', written: true },
   hidden: { state: 'READ', written: true },
   roles: { state: 'RESERVED', written: true, reason: 'Role-based menu filtering is reserved for future security integration.' },
-  permissions: { state: 'RESERVED', written: true, reason: 'Permission-based menu filtering is reserved for future security integration.' },
-  badge: { state: 'RESERVED', written: true, reason: 'Menu item badges are reserved for future emission.' },
-  badgeColor: { state: 'RESERVED', written: true, reason: 'Menu item badge colors are reserved for future emission.' },
-  tooltip: { state: 'RESERVED', written: true, reason: 'Menu item tooltips are reserved for future emission.' },
-  openInNewTab: { state: 'RESERVED', written: true, reason: 'Opening menu links in new tabs is reserved for future emission.' },
-  routePath: { state: 'RESERVED', written: true, reason: 'Custom route paths on nav menu items are reserved for future emission.' },
-  queryParams: { state: 'RESERVED', written: true, reason: 'Custom query params on nav menu items are reserved for future emission.' },
-  expanded: { state: 'RESERVED', written: true, reason: 'Default-expanded submenus are reserved for future emission.' },
-  divider: { state: 'RESERVED', written: true, reason: 'Dividers between menu items are reserved for future emission.' },
+  permissions: { state: 'READ', written: true },
+  badge: { state: 'READ', written: true },
+  badgeColor: { state: 'READ', written: true },
+  tooltip: { state: 'READ', written: true },
+  openInNewTab: { state: 'READ', written: true },
+  routePath: { state: 'READ', written: true },
+  queryParams: { state: 'READ', written: true },
+  expanded: { state: 'READ', written: true },
+  divider: { state: 'READ', written: true },
 } as const satisfies { readonly [K in keyof NavMenuMetadata]-?: NestedContractCoverageEntry };
 
 export const TAB_CONTRACT_COVERAGE = {
@@ -329,12 +325,12 @@ export const TAB_CONTRACT_COVERAGE = {
   label: { state: 'READ', written: true },
   order: { state: 'READ', written: true },
   icon: { state: 'READ', written: true },
-  lazy: { state: 'RESERVED', written: true, reason: 'Lazy loading tab panels is reserved for future emission.' },
-  badgeField: { state: 'RESERVED', written: true, reason: 'Tab header badges are reserved for future emission.' },
-  badgeColor: { state: 'RESERVED', written: true, reason: 'Tab header badge colors are reserved for future emission.' },
-  disabled: { state: 'RESERVED', written: true, reason: 'Disabled tabs are reserved for future emission.' },
+  lazy: { state: 'READ', written: true },
+  badgeField: { state: 'READ', written: true },
+  badgeColor: { state: 'READ', written: true },
+  disabled: { state: 'READ', written: true },
   disabledWhen: { state: 'RESERVED', written: true, reason: 'Dynamic tab disable conditions are reserved for future emission.' },
   visibleWhen: { state: 'RESERVED', written: true, reason: 'Dynamic tab visibility conditions are reserved for future emission.' },
-  cssClass: { state: 'RESERVED', written: true, reason: 'Custom CSS classes on tab panels are reserved for future emission.' },
+  cssClass: { state: 'READ', written: true },
   fields: { state: 'READ', written: true },
 } as const satisfies { readonly [K in keyof UITabMetadata]-?: NestedContractCoverageEntry };

@@ -36,6 +36,13 @@ import { REQUIRE_ANY_PERMISSION, REQUIRE_AUTHENTICATED, ROUTE_GUARDS_PATH } from
 import { requirementFor, type RouteRequirementRow } from '../../core/route-requirements.js';
 import { emitsSitemap, generateSitemapFiles } from './sitemap-gen.js';
 import { fileHeader, lineHeaderLines } from '../file-header.js';
+import {
+  gated,
+  navScopes,
+  renderSidebarLink,
+  renderSubmenu,
+  type SidebarLink,
+} from './sidebar-link.js';
 
 export interface GeneratedFile {
   path: string;
@@ -390,34 +397,82 @@ function glyphSpan(glyph: string): string {
   return `<span class="${SIDEBAR_ICON_CLASSES}">${glyph}</span>`;
 }
 
-function renderSidebarLink(item: { path: string; label: string; iconHtml: string }): string {
-  return `
-            <a routerLink="/${item.path}"
-               routerLinkActive="bg-indigo-100 dark:bg-indigo-900 text-exeris-primary-hover dark:text-indigo-200"
-               class="group flex items-center px-2 py-2 text-base font-medium rounded-md text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700">
-              ${item.iconHtml}
-              ${item.label}
-            </a>`;
-}
-
-interface SidebarItem {
+interface SidebarItem extends SidebarLink {
   entityName: string;
-  path: string;
-  label: string;
-  iconHtml: string;
   order: number;
   group: string;
   groupOrder: number;
   groupIcon: string;
+  /** The submenu the entry sits in, within its group; empty for an entry directly under the group. */
+  parent: string;
+  /** The permission names that admit the entry; empty when every user sees it. */
+  scopes: readonly string[];
+  expanded: boolean;
 }
 
-function sortSidebarItems(list: SidebarItem[]): SidebarItem[] {
-  return [...list].sort((a, b) => {
+/** One position of a sidebar section: a link, or a submenu standing in for its children. */
+interface SidebarEntry {
+  order: number;
+  key: string;
+  html: string;
+  /** The names that admit a user to anything in the entry, or `null` when some part is open to everyone. */
+  scopes: readonly string[] | null;
+}
+
+function linkEntry(item: SidebarItem): SidebarEntry {
+  const link = renderSidebarLink(item);
+  const gatedScopes = item.scopes.length > 0 ? item.scopes : null;
+  return { order: item.order, key: item.entityName, html: gatedScopes ? gated(gatedScopes, link) : link, scopes: gatedScopes };
+}
+
+/** The union of the names that admit a user to a set of entries, or `null` when any entry shows to everyone. */
+function admittingScopes(entries: readonly SidebarEntry[]): readonly string[] | null {
+  const names = new Set<string>();
+  for (const entry of entries) {
+    if (entry.scopes === null) return null;
+    for (const scope of entry.scopes) names.add(scope);
+  }
+  return names.size > 0 ? [...names] : null;
+}
+
+function sortEntries(entries: SidebarEntry[]): SidebarEntry[] {
+  return [...entries].sort((a, b) => {
     if (a.order !== b.order) return a.order - b.order;
-    if (a.entityName < b.entityName) return -1;
-    if (a.entityName > b.entityName) return 1;
+    if (a.key < b.key) return -1;
+    if (a.key > b.key) return 1;
     return 0;
   });
+}
+
+/** The entries of one section: each entry without a parent, and one submenu per parent name. */
+function sectionEntries(items: readonly SidebarItem[]): SidebarEntry[] {
+  const entries: SidebarEntry[] = items.filter((i) => i.parent === '').map(linkEntry);
+  const submenus = new Map<string, SidebarItem[]>();
+  for (const item of items) {
+    if (item.parent === '') continue;
+    const members = submenus.get(item.parent);
+    if (members) members.push(item);
+    else submenus.set(item.parent, [item]);
+  }
+  for (const [name, members] of submenus) {
+    const children = sortEntries(members.map(linkEntry));
+    const scopes = admittingScopes(children);
+    const html = renderSubmenu(name, children.map((c) => c.html).join('\n'), members.some((m) => m.expanded));
+    entries.push({
+      order: Math.min(...members.map((m) => m.order)),
+      key: name,
+      html: scopes ? gated(scopes, html) : html,
+      scopes,
+    });
+  }
+  return sortEntries(entries);
+}
+
+/** Whether the sidebar hides an entry behind a permission check, which is what the shell reads `AuthService` for. */
+export function sidebarUsesPermissions(domains: readonly DomainMetadata[]): boolean {
+  return domains.some(
+    (d) => entityViews(d).list && d.navMenu?.hidden !== true && navScopes(d.navMenu?.permissions).length > 0,
+  );
 }
 
 function generateNavItemsHtml(domains: DomainMetadata[], views: ViewMetadata[]): string {
@@ -452,6 +507,7 @@ function generateNavItemsHtml(domains: DomainMetadata[], views: ViewMetadata[]):
     const group = nav?.group ? nav.group.trim() : '';
     const groupOrder = nav?.groupOrder ?? 999;
     const groupIcon = nav?.groupIcon ? nav.groupIcon.trim() : '';
+    const text = (value: string | undefined): string | undefined => (value && value.trim() !== '' ? value.trim() : undefined);
     items.push({
       entityName: d.entityName,
       path,
@@ -461,10 +517,20 @@ function generateNavItemsHtml(domains: DomainMetadata[], views: ViewMetadata[]):
       group,
       groupOrder,
       groupIcon,
+      parent: nav?.parent ? nav.parent.trim() : '',
+      scopes: navScopes(nav?.permissions),
+      expanded: nav?.expanded === true,
+      routePath: text(nav?.routePath),
+      queryParams: text(nav?.queryParams),
+      badge: text(nav?.badge),
+      badgeColor: text(nav?.badgeColor),
+      tooltip: text(nav?.tooltip),
+      openInNewTab: nav?.openInNewTab === true,
+      divider: nav?.divider,
     });
   }
 
-  const ungrouped = sortSidebarItems(items.filter((i) => i.group === ''));
+  const ungrouped = sectionEntries(items.filter((i) => i.group === ''));
   const pageViews = views.filter(isPageView).map((v) => ({
     path: viewRoutePath(v),
     label: v.title ?? v.name,
@@ -493,21 +559,24 @@ function generateNavItemsHtml(domains: DomainMetadata[], views: ViewMetadata[]):
   });
 
   const sections: string[] = [];
-  const ungroupedLinks = [...ungrouped.map(renderSidebarLink), ...pageViews.map(renderSidebarLink)];
+  const ungroupedLinks = [...ungrouped.map((e) => e.html), ...pageViews.map(renderSidebarLink)];
   if (ungroupedLinks.length > 0) {
     sections.push(ungroupedLinks.join('\n'));
   }
 
   for (const g of sortedGroups) {
     const iconSpan = g.groupIcon ? declaredIconSpan(g.groupIcon, SIDEBAR_ICON_CLASSES) : '';
-    const groupItemsHtml = sortSidebarItems(g.items).map(renderSidebarLink).join('\n');
-    sections.push(`
+    const groupEntries = sectionEntries(g.items);
+    const groupItemsHtml = groupEntries.map((e) => e.html).join('\n');
+    const groupScopes = admittingScopes(groupEntries);
+    const groupHtml = `
             <div data-testid="nav-group-${testIdSegment(g.groupName)}" class="pt-4 first:pt-0">
               <div class="px-2 mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 flex items-center">
                 ${iconSpan}${tsTemplateText(g.groupName)}
               </div>
 ${groupItemsHtml}
-            </div>`);
+            </div>`;
+    sections.push(groupScopes ? gated(groupScopes, groupHtml) : groupHtml);
   }
 
   return sections.join('\n');
@@ -515,12 +584,13 @@ ${groupItemsHtml}
 
 function generateAppComponent(domains: DomainMetadata[], appName: string, views: ViewMetadata[] = []): string {
   const navItemsHtml = generateNavItemsHtml(domains, views);
+  const usesAuth = sidebarUsesPermissions(domains);
 
   return `${fileHeader({ title: 'Root Application Component', doNotEdit: 'omit' })}
 
-import { Component } from '@angular/core';
+import { Component${usesAuth ? ', inject' : ''} } from '@angular/core';
 import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
-import { CommonModule } from '@angular/common';
+import { CommonModule } from '@angular/common';${usesAuth ? "\nimport { AuthService } from './core/auth.service';" : ''}
 
 @Component({
   selector: 'app-root',
@@ -556,7 +626,7 @@ ${navItemsHtml}
   \`,
 })
 export class AppComponent {
-  title = '${tsSingleQuoted(appName)}';
+  title = '${tsSingleQuoted(appName)}';${usesAuth ? '\n  protected readonly auth = inject(AuthService);' : ''}
 }
 `;
 }

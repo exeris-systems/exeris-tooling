@@ -7,8 +7,8 @@
  * (ADR-096). The component holds the page, the page size, the sort and the filters as signals, reads
  * the page through an `rxResource` keyed on them, and shows the envelope it answers. It offers a
  * sortable header only for a property the route sorts on and a filter only for one it filters on,
- * by the rules of `list-query.ts`; the route refuses any other parameter with `400`, and has no
- * search.
+ * by the rules of `list-query.ts`; the route refuses any other parameter with `400`. A search box
+ * sends the route's `search` where the entity's `@UI(searchable)` is set and a field is searchable.
  */
 
 import type { ActionMetadata, DomainMetadata } from '../../models/domain-model.js';
@@ -23,13 +23,13 @@ import {
   fieldRenderContext,
   isEnumField,
   resolveFieldRenders,
-  toTitleCase,
   type BadgeTone,
   type FieldRenderModel,
   type ListFilterKind,
 } from './field-render.js';
-import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, filterProperties, type ListQueryKind } from './list-query.js';
-import { tsSingleQuoted } from './ts-literal.js';
+import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MAX_SEARCH_LENGTH, filterProperties, searchableProperties, type ListQueryKind } from './list-query.js';
+import { attributeText, tsSingleQuoted, tsTemplateText } from './ts-literal.js';
+import { actionLabel } from './action-label.js';
 import { entityViews } from './entity-views.js';
 import { fileHeaderLines } from '../file-header.js';
 
@@ -145,6 +145,10 @@ export class ListGenerator implements CodeGenerator {
     const badgeFields = [...new Map([...enumColumns, ...enumFilters].map((r) => [r.name, r])).values()];
     const actions = rowActions(metadata);
     const hasFilters = filterControls.length > 0;
+    // The box exists where the entity switches search on and the route has a field to match: the
+    // route refuses a non-blank `search` on an entity with nothing searchable.
+    const hasSearch = metadata.uiMetadata?.searchable === true && searchableProperties(metadata).length > 0;
+    const hasQuery = hasFilters || hasSearch;
 
     const pipes = new Set<string>();
     for (const col of listColumns) {
@@ -251,7 +255,7 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">`);
     lines.push(`            @if (totalElements() > 0) {`);
     lines.push(`              {{ totalElements() }} {{ totalElements() === 1 ? '${displayName.toLowerCase()}' : '${pluralName.toLowerCase()}' }} found`);
-    if (hasFilters) {
+    if (hasQuery) {
       lines.push(`            } @else if (filtersActive()) {`);
       lines.push(`              No ${pluralName.toLowerCase()} match`);
     }
@@ -288,9 +292,10 @@ export class ListGenerator implements CodeGenerator {
     lines.push(``);
 
     // Filters — the row exists when it holds a control.
-    if (hasFilters) {
+    if (hasQuery) {
       lines.push(`      <!-- Filters -->`);
       lines.push(`      <div class="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center">`);
+      if (hasSearch) lines.push(...this.searchControl(pluralName));
       for (const filter of filterControls) {
         lines.push(...this.filterControl(filter));
       }
@@ -386,7 +391,7 @@ export class ListGenerator implements CodeGenerator {
     for (const action of actions) {
       const method = DslMapper.toMethodName(action.name);
       const kebab = DslMapper.toKebabCase(action.name);
-      lines.push(`                        <button type="button" (click)="on${capitalize(method)}(item)" [attr.data-testid]="'action-${kebab}-' + item.${idField}" class="${ROW_ACTION_CLASS}">${toTitleCase(method)}</button>`);
+      lines.push(`                        <button type="button" (click)="on${capitalize(method)}(item)" [attr.data-testid]="'action-${kebab}-' + item.${idField}" class="${ROW_ACTION_CLASS}">${tsTemplateText(actionLabel(action, method))}</button>`);
     }
     lines.push(`                        <button type="button" (click)="onDelete(item)" [attr.data-testid]="'action-delete-' + item.${idField}" class="exeris-btn exeris-btn-danger exeris-btn-sm">Delete</button>`);
     lines.push(`                      </div>`);
@@ -487,6 +492,10 @@ export class ListGenerator implements CodeGenerator {
     for (const filter of filterControls) {
       lines.push(`  readonly ${filterSignalName(filter.name)} = signal('');`);
     }
+    if (hasSearch) {
+      lines.push(`  /** The search term the route matches, blank for none. */`);
+      lines.push(`  readonly searchText = signal('');`);
+    }
     lines.push(``);
     if (hasFilters) {
       lines.push(`  /** The filters the route applies: each control that holds a value. */`);
@@ -495,7 +504,13 @@ export class ListGenerator implements CodeGenerator {
         lines.push(`    ${filter.name}: ${this.filterValue(filter, modelName)},`);
       }
       lines.push(`  }));`);
-      lines.push(`  readonly filtersActive = computed(() => Object.values(this.filter()).some((value) => value !== undefined));`);
+    }
+    if (hasQuery) {
+      const active = [
+        ...(hasFilters ? ['Object.values(this.filter()).some((value) => value !== undefined)'] : []),
+        ...(hasSearch ? ["this.searchText() !== ''"] : []),
+      ].join(' || ');
+      lines.push(`  readonly filtersActive = computed(() => ${active});`);
       lines.push(``);
     }
     lines.push(`  /** One page from the list route, read again whenever the page, size, sort or a filter changes. */`);
@@ -508,13 +523,16 @@ export class ListGenerator implements CodeGenerator {
       lines.push(`          page: this.currentPage(),`);
       lines.push(`          size: this.pageSize(),`);
       lines.push(`          ...(sort !== null ? { sort, direction: this.sortDirection() } : {}),`);
+      if (hasSearch) lines.push(`          ...(this.searchText() !== '' ? { search: this.searchText() } : {}),`);
       lines.push(`        },`);
       lines.push(`        filter: ${hasFilters ? 'this.filter()' : '{}'},`);
       lines.push(`      };`);
       lines.push(`    },`);
     } else {
       lines.push(`    params: () => ({`);
-      lines.push(`      request: { page: this.currentPage(), size: this.pageSize() },`);
+      lines.push(hasSearch
+        ? `      request: { page: this.currentPage(), size: this.pageSize(), ...(this.searchText() !== '' ? { search: this.searchText() } : {}) },`
+        : `      request: { page: this.currentPage(), size: this.pageSize() },`);
       lines.push(`      filter: ${hasFilters ? 'this.filter()' : '{}'},`);
       lines.push(`    }),`);
     }
@@ -562,6 +580,14 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`    this.pageResource.reload();`);
     lines.push(`  }`);
     lines.push(``);
+    if (hasSearch) {
+      lines.push(`  /** Applies the box's text: the route refuses a term longer than ${MAX_SEARCH_LENGTH}, so the box sends no more. */`);
+      lines.push(`  setSearch(value: string): void {`);
+      lines.push(`    this.searchText.set(value.trim().slice(0, ${MAX_SEARCH_LENGTH}));`);
+      lines.push(`    this.currentPage.set(0);`);
+      lines.push(`  }`);
+      lines.push(``);
+    }
     if (hasFilters) {
       lines.push(`  setFilter(target: WritableSignal<string>, value: string): void {`);
       lines.push(`    target.set(value.trim());`);
@@ -724,6 +750,22 @@ export class ListGenerator implements CodeGenerator {
     if (NUMBER_FILTER_KINDS.has(filter.valueKind)) return `numberFilter(${text})`;
     if (filter.kind === 'enum') return `(${text} || undefined) as ${modelName}Filter['${filter.name}']`;
     return `${text} || undefined`;
+  }
+
+  /** The search box: its text is applied when committed, like a filter's, and matches any searchable field. */
+  private searchControl(pluralName: string): string[] {
+    return [
+      `        <input`,
+      `          #searchBox`,
+      `          type="search"`,
+      `          (change)="setSearch(searchBox.value)"`,
+      `          placeholder="Search ${attributeText(pluralName.toLowerCase())}"`,
+      `          aria-label="Search ${attributeText(pluralName.toLowerCase())}"`,
+      `          maxlength="${MAX_SEARCH_LENGTH}"`,
+      `          data-testid="list-search"`,
+      `          class="${FILTER_INPUT_CLASS}"`,
+      `        />`,
+    ];
   }
 
   /** The markup of one filter control. Every control writes its signal through `setFilter`. */
