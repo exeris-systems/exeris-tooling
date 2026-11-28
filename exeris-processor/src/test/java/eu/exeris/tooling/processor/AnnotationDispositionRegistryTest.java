@@ -92,7 +92,6 @@ class AnnotationDispositionRegistryTest {
             attribute-unregistered Action#confirm
             attribute-unregistered Action#debounce
             attribute-unregistered Action#errorMessage
-            attribute-unregistered Action#label
             attribute-unregistered Action#location
             attribute-unregistered Action#maxConcurrent
             attribute-unregistered Action#order
@@ -434,7 +433,6 @@ class AnnotationDispositionRegistryTest {
             attribute-unregistered SagaStep#timeoutEvents
             attribute-unregistered SagaStep#traceSpanName
             attribute-unregistered SagaStep#waitForAll
-            attribute-unregistered UI#searchable
             attribute-unregistered UIGroup#icon
             attribute-unregistered Validation#asyncValidator
             attribute-unregistered Validation#customValidator
