@@ -1,0 +1,18 @@
+{
+  "sdkVersion": "0.13.3",
+  "source": "exeris-sdk docs/stability-matrix.md (Preview rows) and MIGRATION-0.x-to-1.0.md section 2",
+  "surfaces": [
+    {"annotation": "eu.exeris.sdk.annotation.Channel"},
+    {"annotation": "eu.exeris.sdk.annotation.GraphEdge", "attribute": "bidirectional"},
+    {"annotation": "eu.exeris.sdk.annotation.GraphEdge", "attribute": "direction"},
+    {"annotation": "eu.exeris.sdk.annotation.GraphEdge", "attribute": "inverseType"},
+    {"annotation": "eu.exeris.sdk.annotation.GraphEdge", "attribute": "properties"},
+    {"annotation": "eu.exeris.sdk.annotation.GraphEdge", "attribute": "propertyMappings"},
+    {"annotation": "eu.exeris.sdk.annotation.GraphEdge", "attribute": "staticProperties"},
+    {"annotation": "eu.exeris.sdk.annotation.GraphEdge", "attribute": "staticWeight"},
+    {"annotation": "eu.exeris.sdk.annotation.GraphEdge", "attribute": "upsert"},
+    {"annotation": "eu.exeris.sdk.annotation.GraphEdge", "attribute": "weightField"},
+    {"annotation": "eu.exeris.sdk.annotation.GraphEdge", "attribute": "weighted"},
+    {"annotation": "eu.exeris.sdk.annotation.Schedule"}
+  ]
+}
