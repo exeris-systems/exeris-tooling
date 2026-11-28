@@ -71,6 +71,12 @@ class AnnotationDispositionRegistryTest {
     private static final Set<String> INHERITING_STATES = Set.of("SDK_REMOVED", "OUTSIDE_FREEZE", "REFUSED");
     private static final Set<String> STRICT_REPORTED_STATES =
             Set.of("OPEN", "EXCEPTION", "SDK_REMOVED", "OUTSIDE_FREEZE");
+    /**
+     * The attribute states that require an {@code INERT_ATTRIBUTES} entry. {@code SDK_REMOVED} is not
+     * among them: javac reports a use of an attribute the SDK marks for removal, so an entry for it is
+     * allowed and not required.
+     */
+    private static final Set<String> ENTRY_REQUIRED_STATES = Set.of("OPEN", "EXCEPTION", "OUTSIDE_FREEZE");
 
     private static final String RULE_NOT_EXTRACTED = "emitted-annotation-not-extracted";
     private static final String RULE_INERT_ANNOTATION = "emitted-annotation-is-inert";
@@ -109,7 +115,6 @@ class AnnotationDispositionRegistryTest {
             attribute-unregistered ActionParam#dataType
             attribute-unregistered ActionParam#defaultValueExpression
             attribute-unregistered ActionParam#enabledWhen
-            attribute-unregistered ActionParam#encrypted
             attribute-unregistered ActionParam#format
             attribute-unregistered ActionParam#gridSpan
             attribute-unregistered ActionParam#group
@@ -146,7 +151,6 @@ class AnnotationDispositionRegistryTest {
             attribute-unregistered ExerisDomain#searchConfig
             attribute-unregistered ExerisDomain#sensitive
             attribute-unregistered ExerisDomain#tags
-            attribute-unregistered ExerisDomain#tenantScoped
             attribute-unregistered ExerisDomain#ui
             attribute-unregistered ExerisDomain#validationMode
             attribute-unregistered Graph#additionalLabels
@@ -205,45 +209,16 @@ class AnnotationDispositionRegistryTest {
             attribute-unregistered Graph#uniqueConstraint
             attribute-unregistered Graph#useVectorEmbeddings
             attribute-unregistered Graph#vectorDimensions
-            attribute-unregistered GraphEdge#batch
             attribute-unregistered GraphEdge#bidirectional
-            attribute-unregistered GraphEdge#cascadeDelete
-            attribute-unregistered GraphEdge#cascadeDeleteOrphanTarget
-            attribute-unregistered GraphEdge#cascadeUpdate
-            attribute-unregistered GraphEdge#compositeIndex
-            attribute-unregistered GraphEdge#computedProperties
-            attribute-unregistered GraphEdge#condition
-            attribute-unregistered GraphEdge#createdAtProperty
             attribute-unregistered GraphEdge#description
             attribute-unregistered GraphEdge#direction
-            attribute-unregistered GraphEdge#graphqlDescription
-            attribute-unregistered GraphEdge#graphqlExpose
-            attribute-unregistered GraphEdge#graphqlFieldName
-            attribute-unregistered GraphEdge#indexed
-            attribute-unregistered GraphEdge#indexedProperties
             attribute-unregistered GraphEdge#inverseType
-            attribute-unregistered GraphEdge#maxEdges
-            attribute-unregistered GraphEdge#minEdges
-            attribute-unregistered GraphEdge#normalizeWeight
             attribute-unregistered GraphEdge#properties
             attribute-unregistered GraphEdge#propertyMappings
             attribute-unregistered GraphEdge#staticProperties
             attribute-unregistered GraphEdge#staticWeight
-            attribute-unregistered GraphEdge#sync
-            attribute-unregistered GraphEdge#syncOnEvents
-            attribute-unregistered GraphEdge#syncProperties
-            attribute-unregistered GraphEdge#temporal
-            attribute-unregistered GraphEdge#traversable
-            attribute-unregistered GraphEdge#traversalCost
-            attribute-unregistered GraphEdge#traversalCostExpression
-            attribute-unregistered GraphEdge#unique
-            attribute-unregistered GraphEdge#updatedAtProperty
             attribute-unregistered GraphEdge#upsert
-            attribute-unregistered GraphEdge#validFrom
-            attribute-unregistered GraphEdge#validTo
-            attribute-unregistered GraphEdge#weightExpression
             attribute-unregistered GraphEdge#weightField
-            attribute-unregistered GraphEdge#weightProperty
             attribute-unregistered GraphEdge#weighted
             attribute-unregistered GraphProperty#array
             attribute-unregistered GraphProperty#compositeIndex
@@ -251,7 +226,6 @@ class AnnotationDispositionRegistryTest {
             attribute-unregistered GraphProperty#defaultValue
             attribute-unregistered GraphProperty#description
             attribute-unregistered GraphProperty#embeddingService
-            attribute-unregistered GraphProperty#encrypted
             attribute-unregistered GraphProperty#excludeFromInitialSync
             attribute-unregistered GraphProperty#fullText
             attribute-unregistered GraphProperty#fullTextAnalyzer
@@ -295,144 +269,13 @@ class AnnotationDispositionRegistryTest {
             attribute-unregistered Relationship#required
             attribute-unregistered Relationship#searchFields
             attribute-unregistered Relationship#searchable
-            attribute-unregistered Saga#afterCompensate
-            attribute-unregistered Saga#afterStart
-            attribute-unregistered Saga#afterStep
-            attribute-unregistered Saga#alertChannels
-            attribute-unregistered Saga#alertOnCompensationFailure
-            attribute-unregistered Saga#alertOnFailure
-            attribute-unregistered Saga#alertOnTimeout
-            attribute-unregistered Saga#archiveCompletedSagas
-            attribute-unregistered Saga#archiveStorage
-            attribute-unregistered Saga#beforeCompensate
-            attribute-unregistered Saga#beforeStart
-            attribute-unregistered Saga#beforeStep
-            attribute-unregistered Saga#cleanupAfterHours
-            attribute-unregistered Saga#commandAckMode
-            attribute-unregistered Saga#commandDispatch
-            attribute-unregistered Saga#commandTopicPattern
-            attribute-unregistered Saga#compensationOrder
-            attribute-unregistered Saga#compensationStrategy
-            attribute-unregistered Saga#correlationIdExpression
-            attribute-unregistered Saga#defaultCommandTimeout
-            attribute-unregistered Saga#durationAlertThreshold
-            attribute-unregistered Saga#emitMetrics
-            attribute-unregistered Saga#enableTracing
-            attribute-unregistered Saga#encryptState
-            attribute-unregistered Saga#exposeStatusApi
-            attribute-unregistered Saga#failureAlertSeverity
-            attribute-unregistered Saga#generateTestFixtures
-            attribute-unregistered Saga#healthCheck
-            attribute-unregistered Saga#idempotencyKeyExpression
-            attribute-unregistered Saga#idempotencyStorage
-            attribute-unregistered Saga#idempotencyWindow
-            attribute-unregistered Saga#idempotent
-            attribute-unregistered Saga#inMemoryPersistenceInTests
-            attribute-unregistered Saga#initialStateExpression
-            attribute-unregistered Saga#logLevel
-            attribute-unregistered Saga#logStateOnStep
-            attribute-unregistered Saga#maxConcurrentInstances
-            attribute-unregistered Saga#maxConcurrentPerKey
-            attribute-unregistered Saga#maxConcurrentPerTenant
-            attribute-unregistered Saga#metricPrefix
-            attribute-unregistered Saga#mockServicesInTests
             attribute-unregistered Saga#module
-            attribute-unregistered Saga#noRetryOn
-            attribute-unregistered Saga#onComplete
-            attribute-unregistered Saga#onFail
-            attribute-unregistered Saga#onTimeout
-            attribute-unregistered Saga#overflowBehavior
-            attribute-unregistered Saga#overflowQueueSize
-            attribute-unregistered Saga#persistence
-            attribute-unregistered Saga#replyTopic
-            attribute-unregistered Saga#retryAlertThreshold
-            attribute-unregistered Saga#retryBackoffMultiplier
-            attribute-unregistered Saga#retryInitialDelay
-            attribute-unregistered Saga#retryJitter
-            attribute-unregistered Saga#retryMaxDelay
-            attribute-unregistered Saga#retryOn
-            attribute-unregistered Saga#retryPolicy
-            attribute-unregistered Saga#stateCompression
-            attribute-unregistered Saga#stateEncryptionKeyAlias
-            attribute-unregistered Saga#stateFactory
-            attribute-unregistered Saga#stateFormat
-            attribute-unregistered Saga#stateRetentionDays
-            attribute-unregistered Saga#stateTable
             attribute-unregistered Saga#tags
-            attribute-unregistered Saga#tenantIdExpression
-            attribute-unregistered Saga#traceSampleRate
-            attribute-unregistered Saga#useOutbox
-            attribute-unregistered Saga#userIdExpression
-            attribute-unregistered SagaStep#alertOnFailure
-            attribute-unregistered SagaStep#alertThreshold
-            attribute-unregistered SagaStep#checkIdempotency
-            attribute-unregistered SagaStep#circuitBreaker
-            attribute-unregistered SagaStep#circuitBreakerFallback
-            attribute-unregistered SagaStep#circuitBreakerName
-            attribute-unregistered SagaStep#circuitBreakerOpenDuration
-            attribute-unregistered SagaStep#circuitBreakerThreshold
-            attribute-unregistered SagaStep#commandBuilder
-            attribute-unregistered SagaStep#commandClass
-            attribute-unregistered SagaStep#commandHeaders
-            attribute-unregistered SagaStep#commandPayloadExpression
-            attribute-unregistered SagaStep#compensationBuilder
-            attribute-unregistered SagaStep#compensationClass
-            attribute-unregistered SagaStep#compensationExpectedEvents
-            attribute-unregistered SagaStep#compensationPayloadExpression
-            attribute-unregistered SagaStep#compensationRequired
-            attribute-unregistered SagaStep#compensationRetries
-            attribute-unregistered SagaStep#compensationRetryDelay
-            attribute-unregistered SagaStep#compensationService
-            attribute-unregistered SagaStep#compensationTimeout
-            attribute-unregistered SagaStep#condition
-            attribute-unregistered SagaStep#continueOnCompensationFailure
-            attribute-unregistered SagaStep#dependsOn
-            attribute-unregistered SagaStep#emitMetrics
-            attribute-unregistered SagaStep#endpoint
-            attribute-unregistered SagaStep#errorHandler
-            attribute-unregistered SagaStep#expectedEvents
-            attribute-unregistered SagaStep#failFast
-            attribute-unregistered SagaStep#failureEvents
-            attribute-unregistered SagaStep#idempotencyKey
-            attribute-unregistered SagaStep#idempotent
-            attribute-unregistered SagaStep#inputMappings
-            attribute-unregistered SagaStep#instanceId
-            attribute-unregistered SagaStep#instanceSelection
             attribute-unregistered SagaStep#kind
-            attribute-unregistered SagaStep#logLevel
-            attribute-unregistered SagaStep#logPayload
-            attribute-unregistered SagaStep#logResponse
-            attribute-unregistered SagaStep#maxRetryDelay
-            attribute-unregistered SagaStep#metricTags
-            attribute-unregistered SagaStep#noRetryOn
             attribute-unregistered SagaStep#order
-            attribute-unregistered SagaStep#outputMappings
             attribute-unregistered SagaStep#parallel
-            attribute-unregistered SagaStep#permissions
-            attribute-unregistered SagaStep#propagateSecurityContext
-            attribute-unregistered SagaStep#required
-            attribute-unregistered SagaStep#responseHandler
-            attribute-unregistered SagaStep#responseTransform
-            attribute-unregistered SagaStep#responseValidation
-            attribute-unregistered SagaStep#retries
-            attribute-unregistered SagaStep#retryBackoff
-            attribute-unregistered SagaStep#retryDelay
-            attribute-unregistered SagaStep#retryJitter
-            attribute-unregistered SagaStep#retryOn
-            attribute-unregistered SagaStep#retryOnNetworkError
-            attribute-unregistered SagaStep#retryOnTimeout
-            attribute-unregistered SagaStep#roles
-            attribute-unregistered SagaStep#rollbackStateOnFailure
-            attribute-unregistered SagaStep#serviceVersion
-            attribute-unregistered SagaStep#skipOnConditionFalse
-            attribute-unregistered SagaStep#snapshotStateBeforeStep
-            attribute-unregistered SagaStep#stickyKey
-            attribute-unregistered SagaStep#storeInState
             attribute-unregistered SagaStep#tags
             attribute-unregistered SagaStep#timeout
-            attribute-unregistered SagaStep#timeoutEvents
-            attribute-unregistered SagaStep#traceSpanName
-            attribute-unregistered SagaStep#waitForAll
             attribute-unregistered UIGroup#icon
             attribute-unregistered Validation#asyncValidator
             attribute-unregistered Validation#customValidator
@@ -449,10 +292,8 @@ class AnnotationDispositionRegistryTest {
             attribute-unregistered Validation#pastOrPresent
             attribute-unregistered Validation#positive
             attribute-unregistered Validation#positiveOrZero
-            attribute-unregistered Validation#required
             attribute-unregistered Validation#url
             attribute-unregistered Validation#uuid
-            attribute-unregistered Validation#validateOn
             attribute-unregistered View#layout
             attribute-unregistered View#titleKey
             attribute-unregistered system.PrimaryKey#strategy
@@ -1028,7 +869,7 @@ class AnnotationDispositionRegistryTest {
                     if (emitted && registered) {
                         disagreements.add(RULE_STALE_ENTRY + " " + display(q) + "#" + name);
                     } else if (!emitted && !registered
-                            && STRICT_REPORTED_STATES.contains(attributeRow.path("state").asText())) {
+                            && ENTRY_REQUIRED_STATES.contains(attributeRow.path("state").asText())) {
                         disagreements.add(RULE_UNREGISTERED + " " + display(q) + "#" + name);
                     }
                 }
