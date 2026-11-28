@@ -106,6 +106,9 @@ class DiagnosticIdTest {
         m.put(DiagnosticId.CAP_TIER_WALL_DISABLED, "EXT-PLUG-2205");
         m.put(DiagnosticId.CAP_TIER_WALL_SCANNED_NOTHING, "EXT-PLUG-2206");
         m.put(DiagnosticId.INTEGRATION_TEST_GENERATION_FAILED, "EXT-PLUG-2005");
+        m.put(DiagnosticId.PEER_CONTRACT_REFUSED, "EXT-PLUG-2006");
+        m.put(DiagnosticId.PEER_ENTITY_SCHEMA_SKEW, "EXT-PLUG-2007");
+        m.put(DiagnosticId.CONTRACT_NOT_BUILT, "EXT-PLUG-2401");
         m.put(DiagnosticId.RUNTIME_METADATA_UNREADABLE, "EXT-PLUG-2301");
         m.put(DiagnosticId.RUNTIME_DRIVER_MISSING, "EXT-PLUG-2302");
         m.put(DiagnosticId.CLI_GENERATION_FAILED, "EXT-GEN-3001");

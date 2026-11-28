@@ -25,6 +25,13 @@ import type { EnumMetadataForGen } from '../generators/api/enum-module-gen.js';
 export const CAP_MANIFEST_NAME = 'cap-manifest.json';
 
 /**
+ * Where a backend publishes its contract inside its jar and its class output (ADR-048
+ * Amendment 3). A directory that holds this one, and no manifest of its own, is read as the
+ * contract it contains.
+ */
+export const CONTRACT_DIRECTORY = join('META-INF', 'exeris', 'contract');
+
+/**
  * The lowest `cap-manifest.json` schema this pipeline reads (ADR-048 §1).
  *
  * v2 is the version that carries the ADR-024 `CompositionStamp`; a v1 manifest is
@@ -132,14 +139,15 @@ export function parsePeerRef(spec: string): PeerContractRef {
  *         `schemaVersion` does not hold up — always naming the peer, since a consumer with
  *         several peers otherwise has to guess which one the build is complaining about.
  */
-export function loadPeerContract(ref: PeerContractRef): PeerContract {
-  if (!existsSync(ref.path) || !statSync(ref.path).isDirectory()) {
+export function loadPeerContract(declared: PeerContractRef): PeerContract {
+  if (!existsSync(declared.path) || !statSync(declared.path).isDirectory()) {
     throw new PeerContractError(
-      `peer '${ref.name}': ${ref.path} is not a directory — expected a contract artifact ` +
+      `peer '${declared.name}': ${declared.path} is not a directory — expected a contract artifact ` +
         `(its ${CAP_MANIFEST_NAME} plus the metadata of the entities it provides)`,
     );
   }
 
+  const ref = { name: declared.name, path: contractRoot(declared.path) };
   const manifestPath = join(ref.path, CAP_MANIFEST_NAME);
   if (!existsSync(manifestPath)) {
     throw new PeerContractError(
@@ -170,6 +178,19 @@ export function loadPeerContract(ref: PeerContractRef): PeerContract {
     domains: [...domains].sort((a, b) => byCodeUnit(a.entityName, b.entityName)),
     enums: [...enums].sort((a, b) => byCodeUnit(a.name, b.name)),
   };
+}
+
+/**
+ * The directory the contract files are read from: the path itself when it holds the manifest,
+ * else the `META-INF/exeris/contract/` it holds. One reader, so a published jar's contract
+ * directory and a hand-assembled one are the same input.
+ */
+function contractRoot(path: string): string {
+  if (existsSync(join(path, CAP_MANIFEST_NAME))) {
+    return path;
+  }
+  const published = join(path, CONTRACT_DIRECTORY);
+  return existsSync(published) && statSync(published).isDirectory() ? published : path;
 }
 
 /** Loads every declared peer, sorted by declared name so emission order is deterministic. */

@@ -11,7 +11,7 @@ last-verified: 2026-11-08
 
 **Module:** `eu.exeris:exeris-codegen-maven-plugin`, goal prefix `exeris`
 
-`exeris-codegen-maven-plugin` runs the Java pipeline inside an application's Maven build and checks what the build hands the generated code: `generate` writes the generated trees, `verify-capabilities` validates the capability graph and the Wall against fresh metadata, `verify-runtime` checks that a kernel driver is on the runtime classpath, and `detach` hands the generated sources to the application.
+`exeris-codegen-maven-plugin` runs the Java pipeline inside an application's Maven build and checks what the build hands the generated code: `generate` writes the generated trees, `verify-capabilities` validates the capability graph and the Wall against fresh metadata, `verify-runtime` checks that a kernel driver is on the runtime classpath, `contract` publishes the backend's contract artifact inside its jar, and `detach` hands the generated sources to the application.
 
 Each goal is a thin shell. Emission and every check live in `CodegenPipeline` and [codegen-core](03-codegen-core.md); the plugin chooses where to read metadata and where to write sources, and maps failures to `EXT-PLUG` identifiers.
 
@@ -21,7 +21,7 @@ Each goal is a thin shell. Emission and every check live in `CodegenPipeline` an
 |---|---|
 | Group and artifact | `eu.exeris:exeris-codegen-maven-plugin`, packaging `maven-plugin` |
 | Published | Yes, to Maven Central; managed in `exeris-app-bom`'s `pluginManagement`, and its goals bound by `exeris-app-parent` |
-| Compile dependencies | `exeris-codegen-java`, `exeris-diagnostics`; `maven-plugin-api`, `maven-core`, `maven-plugin-annotations` provided |
+| Compile dependencies | `exeris-codegen-java`, `exeris-diagnostics`; `maven-plugin-api`, `maven-core`, `maven-plugin-annotations` provided; the Maven resolver comes with `maven-core` |
 | JDK | Its classes load into Maven's own JVM, so Maven must run on JDK 25 or newer; the reactor's enforcer rule says so in one line |
 
 ## Contract
@@ -30,9 +30,10 @@ Every goal is `threadSafe`.
 
 | Goal | Default phase | Parameters (user property, default) |
 |---|---|---|
-| `generate` | `generate-sources` | `exeris.metadataDir` (`${project.build.outputDirectory}/exeris-metadata`), `exeris.outputDir` (`src/main/generated/java`), `exeris.basePackage` (unset), `exeris.codegen.skip` (`false`), `exeris.codegen.allowEmpty` (`false`), `exeris.tests` (`false`), `exeris.testOutputDir` (`src/test/generated/java`), `exeris.integrationTests` (`false`), `exeris.integrationTestOutputDir` (`src/test/generated-it/java`), `exeris.addCompileSourceRoot` (`true`) |
+| `generate` | `generate-sources` | `exeris.metadataDir` (`${project.build.outputDirectory}/exeris-metadata`), `exeris.outputDir` (`src/main/generated/java`), `exeris.basePackage` (unset), `exeris.codegen.skip` (`false`), `exeris.codegen.allowEmpty` (`false`), `exeris.tests` (`false`), `exeris.testOutputDir` (`src/test/generated/java`), `exeris.integrationTests` (`false`), `exeris.integrationTestOutputDir` (`src/test/generated-it/java`), `exeris.addCompileSourceRoot` (`true`), `peers` (none; no user property) |
 | `verify-capabilities` | `process-classes` | `exeris.metadataDir`, `exeris.classesDir` (`${project.build.outputDirectory}`), `exeris.codegen.skip`, `exeris.wall.skip` (`false`) |
 | `verify-runtime` | `process-classes` | `exeris.metadataDir`, `exeris.codegen.skip`, `exeris.verifyRuntime.skip` (`false`); reads the resolved runtime classpath |
+| `contract` | `process-classes` | `exeris.metadataDir`, `exeris.contractDir` (`${project.build.outputDirectory}/META-INF/exeris/contract`), `exeris.codegen.skip`, `exeris.contract.skip` (`false`) |
 | `detach` | none (run by hand) | `exeris.generatedDir` (`src/main/generated/java`), `exeris.targetDir` (`src/main/java`), `exeris.gitignore` (`.gitignore`), `exeris.ignoreEntry` (`src/main/generated/`), `exeris.failOnConflict` (`false`) |
 
 ### `generate`
@@ -43,6 +44,29 @@ When `verify-capabilities` is bound at `process-classes` or later, a capability-
 
 After writing, the goal compares the artifacts the generated code imports, plus H2, which the generated integration tests need at test runtime (`RequiredCompileArtifacts`), with the dependencies Maven collected for the module, and warns with `EXT-PLUG-2004` for each one absent. The check reads coordinates from dependency collection and downloads nothing.
 
+#### `peers`
+
+A consumer of another backend's contract declares it under `peers` ([ADR-048](../adr/ADR-048-cross-app-contract-mesh.md) Amendment 3). Each entry has a `name`, which the consumer chooses and which must be a letter followed by letters, digits and single hyphens, and exactly one of:
+
+- `path`: a contract directory, a directory that holds `META-INF/exeris/contract/` (such as a `target/classes`), or a `.jar`, of which only the entries under `META-INF/exeris/contract/` are read and nothing is extracted;
+- `coordinate`: `groupId:artifactId:version` of the backend's main jar, resolved through the Maven resolver against the project's remote repositories. It is not added to the project's dependencies, so the peer's jar is not on the module's classpath. A jar whose checksum does not match, or whose repository serves no checksum, is refused whatever the build's own checksum flags (`-c`, `-C`).
+
+```xml
+<plugin>
+  <groupId>eu.exeris</groupId>
+  <artifactId>exeris-codegen-maven-plugin</artifactId>
+  <configuration>
+    <peers>
+      <peer><name>billing</name><coordinate>com.acme:billing-service:1.4.0</coordinate></peer>
+    </peers>
+  </configuration>
+</plugin>
+```
+
+Every peer's contract is read before anything is generated, in declared-name order, and each refusal names the peer and carries `EXT-PLUG-2006`. A manifest below `schemaVersion` 2, a missing manifest, and an entity with no `schemaVersion` are refused; an entity whose `schemaVersion` differs from this build's is a warning, `EXT-PLUG-2007`. This goal reads and checks the contract and logs what it found; it generates nothing from it.
+
+Maven orders reactor modules by project dependencies, the parent, plugin dependencies and build extensions, and a `path` creates no edge. A consumer in the same reactor as its producer declares the peer by `coordinate` and lists the producer under this plugin's `<dependencies>`, with its transitive dependencies excluded, which orders the reactor and puts the producer's jar in the plugin's realm; nothing loads its classes, and the producer is not on the consumer's classpath. A `path` that lies inside a module of the current build is refused. A build that stops before `process-classes` (`mvn compile`) leaves the producer with no contract, and the consumer is refused with the missing contract named.
+
 ### `verify-capabilities`
 
 Validates the capability graph over the metadata the processor wrote in this build's `compile`, then scans `exeris.classesDir` with `CapTierWall`. It writes nothing. A build with no capability metadata passes.
@@ -50,6 +74,15 @@ Validates the capability graph over the metadata the processor wrote in this bui
 ### `verify-runtime`
 
 Fails when an SPI that `RequiredDrivers` derives from the emitted artifacts has no `META-INF/services` registration on the runtime classpath. It accepts any driver that registers the providers, not a particular artifact ([ADR-078](../adr/ADR-078-runtime-driver-gate.md)).
+
+### `contract`
+
+Writes `META-INF/exeris/contract/` under the class output, so that it is in the backend's jar:
+
+- `cap-manifest.json`, the resolved capability graph of the build. A build with no `@CapabilityModule` writes the graph of the empty composition: `schemaVersion` 2, a validated stamp over the empty module set, and empty `modules`, `resolutions`, `initOrder` and `warnings`. The graph is built with the serializer and the `exeris.composition.version` input `exeris:generate` uses, so for the same metadata the two manifests are byte-identical;
+- each entity's metadata file and each `enum_*.json` from `exeris.metadataDir`, byte for byte, under the same file name. `view_*.json` and `capability_*.json` are not published.
+
+The directory is deleted and written anew, so the contract holds what the metadata of this build holds. A graph that does not resolve fails the goal before anything is deleted. The contract is as fresh as `exeris-metadata/`: an incremental build that leaves a deleted entity's file there publishes it, and a build with `clean` does not. A module with `pom` packaging has no jar and writes nothing.
 
 ### `detach`
 
@@ -78,6 +111,10 @@ None: build-time. Each goal runs once per module per build.
 | `verify-capabilities` | Capability modules declared, no compiled class found | Warning `EXT-PLUG-2206` |
 | `verify-runtime` | Metadata cannot be read | Error `EXT-PLUG-2301` |
 | `verify-runtime` | A required SPI has no provider on the runtime classpath | Failure `EXT-PLUG-2302` naming what is missing |
+| `generate` | A declared peer's contract is refused: unreadable or unresolvable, no manifest, manifest below `schemaVersion` 2, an entity with no `schemaVersion`, a `<path>` inside the current build, a downloaded jar whose checksum does not match, or whose repository serves no checksum (refused whatever the build's own checksum flags) | Failure `EXT-PLUG-2006` naming the peer; nothing generated |
+| `generate` | A peer entity's `schemaVersion` differs from this build's | Warning `EXT-PLUG-2007` naming the peer, the entity and both versions |
+| `contract` | The capability graph does not resolve | Failure `EXT-PLUG-2401`, every problem listed; the previous contract stays |
+| `contract` | The metadata cannot be read or the contract cannot be written | Error `EXT-PLUG-2401`, ending with the cause |
 | `detach` | Moving the sources or editing the ignore file fails | Error `EXT-PLUG-2101`; the tree may be partly moved |
 | `detach` | Files already exist at the target | Warning `EXT-PLUG-2102`, or a failure under `exeris.failOnConflict=true` |
 
@@ -94,6 +131,7 @@ Trade-off: binding `generate` before `compile` makes the generated sources part 
 | [ADR-058](../adr/ADR-058-generated-test-emission-channel.md) | `exeris.tests` and the separate test root; Amendment 1, `exeris.integrationTests` and the integration-test root |
 | [ADR-095](../adr/ADR-095-stable-diagnostic-identifiers.md) | The `EXT-PLUG` identifiers, grouped by goal |
 | [ADR-091](../adr/ADR-091-opt-in-application-starter.md) | Which goals `exeris-app-parent` binds, and where |
+| [ADR-048](../adr/ADR-048-cross-app-contract-mesh.md) | The contract artifact `contract` writes and the `peers` `generate` reads: Amendment 3 |
 
 ## Where this does not apply
 

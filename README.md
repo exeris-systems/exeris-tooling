@@ -120,8 +120,8 @@ all versioned with tooling, from 0.9.0:
 - **`exeris-app-bom`** names the tooling, kernel and SDK versions this tooling release was built and
   tested against, the kernel's Jackson 3 line, and the starter itself.
 - **`exeris-app-parent`** runs the annotation processor, binds `exeris:generate` (`generate-sources`)
-  and `exeris:verify-capabilities` + `exeris:verify-runtime` (`process-classes`), compiles at
-  `--release 25` on JDK 25+ and Maven 3.9+, and puts the generated migrations (`db/migration`) and
+  and `exeris:verify-capabilities` + `exeris:verify-runtime` + `exeris:contract` (`process-classes`),
+  compiles at `--release 25` on JDK 25+ and Maven 3.9+, and puts the generated migrations (`db/migration`) and
   OpenAPI document (`openapi`) on the classpath.
 - **`exeris-app-starter`** (type `pom`) is the dependency set the generated code compiles and runs
   against: the SDK annotations, kernel SPI and Core, the community driver at runtime, the
@@ -268,6 +268,7 @@ and why the tooling version is a property of your own.
                     <goals>
                         <goal>verify-capabilities</goal>
                         <goal>verify-runtime</goal>
+                        <goal>contract</goal>
                     </goals>
                 </execution>
             </executions>
@@ -287,7 +288,7 @@ The processor writes `target/classes/exeris-metadata/*.json` during `compile`, w
 
 ```bash
 mvn compile -Dexeris.codegen.skip=true   # pass 1: compile your entities; the processor writes the metadata
-mvn verify                               # pass 2: generate, compile, verify-capabilities, verify-runtime, test
+mvn verify                               # pass 2: generate, compile, verify-capabilities, verify-runtime, contract, test
 ```
 
 Do not `clean` between the passes: it deletes the metadata pass 1 wrote. Once the generated tree under

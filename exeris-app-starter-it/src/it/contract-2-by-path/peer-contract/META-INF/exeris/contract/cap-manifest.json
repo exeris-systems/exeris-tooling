@@ -1,0 +1,12 @@
+{
+  "schemaVersion" : 2,
+  "stamp" : {
+    "validated" : true,
+    "compositionVersion" : "0.0.0",
+    "contentBinding" : "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "modules" : [ ],
+  "resolutions" : [ ],
+  "initOrder" : [ ],
+  "warnings" : [ ]
+}

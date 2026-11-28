@@ -1,0 +1,19 @@
+{
+  "name" : "InvoiceStatus",
+  "qualifiedName" : "eu.exeris.fixture.billing.domain.InvoiceStatus",
+  "packageName" : "eu.exeris.fixture.billing.domain",
+  "description" : "Published in the contract as {@code enum_InvoiceStatus.json}.",
+  "values" : [ {
+    "name" : "DRAFT",
+    "displayName" : "Draft",
+    "ordinal" : 0
+  }, {
+    "name" : "ISSUED",
+    "displayName" : "Issued",
+    "ordinal" : 1
+  }, {
+    "name" : "PAID",
+    "displayName" : "Paid",
+    "ordinal" : 2
+  } ]
+}

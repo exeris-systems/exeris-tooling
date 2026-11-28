@@ -148,6 +148,9 @@
                         <goals>
                             <goal>verify-capabilities</goal>
                             <goal>verify-runtime</goal>
+                            <!-- Publishes META-INF/exeris/contract/ into the jar (ADR-048 Amendment 3);
+                                 -Dexeris.contract.skip=true opts out. -->
+                            <goal>contract</goal>
                         </goals>
                     </execution>
                 </executions>
