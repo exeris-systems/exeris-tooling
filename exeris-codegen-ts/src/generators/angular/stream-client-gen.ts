@@ -51,6 +51,7 @@ import type { DomainMetadata } from '../../models/index.js';
 import { DslMapper } from '../../models/index.js';
 import { isTenantPartitioned } from '../../models/domain-model.js';
 import { tsSingleQuoted } from './ts-literal.js';
+import { publishedPayloadFields } from './event-payload.js';
 import type { GeneratorConfig } from '../../config.js';
 import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
@@ -160,13 +161,12 @@ export class StreamClientGenerator implements CodeGenerator {
   /**
    * The types of the spectate stream: one payload interface per event name, the frame union
    * over them, and the error a `stream-error` frame raises. A payload names the fields the
-   * `@DomainEvent` lists, typed from the entity's own fields; a name no field carries is
-   * `unknown`, and a sensitive field is marked as redacted before publish. The type of every field
+   * Java publisher sends: the `@DomainEvent` list, typed from the entity's own fields, without
+   * the sensitive fields and without a name no field carries. The type of every field
    * a payload names is added to `payloadTypes`.
    */
   private renderSpectateTypes(domain: DomainMetadata, scope: TypeScope, payloadTypes: string[]): string[] {
     const entityName = domain.entityName;
-    const fieldByName = new Map(domain.fields.map(f => [f.name, f] as const));
     const lines: string[] = [];
     const members: string[] = [];
     const usedTypeNames = new Set<string>();
@@ -186,19 +186,15 @@ export class StreamClientGenerator implements CodeGenerator {
       }
       usedTypeNames.add(typeName);
 
-      const sensitive = new Set(event.sensitiveFields ?? []);
       lines.push(`/** The payload of the '${tsSingleQuoted(name)}' frame of a ${entityName} spectate stream. */`);
       lines.push(`export interface ${typeName} {`);
-      const payloadFields = event.payloadFields ?? [];
+      const payloadFields = publishedPayloadFields(event, domain);
       if (payloadFields.length === 0) {
         lines.push(`  // No additional payload fields`);
       }
-      for (const fieldName of payloadFields) {
-        const field = fieldByName.get(fieldName);
-        if (field) payloadTypes.push(field.type);
-        const tsType = field ? mapScopedType(field.type, scope).tsType : 'unknown';
-        const suffix = sensitive.has(fieldName) ? ' // sensitive: redacted before publish' : '';
-        lines.push(`  ${fieldName}: ${tsType};${suffix}`);
+      for (const field of payloadFields) {
+        payloadTypes.push(field.type);
+        lines.push(`  ${field.name}: ${mapScopedType(field.type, scope).tsType};`);
       }
       lines.push(`}`);
       lines.push(``);

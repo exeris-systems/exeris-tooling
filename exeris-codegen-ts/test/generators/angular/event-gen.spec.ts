@@ -167,7 +167,7 @@ describe('EventHandlerGenerator emitted content — per-domain handler', () => {
     expect(content).not.toContain('// No additional payload fields');
   });
 
-  it('sensitiveFields names are marked redacted in the emitted payload interface', () => {
+  it('sensitiveFields names are left out of the emitted payload interface, as the Java publisher drops them', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [
@@ -181,14 +181,12 @@ describe('EventHandlerGenerator emitted content — per-domain handler', () => {
       }],
     }), CTX)!.content;
 
-    expect(content).toContain('customerEmail: string; // sensitive: redacted before publish');
-    // A non-sensitive field IS present and is NOT marked (the toContain anchors the
-    // negative lookahead so it can't pass vacuously on field absence).
+    expect(content).not.toContain('customerEmail');
+    expect(content).not.toContain('sensitive: redacted');
     expect(content).toContain('orderId: string;');
-    expect(content).toMatch(/orderId: string;(?! \/\/ sensitive)/);
   });
 
-  it('a payloadFields name with no matching domain.field falls back to unknown (tsc-clean)', () => {
+  it('a payloadFields name with no matching domain.field is left out, as the Java publisher skips it', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [{ name: 'orderId', type: 'UUID' }],
@@ -199,7 +197,12 @@ describe('EventHandlerGenerator emitted content — per-domain handler', () => {
     }), CTX)!.content;
 
     expect(content).toContain('orderId: string;');
-    expect(content).toContain('systemDerived: unknown;');
+    expect(content).not.toContain('systemDerived');
+  });
+
+  it('an event interface declares no field the publisher does not send', () => {
+    const content = eventsContentFor(['Created']);
+    expect(content).not.toMatch(/\b(occurredAt|userId|correlationId)\??:/);
   });
 
   it('emits @Injectable({ providedIn: \'root\' }) <Entity>EventHandler class with eventBus/liveAnnouncer/destroyRef/zone injected', () => {

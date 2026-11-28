@@ -17,6 +17,7 @@ import type { BackendType } from '../../core/backend-strategy.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import { tsSingleQuoted } from './ts-literal.js';
 import { fileHeader } from '../file-header.js';
+import { publishedPayloadFields } from './event-payload.js';
 import { mapScopedType, typeOnlyImports, typeScopeOf, type TypeScope } from '../../core/type-references.js';
 
 
@@ -199,9 +200,6 @@ ${events.map(e => `  /** Observable for ${e.name} events */
       id: event.id,
       aggregateId: event.aggregateId,
       aggregateType: event.aggregateType,
-      occurredAt: new Date(event.occurredAt),
-      userId: event.userId,
-      correlationId: event.correlationId,
     };
 
     switch (event.eventType) {
@@ -258,11 +256,6 @@ ${events.map(e => `      case '${e.name}':
 
   private generateEventInterfaces(events: DomainEventMetadata[], domain: DomainMetadata, scope: TypeScope): string {
     const entityName = domain.entityName;
-    // The event carries the RESOLVED payload field NAMES (event.payloadFields, entity-declaration
-    // order). Resolve each name's type against domain.fields so the emitted <Entity><Event>Payload
-    // interface is real and typed.
-    const fieldByName = new Map(domain.fields.map(f => [f.name, f] as const));
-
     // The Payload + Event interfaces MUST be entity-prefixed —
     // every other code-emission site in this generator
     // (Subject<…>, dispatchEvent cast, announce* parameter, the
@@ -272,22 +265,9 @@ ${events.map(e => `      case '${e.name}':
     // fails tsc --noEmit on every event-handler file.
     return events.map(event => {
       const pascalName = this.toPascalCase(event.name);
-      const payloadFieldNames = event.payloadFields ?? [];
-      const sensitive = new Set(event.sensitiveFields ?? []);
-
-      const payloadFields = payloadFieldNames
-        .map(name => {
-          const field = fieldByName.get(name);
-          // A payload name with no matching entity field (e.g. an
-          // include of a system/derived field not in domain.fields)
-          // falls back to `unknown` rather than emitting a dangling
-          // reference — keeps the interface tsc-clean.
-          const tsType = field ? mapScopedType(field.type, scope).tsType : 'unknown';
-          // Sensitive fields are redacted before publish; mark them so
-          // consumers know the value may be masked.
-          const suffix = sensitive.has(name) ? ' // sensitive: redacted before publish' : '';
-          return `    ${name}: ${tsType};${suffix}`;
-        })
+      // Exactly the components of the Java payload record.
+      const payloadFields = publishedPayloadFields(event, domain)
+        .map(field => `    ${field.name}: ${mapScopedType(field.type, scope).tsType};`)
         .join('\n');
 
       return `export interface ${entityName}${pascalName}Payload {
@@ -299,9 +279,6 @@ export interface ${entityName}${pascalName}Event {
   id: string;
   aggregateId: string;
   aggregateType: string;
-  occurredAt: Date;
-  userId?: string;
-  correlationId?: string;
   payload: ${entityName}${pascalName}Payload;
 }`;
     }).join('\n\n');
@@ -369,12 +346,6 @@ export interface DomainEvent {
   aggregateId: string;
   /** Aggregate type (entity name) */
   aggregateType: string;
-  /** Event occurred timestamp (ISO string) */
-  occurredAt: string;
-  /** User ID who triggered the event */
-  userId?: string;
-  /** Correlation ID for tracing */
-  correlationId?: string;
   /** Event payload */
   payload: unknown;
 }
@@ -661,8 +632,5 @@ export function generateEventHandler(
 
 /** The types of the entity fields its events' payloads name, in declaration order. */
 function payloadFieldTypes(domain: DomainMetadata): string[] {
-  const fieldByName = new Map(domain.fields.map((f) => [f.name, f] as const));
-  return (domain.events ?? []).flatMap((event) => (event.payloadFields ?? [])
-    .map((name) => fieldByName.get(name)?.type)
-    .filter((type): type is string => type !== undefined));
+  return (domain.events ?? []).flatMap((event) => publishedPayloadFields(event, domain).map((f) => f.type));
 }
