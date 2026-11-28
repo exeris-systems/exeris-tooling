@@ -9,7 +9,7 @@ slug: adr/ADR-110
 
 # ADR-110 — Every SDK annotation and attribute carries one disposition, held to the SDK catalogue
 
-- **Status:** ACCEPTED (2026-11-28) · accepted-on-merge per the per-repo pattern (ADR-047 / ADR-058)
+- **Status:** ACCEPTED (2026-11-28) · accepted-on-merge per the per-repo pattern (ADR-047 / ADR-058) · amended 2026-11-28 (Amendment 1 — an `SDK_REMOVED` attribute needs no `INERT_ATTRIBUTES` entry)
 - **Deciders:** Arkadiusz Przychocki
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / processor — per-repo
@@ -204,3 +204,43 @@ to the SDK's Preview list and to the strict-audit registries. The processor does
    change, so no migration fragment. Changes to `-Aexeris.strict` output are listed in the release
    notes.
 5. Migration owner: `exeris-tooling`, target 0.12.0, rows G1 then G2.
+
+## Amendment 1 — an `SDK_REMOVED` attribute needs no `INERT_ATTRIBUTES` entry (2026-11-28)
+
+- **Status:** ACCEPTED (2026-11-28).
+- **Amends:** obligation 7, third bullet. Everything else stands.
+
+### Context
+
+Obligation 7 requires an `INERT_ATTRIBUTES` entry for every attribute of an `EMITTED` annotation
+whose state is `OPEN`, `EXCEPTION`, `SDK_REMOVED` or `OUTSIDE_FREEZE`. Against the SDK 0.13.3
+catalogue the registry holds 187 `SDK_REMOVED` rows, and 165 of them are attributes with no entry.
+Each of those attributes is `@Deprecated(forRemoval = true)` in the SDK, so javac reports its use
+with a `[removal]` warning at the use site, in every build and not only under `-Aexeris.strict`.
+The SDK deletes them at 1.0, and an entry added for one of them leaves with the 1.0 pin.
+
+### Decision
+
+The third bullet of obligation 7 reads:
+
+- for an annotation whose annotation-level row is `EMITTED`, an attribute with state `OPEN`,
+  `EXCEPTION` or `OUTSIDE_FREEZE` has an `INERT_ATTRIBUTES` entry, an attribute with state `EMITTED`
+  has none, and an attribute with state `SDK_REMOVED` may have one.
+
+An existing entry for an `SDK_REMOVED` attribute stays: its note states the disposition, and the
+strict audit keeps reporting it. The annotation-level rule is unchanged: an `SDK_REMOVED` annotation
+is still one that strict mode reports.
+
+### Consequences
+
+- Row G2 adds no entry for an attribute the SDK removes at 1.0. `KNOWN_DISAGREEMENTS` in
+  `AnnotationDispositionRegistryTest` loses those pairs.
+- A use of such an attribute is reported by javac and not by the strict audit, unless it already
+  has an entry.
+- **Reversed by:** an SDK that keeps an attribute marked `forRemoval` past 1.0; the catalogue then
+  stops marking it, the registry row leaves `SDK_REMOVED`, and the original rule applies to it.
+
+### Verification
+
+`AnnotationDispositionRegistryTest.strictAuditAgreement` requires an entry for the three states
+named above, and fails on an `EMITTED` attribute that has one.
