@@ -299,7 +299,7 @@ jobs:
   fe-app-build:
     name: ng build (generated sample app)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Checkout exeris-tooling
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -382,6 +382,65 @@ jobs:
           grep -q '<loc>https://example.com/docs/about-us</loc>' "$out/sitemap.xml"
           if grep -q 'footer\|posts' "$out/sitemap.xml"; then exit 1; fi
           grep -qx 'Sitemap: https://example.com/docs/sitemap.xml' "$out/robots.txt"
+
+      # The processor-compiled shape: the view JSON of this app is written by javac and the processor
+      # from the Java sources in exeris-e2e-tests/src/test/fixtures/view-site, in this run, and the
+      # generator reads that directory. Every app above is generated from literals in the script.
+      - name: Set up JDK 25
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Purge cached exeris-kernel and exeris-sdk artefacts
+        run: rm -rf ~/.m2/repository/eu/exeris/exeris-kernel* ~/.m2/repository/eu/exeris/exeris-sdk*
+
+      - name: View metadata from the processor (ViewSiteFixtureE2ETest)
+        run: >-
+          mvn -B -ntp -pl exeris-e2e-tests -am test
+          -Dtest=ViewSiteFixtureE2ETest -Dsurefire.failIfNoSpecifiedTests=false
+
+      - name: Generate the Angular app from the processor's view metadata (twice, compared)
+        working-directory: exeris-codegen-ts
+        run: >-
+          node scripts/gen-sdk-examples-app.mjs
+          ../exeris-e2e-tests/target/view-site/classes/exeris-metadata
+          "$RUNNER_TEMP/fe-view-site"
+
+      - name: npm install + ng build + ng test (processor-compiled view)
+        working-directory: ${{ runner.temp }}/fe-view-site
+        run: |
+          npm install --no-audit --no-fund --prefer-offline
+          npx ng build --configuration development
+          npx ng test
+
+      # The same processor metadata under render: 'ssg' with a sitemap and a site URL. The build
+      # prerenders the About page, which reads no entity, and the root redirect to it; /storefront
+      # reads the Order list, so the browser renders it and the build writes no page for it.
+      - name: Generate the Angular app from the processor's view metadata (render ssg, twice, compared)
+        working-directory: exeris-codegen-ts
+        run: >-
+          node scripts/gen-sdk-examples-app.mjs
+          ../exeris-e2e-tests/target/view-site/classes/exeris-metadata
+          "$RUNNER_TEMP/fe-view-site-ssg" --ssg
+
+      - name: npm install + ng build + prerendered pages (processor-compiled view, render ssg)
+        working-directory: ${{ runner.temp }}/fe-view-site-ssg
+        run: |
+          set -euo pipefail
+          npm install --no-audit --no-fund --prefer-offline
+          npx ng build --configuration development 2>&1 | tee "$RUNNER_TEMP/fe-view-site-ssg-build.log"
+          grep -q 'Prerendered 2 static routes' "$RUNNER_TEMP/fe-view-site-ssg-build.log"
+          out=dist/exeris-foundation-frontend/browser
+          grep -q '>About</h1>' "$out/about/index.html"
+          grep -q 'url=/about' "$out/index.html"
+          test -f "$out/index.csr.html"
+          test ! -e "$out/storefront/index.html"
+          test "$(grep -c '<loc>' "$out/sitemap.xml")" = 1
+          grep -q '<loc>https://example.com/site/about</loc>' "$out/sitemap.xml"
+          if grep -q 'storefront' "$out/sitemap.xml"; then exit 1; fi
+          grep -qx 'Sitemap: https://example.com/site/sitemap.xml' "$out/robots.txt"
 
   # The SDK's example corpus as an Angular application: SdkExamplesE2ETest writes the processor
   # metadata of the examples at the pinned SDK tag, the CLI generates the app from it twice (the two
