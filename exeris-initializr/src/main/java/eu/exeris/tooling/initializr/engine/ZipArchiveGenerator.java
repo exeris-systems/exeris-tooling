@@ -44,7 +44,7 @@ public final class ZipArchiveGenerator {
      * @throws IOException              if writing to {@code output} fails
      * @throws IllegalArgumentException if {@code root} is blank, holds a path separator or a {@code :},
      *                                  is made only of dots, ends in a dot or a space, or
-     *                                  starts with a Windows device name
+     *                                  is a Windows device name before its first dot
      * @since 0.10
      */
     public static void write(ProjectTree tree, String root, OutputStream output) throws IOException {
