@@ -383,6 +383,27 @@ jobs:
           if grep -q 'footer\|posts' "$out/sitemap.xml"; then exit 1; fi
           grep -qx 'Sitemap: https://example.com/docs/sitemap.xml' "$out/robots.txt"
 
+      # A view added to the metadata after the first generation: the ssg shape written twice over
+      # one output, the second pass adding `Pricing`. The script fails if a seed changed; the build
+      # must then prerender the five param-less pages, the added one included, with its entry in the
+      # sitemap.
+      - name: Generate view-only Angular app (render ssg, view added on a second pass)
+        working-directory: exeris-codegen-ts
+        run: node scripts/gen-sample-app.mjs "$RUNNER_TEMP/fe-grow" --grow
+
+      - name: npm install + ng build + added page prerendered (render ssg, second pass)
+        working-directory: ${{ runner.temp }}/fe-grow
+        run: |
+          set -euo pipefail
+          npm install --no-audit --no-fund --prefer-offline
+          npx ng build --configuration development 2>&1 | tee "$RUNNER_TEMP/fe-grow-build.log"
+          grep -q 'Prerendered 5 static routes' "$RUNNER_TEMP/fe-grow-build.log"
+          out=dist/exeris-foundation-frontend/browser
+          grep -q '>Pricing</h1>' "$out/pricing/index.html"
+          grep -q '>About</h1>' "$out/about-us/index.html"
+          grep -q 'href="/pricing"' "$out/about-us/index.html"
+          grep -q '<loc>https://example.com/docs/pricing</loc>' "$out/sitemap.xml"
+
   # The SDK's example corpus as an Angular application: SdkExamplesE2ETest writes the processor
   # metadata of the examples at the pinned SDK tag, the CLI generates the app from it twice (the two
   # outputs must be identical), and the app is built and its emitted specs run. The Java half of the

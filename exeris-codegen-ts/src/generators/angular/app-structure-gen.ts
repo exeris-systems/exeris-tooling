@@ -1,15 +1,17 @@
 /**
  * Angular App Structure Generator
  * Generates complete Angular application structure including:
- * - app.routes.ts
- * - app.component.ts
+ * - app.routes.generated.ts and shell/app-shell.component.ts, owned: rewritten on every run, they
+ *   hold every route, navigation entry and server route derived from the metadata
+ * - app.routes.ts and app.component.ts, seeds that only compose them
  * - app.config.ts
  * - main.ts
  * - package.json
  * - angular.json
  * - tsconfig.json
  * - .postcssrc.json and src/styles.css (Tailwind CSS v4, CSS-first: no tailwind.config.js)
- * - under `render: 'ssg'`: main.server.ts, app.config.server.ts and app.routes.server.ts
+ * - under `render: 'ssg'`: main.server.ts, app.config.server.ts, app.routes.server.generated.ts (owned)
+ *   and app.routes.server.ts (a seed)
  */
 
 import type { DomainMetadata, ViewMetadata } from '../../models/domain-model.js';
@@ -91,6 +93,9 @@ interface EnumMetadata {
  *
  * The three server files of `render: 'ssg'` are seeds for the same reason as `app.routes.ts`: the
  * server routes are where a consumer adds `getPrerenderParams` to prerender a parameterised route.
+ * Each of `app.routes.ts`, `app.routes.server.ts` and `app.component.ts` only composes an owned file
+ * (`app.routes.generated.ts`, `app.routes.server.generated.ts`, `shell/app-shell.component.ts`),
+ * which carries everything derived from the metadata.
  */
 export const SCAFFOLD_SEED_PATHS: readonly string[] = [
   'package.json',
@@ -150,8 +155,8 @@ export function generateAppStructure(
   const sortedViews = sortViews(views);
   // The shell renders the sidebar's declared icons, which the composed tree does not contain, so
   // its own template counts towards the font the scaffold installs.
-  const appComponent = generateAppComponent(domains, appName, sortedViews);
-  const materialSymbols = needs.materialSymbols === true || usesMaterialSymbols(appComponent);
+  const appShell = generateAppShellComponent(domains, appName, sortedViews);
+  const materialSymbols = needs.materialSymbols === true || usesMaterialSymbols(appShell);
 
   // Config files at the project root
   files.push({ path: 'package.json', content: generatePackageJson(appName, config, { ...needs, materialSymbols }), overwritable: false });
@@ -191,14 +196,17 @@ export function generateAppStructure(
   });
   if (ssg) {
     files.push({ path: `${appRoot}/app.config.server.ts`, content: generateAppConfigServer(), overwritable: false });
+    files.push({ path: `${appRoot}/app.routes.server.generated.ts`, content: generateGeneratedServerRoutes(sortedViews), overwritable: true });
     files.push({ path: `${appRoot}/app.routes.server.ts`, content: generateServerRoutes(domains, sortedViews), overwritable: false });
   }
-  files.push({ path: `${appRoot}/app.component.ts`, content: appComponent, overwritable: false });
+  files.push({ path: `${appRoot}/shell/app-shell.component.ts`, content: appShell, overwritable: true });
+  files.push({ path: `${appRoot}/app.component.ts`, content: generateAppComponent(appName), overwritable: false });
   files.push({
-    path: `${appRoot}/app.routes.ts`,
-    content: generateAppRoutes(domains, appName, sortedViews, needs.routeRequirements ?? []),
-    overwritable: false,
+    path: `${appRoot}/app.routes.generated.ts`,
+    content: generateGeneratedRoutes(domains, appName, sortedViews, needs.routeRequirements ?? []),
+    overwritable: true,
   });
+  files.push({ path: `${appRoot}/app.routes.ts`, content: generateAppRoutes(domains, sortedViews), overwritable: false });
   const barrel = generateAppBarrel(domains, enums, config);
   if (barrel) {
     files.push({ ...barrel, path: `${appRoot}/${barrel.path}` });
@@ -328,32 +336,50 @@ export function prerenderedViewPaths(views: ViewMetadata[]): string[] {
 }
 
 /**
- * The render mode of every route, for `outputMode: "static"`, where a route is either written to
- * HTML at build time or rendered in the browser.
+ * The render mode of every metadata-derived route, for `outputMode: "static"`, where a route is
+ * either written to HTML at build time or rendered in the browser. Owned: rewritten on every run,
+ * so a view added to the metadata is prerendered without touching the seed that composes this list.
  *
  * A `@View` page is prerendered when its path names one page and it reads no entity data: its
  * content is authored, so the HTML the build writes is the page. A page bound to an entity loads it
  * from the kernel API on init, which no build reaches, so it renders in the browser, as does a
  * parameterised page, whose parameter values the metadata does not list. The entity CRUD routes
- * read the API on every page and are left to the browser by the same rule, through the `**` entry,
- * which also covers every route the consumer adds; the browser routes are served from the build's
- * `index.csr.html`.
+ * read the API on every page and are left to the browser by the `**` entry of the seed, which also
+ * covers every route the consumer adds; the browser routes are served from the build's
+ * `index.csr.html`. Views arrive in the sorted order the app routes use.
+ */
+function generateGeneratedServerRoutes(views: ViewMetadata[]): string {
+  const prerendered = prerenderedViewPaths(views)
+    .map((path) => `\n  { path: '${tsSingleQuoted(path)}', renderMode: RenderMode.Prerender },`)
+    .join('');
+  return `${fileHeader({ title: 'Generated Server Routes (static prerender)', adr: 'ADR-111' })}
+
+import { RenderMode, ServerRoute } from '@angular/ssr';
+
+export const generatedServerRoutes: ServerRoute[] = [${prerendered}${prerendered ? '\n' : ''}];
+`;
+}
+
+/**
+ * The server routes seed: the generated list between the root entry and the `**` entry that leaves
+ * every other route to the browser.
  *
  * The `''` redirect, when the app has one, is prerendered: the build writes it as the root
  * `index.html`, a page that sends the browser on to the redirect target, so the site root resolves
- * on a host that serves files only. Views arrive in the sorted order the app routes use.
+ * on a host that serves files only. The entry is part of the seed because the redirect is.
  */
 function generateServerRoutes(domains: DomainMetadata[], views: ViewMetadata[]): string {
-  const paths = prerenderedViewPaths(views);
-  if (defaultRedirectPath(domains, views) !== '' && !paths.includes('')) paths.unshift('');
-  const prerendered = paths
-    .map((path) => `\n  { path: '${tsSingleQuoted(path)}', renderMode: RenderMode.Prerender },`)
-    .join('');
+  const root = defaultRedirectPath(domains, views) !== '' && !prerenderedViewPaths(views).includes('')
+    ? "\n  { path: '', renderMode: RenderMode.Prerender },"
+    : '';
   return `${fileHeader({ title: 'Server Routes (static prerender)', doNotEdit: 'omit' })}
 
 import { RenderMode, ServerRoute } from '@angular/ssr';
 
-export const serverRoutes: ServerRoute[] = [${prerendered}
+import { generatedServerRoutes } from './app.routes.server.generated';
+
+export const serverRoutes: ServerRoute[] = [${root}
+  ...generatedServerRoutes,
   { path: '**', renderMode: RenderMode.Client },
 ];
 `;
@@ -582,19 +608,20 @@ ${groupItemsHtml}
   return sections.join('\n');
 }
 
-function generateAppComponent(domains: DomainMetadata[], appName: string, views: ViewMetadata[] = []): string {
+function generateAppShellComponent(domains: DomainMetadata[], appName: string, views: ViewMetadata[] = []): string {
   const navItemsHtml = generateNavItemsHtml(domains, views);
   const usesAuth = sidebarUsesPermissions(domains);
 
-  return `${fileHeader({ title: 'Root Application Component', doNotEdit: 'omit' })}
+  return `${fileHeader({ title: 'Application Shell Component', adr: 'ADR-111' })}
 
-import { Component${usesAuth ? ', inject' : ''} } from '@angular/core';
+import { ChangeDetectionStrategy, Component${usesAuth ? ', inject' : ''} } from '@angular/core';
 import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
-import { CommonModule } from '@angular/common';${usesAuth ? "\nimport { AuthService } from './core/auth.service';" : ''}
+import { CommonModule } from '@angular/common';${usesAuth ? "\nimport { AuthService } from '../core/auth.service';" : ''}
 
 @Component({
-  selector: 'app-root',
+  selector: 'app-shell',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive],
   template: \`
     <div class="min-h-screen bg-gray-100 dark:bg-gray-900">
@@ -625,8 +652,28 @@ ${navItemsHtml}
     </div>
   \`,
 })
-export class AppComponent {
+export class AppShellComponent {
   title = '${tsSingleQuoted(appName)}';${usesAuth ? '\n  protected readonly auth = inject(AuthService);' : ''}
+}
+`;
+}
+
+/** The root component seed: the outlet the owned routes render into. */
+function generateAppComponent(appName: string): string {
+  return `${fileHeader({ title: 'Root Application Component', doNotEdit: 'omit' })}
+
+import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { RouterOutlet } from '@angular/router';
+
+@Component({
+  selector: 'app-root',
+  standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [RouterOutlet],
+  template: \`<router-outlet />\`,
+})
+export class AppComponent {
+  title = '${tsSingleQuoted(appName)}';
 }
 `;
 }
@@ -679,7 +726,7 @@ function canActivate(
   return '';
 }
 
-function generateAppRoutes(
+function generateGeneratedRoutes(
   domains: DomainMetadata[],
   appName: string,
   views: ViewMetadata[] = [],
@@ -715,20 +762,15 @@ function generateAppRoutes(
     }
   }
 
-  // Presentation-IR views (RFC §5): each emits a `pages/<kebab>.route.ts` exporting
-  // a Routes array const. The shell imports each const and spreads it into the
-  // routes array (lazy-load is internal to each view route file, consistent with
-  // the entity routes' loadComponent style). Views land AFTER the entity routes,
-  // in the deterministic order the caller sorted them into.
+  // Presentation-IR views: each emits a `pages/<kebab>.route.ts` exporting a Routes array const.
+  // The generated routes import each const and spread it into the shell's children (lazy-load is
+  // internal to each view route file, consistent with the entity routes' loadComponent style).
+  // Views land after the entity routes, in the deterministic order the caller sorted them into.
   const viewImports = views
     .map((v) => `import { ${viewRouteConstName(v)} } from '${viewRouteImportPath(v)}';`)
     .join('\n');
   const viewSpreads = views.map((v) => `\n  ...${viewRouteConstName(v)},`).join('');
 
-  const defaultRedirect = defaultRedirectPath(domains, views);
-
-  // Additive guard (determinism #3): with zero views, NO import line and NO spread
-  // are emitted, so app.routes.ts is byte-identical to the pre-route-assembly output.
   // A guard import exists only beside a guarded page, so an app with no guarded page keeps the same
   // import block. Names sort by code unit, so the line does not follow page order.
   const guardNames = [...guards].sort();
@@ -736,7 +778,34 @@ function generateAppRoutes(
     ? `\nimport { ${guardNames.join(', ')} } from './${ROUTE_GUARDS_PATH.replace(/\.ts$/, '')}';`
     : '';
   const importBlock = `${guardImport}${viewImports ? `\n${viewImports}` : ''}`;
+  const children = `${routes.join('')}${viewSpreads}`.replace(/\n(?=.)/g, '\n    ');
 
+  return `${fileHeader({ title: 'Generated Application Routes', adr: 'ADR-111' })}
+
+import { Routes } from '@angular/router';
+
+import { AppShellComponent } from './shell/app-shell.component';${importBlock}
+
+export const generatedRoutes: Routes = [
+  {
+    path: '',
+    component: AppShellComponent,
+    children: [${children}
+    ],
+  },
+];
+
+export const notFoundRoutes: Routes = [];
+`;
+}
+
+/**
+ * The routes seed: the landing redirect, the owned routes, the consumer's own routes, then the
+ * not-found routes, which match last. The redirect is the only metadata-derived entry the seed
+ * carries; it is written once, with the file.
+ */
+function generateAppRoutes(domains: DomainMetadata[], views: ViewMetadata[]): string {
+  const defaultRedirect = defaultRedirectPath(domains, views);
   // With no destination at all, a redirect from '' to '' would only point the router at itself.
   const redirect = defaultRedirect
     ? `\n  {\n    path: '',\n    redirectTo: '${defaultRedirect}',\n    pathMatch: 'full'\n  },`
@@ -744,9 +813,14 @@ function generateAppRoutes(
 
   return `${fileHeader({ title: 'Application Routes', doNotEdit: 'omit' })}
 
-import { Routes } from '@angular/router';${importBlock}
+import { Routes } from '@angular/router';
 
-export const routes: Routes = [${redirect}${routes.join('')}${viewSpreads}
+import { generatedRoutes, notFoundRoutes } from './app.routes.generated';
+
+export const routes: Routes = [${redirect}
+  ...generatedRoutes,
+  // Routes of your own go here, before notFoundRoutes.
+  ...notFoundRoutes,
 ];
 `;
 }

@@ -85,7 +85,7 @@ describe('route policy parity with the generated kernel application', () => {
 });
 
 describe('page guard parity with the generated kernel application', () => {
-  const routes = buildGeneratedFiles(domains, [], DEFAULT_CONFIG).find((f) => f.path === 'src/app/app.routes.ts')!.content;
+  const routes = buildGeneratedFiles(domains, [], DEFAULT_CONFIG).find((f) => f.path === 'src/app/app.routes.generated.ts')!.content;
   /** Each page, the route path it is served at, and the backend route it calls first. */
   const PAGES = [
     ['list', 'GET', '{base}', ''],

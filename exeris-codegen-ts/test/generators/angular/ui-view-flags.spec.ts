@@ -71,8 +71,8 @@ const file = (out: Map<string, string>, path: string): string => {
 const LIST = 'src/app/components/tag-list.component.ts';
 const DETAIL = 'src/app/components/tag-detail.component.ts';
 const FORM = 'src/app/components/tag-form.component.ts';
-const ROUTES = 'src/app/app.routes.ts';
-const SHELL = 'src/app/app.component.ts';
+const ROUTES = 'src/app/app.routes.generated.ts';
+const SHELL = 'src/app/shell/app-shell.component.ts';
 const BARREL = 'src/app/index.ts';
 
 describe('@UI view switches — defaults', () => {
@@ -109,7 +109,7 @@ describe('@UI(listView = false)', () => {
 
   it('keeps the other pages and redirects the root to the next listed entity', () => {
     expect(out.has(DETAIL) && out.has(FORM)).toBe(true);
-    expect(file(out, ROUTES)).toContain(`redirectTo: '${DslMapper.routePlural('Note')}'`);
+    expect(file(out, 'src/app/app.routes.ts')).toContain(`redirectTo: '${DslMapper.routePlural('Note')}'`);
     expect(file(out, ROUTES)).toContain(`path: '${TAGS}/:id'`);
   });
 
@@ -122,7 +122,7 @@ describe('@UI(listView = false)', () => {
 
   it('emits no redirect at all when no entity is listed and no page view exists', () => {
     const alone = emit({ listView: false }, []);
-    expect(file(alone, ROUTES)).not.toContain('redirectTo');
+    expect(file(alone, 'src/app/app.routes.ts')).not.toContain('redirectTo');
   });
 });
 

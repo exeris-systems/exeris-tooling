@@ -149,6 +149,23 @@ describe('exeris-gen generate', () => {
     expect(run.output).toContain('Would create: src/app/app.routes.server.ts');
   });
 
+  it('warns when a kept app.routes.ts does not import app.routes.generated, and not when it does', () => {
+    view(join(work, 'meta'), 'About');
+    expect(generate('-i', 'meta', '-o', 'out').status).toBe(0);
+    const fresh = generate('-i', 'meta', '-o', 'out');
+    expect(fresh.output).not.toContain('does not import app.routes.generated');
+
+    // A kept seed that does not import app.routes.generated.
+    writeFileSync(join(work, 'out', 'src/app/app.routes.ts'), "export const routes = [];\n");
+    const dry = generate('-i', 'meta', '-o', 'out', '--dry-run');
+    expect(dry.output).toContain('src/app/app.routes.ts was kept and does not import app.routes.generated.');
+
+    const run = generate('-i', 'meta', '-o', 'out');
+    expect(run.status).toBe(0);
+    expect(run.output).toContain('docs/migration/0.12.0/ts-07-view-routes-and-navigation-owned.md');
+    expect(readFileSync(join(work, 'out', 'src/app/app.routes.ts'), 'utf-8')).toBe('export const routes = [];\n');
+  });
+
   it('warns when render ssg keeps the browser-only angular.json of an existing app', () => {
     view(join(work, 'meta'), 'About');
     expect(generate('-i', 'meta', '-o', 'out').status).toBe(0);

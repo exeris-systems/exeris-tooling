@@ -148,7 +148,9 @@ export const GeneratorConfigSchema = z.object({
    *  On (the default), the output is a complete Angular application: `package.json`,
    *  `angular.json`, the `tsconfig` files, `src/main.ts`, `src/index.html`, the styles, the
    *  environment files and the `src/app` shell (`app.config.ts`, `app.component.ts`,
-   *  `app.routes.ts`), with the generated tree under `src/app/`.
+   *  `app.routes.ts`), with the generated tree under `src/app/`. `app.config.ts`, `app.component.ts`
+   *  and `app.routes.ts` are seeds, written once; `app.routes.generated.ts` and
+   *  `shell/app-shell.component.ts` are owned, rewritten on every run.
    *
    *  Off, the output directory is a folder inside an Angular app the consumer already owns: the
    *  generated tree is written at its root, no project or app-shell file is emitted, and the
@@ -161,7 +163,7 @@ export const GeneratorConfigSchema = z.object({
    *
    *  `csr` is a browser-only application. `ssg` adds Angular's static prerender setup to the
    *  scaffold: `src/main.server.ts`, `src/app/app.config.server.ts` and
-   *  `src/app/app.routes.server.ts`, client hydration in `app.config.ts`, `outputMode: "static"`
+   *  `src/app/app.routes.server.ts` (a seed) and the owned `src/app/app.routes.server.generated.ts`, client hydration in `app.config.ts`, `outputMode: "static"`
    *  and the `server` entry in `angular.json`, and `@angular/ssr` + `@angular/platform-server` in
    *  `package.json`. `ng build` then writes one HTML file per param-less `@View` page that reads no
    *  entity data; every other route renders in the browser.

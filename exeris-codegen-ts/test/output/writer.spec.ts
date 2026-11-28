@@ -245,6 +245,40 @@ describe('regenerating @View pages', () => {
     expect(read('src/app/pages/about.component.ts')).toContain('Who we are');
   });
 
+  it('routes, lists and prerenders a view added to the metadata, with the seeds untouched', () => {
+    const ssg: GeneratorConfig = { ...DEFAULT_CONFIG, render: 'ssg' };
+    const seeds = ['src/app/app.routes.ts', 'src/app/app.routes.server.ts', 'src/app/app.component.ts'];
+    const generated = ['src/app/app.routes.generated.ts', 'src/app/app.routes.server.generated.ts', 'src/app/shell/app-shell.component.ts'];
+
+    writeGeneratedFiles(out, buildGeneratedFiles([], [], ssg, [page('About', 'About us')]), keep);
+    const seedsBefore = seeds.map(read);
+    expect(read('src/app/app.routes.generated.ts')).not.toContain('pricingRoutes');
+
+    const { plan } = writeGeneratedFiles(out, buildGeneratedFiles([], [], ssg, [page('About', 'About us'), page('Pricing', 'Pricing')]), keep);
+
+    expect(read('src/app/app.routes.generated.ts')).toContain("import { pricingRoutes } from './pages/pricing.route';");
+    expect(read('src/app/app.routes.generated.ts')).toContain('...pricingRoutes,');
+    expect(read('src/app/app.routes.server.generated.ts')).toContain("{ path: 'pricing', renderMode: RenderMode.Prerender },");
+    expect(read('src/app/shell/app-shell.component.ts')).toContain('routerLink="/pricing"');
+    expect(seeds.map(read)).toEqual(seedsBefore);
+    for (const seed of seeds) expect(plan.find((entry) => entry.path === seed)?.action).not.toBe('rewrite');
+    for (const path of generated) expect(readManifest(out)?.has(path), path).toBe(true);
+  });
+
+  it('prunes an owned route file the run stops producing and keeps the seeds that import it', () => {
+    writeGeneratedFiles(out, buildGeneratedFiles([], [], DEFAULT_CONFIG, [page('About', 'About us')]), keep);
+    const seed = read('src/app/app.routes.ts');
+    expect(existsSync(join(out, 'src/app/app.routes.generated.ts'))).toBe(true);
+    expect(existsSync(join(out, 'src/app/shell/app-shell.component.ts'))).toBe(true);
+
+    const withSeeds = { overwrite: false, seedPaths: SEED_PATHS };
+    writeGeneratedFiles(out, buildGeneratedFiles([], [], { ...DEFAULT_CONFIG, scaffold: false }, [page('About', 'About us')]), withSeeds);
+
+    expect(existsSync(join(out, 'src/app/app.routes.generated.ts'))).toBe(false);
+    expect(existsSync(join(out, 'src/app/shell/app-shell.component.ts'))).toBe(false);
+    expect(read('src/app/app.routes.ts')).toBe(seed);
+  });
+
   it('leaves a hand-written file beside the generated pages alone', () => {
     onDisk('pages/custom.component.ts', 'hand-written');
     writeGeneratedFiles(out, buildGeneratedFiles([], [], config, [page('About', 'About us')]), keep);

@@ -9,7 +9,7 @@ last-verified: 2026-11-28
 
 ### `exeris-codegen-ts`: `@NavMenu` parent, permissions, badge and the other presentation attributes shape the sidebar
 
-When some entity declares `@NavMenu`, the sidebar of `app.component.ts` reads these attributes besides the ones it read before (`group`, `label`, `icon`, `order`, `groupOrder`, `groupIcon`, `hidden`):
+When some entity declares `@NavMenu`, the sidebar of `shell/app-shell.component.ts` reads these attributes besides the ones it read before (`group`, `label`, `icon`, `order`, `groupOrder`, `groupIcon`, `hidden`):
 
 - `parent` opens a `<details data-testid="nav-submenu-<parent>">` inside the entity's group, holding every entry of that parent name; it is `open` when any of its entries sets `expanded`, and it sorts among its siblings by the smallest `order` it holds.
 - `badge` and `badgeColor` (`primary`, `accent` or `warn`, `accent` when unset) render a `nav-badge-<label>` pill after the label. A badge that is an expression (starts with `@` or `#`) renders nothing: the shell has nothing to evaluate it with.
@@ -35,6 +35,6 @@ When some entity declares `@NavMenu`, the sidebar of `app.component.ts` reads th
 }
 ```
 
-When an entry declares `permissions`, `AppComponent` imports `AuthService` from `./core/auth.service` and injects it as `auth`. That file is the seed the route guards use; it is now also emitted when no route demands identity but a menu entry declares permissions (without the interceptor or the guards). `@NavMenu(roles)` is still not read.
+When an entry declares `permissions`, `AppShellComponent` imports `AuthService` from `../core/auth.service` and injects it as `auth`. That file is the seed the route guards use; it is now also emitted when no route demands identity but a menu entry declares permissions (without the interceptor or the guards). `@NavMenu(roles)` is still not read.
 
 An entity with no `@NavMenu` keeps the sidebar it had. An entry that sets none of these attributes is emitted as before.
