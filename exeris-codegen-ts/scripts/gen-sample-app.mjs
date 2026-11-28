@@ -530,7 +530,7 @@ if (ssg) {
 
 // It has no entity, so no spec to run: generated with the default (tests off) shape.
 const files = viewOnly
-  ? [...buildGeneratedFiles([], [], ssg ? { ...viewOnlyConfig, render: 'ssg' } : viewOnlyConfig, views, []), statTile]
+  ? [...buildGeneratedFiles([], [], ssg ? { ...viewOnlyConfig, render: 'ssg', sitemap: true, siteUrl: 'https://example.com/docs' } : viewOnlyConfig, views, []), statTile]
   : buildGeneratedFiles(domains, enums, config, [], peers);
 
 // Rewrite src/ (preserve node_modules); overwrite root config files in place.
