@@ -24,6 +24,11 @@ export function tsTemplateText(text: string): string {
   return text.replace(/[`$\\{}<>]/g, '');
 }
 
+/** Text placed in a double-quoted attribute of the emitted template: template text with its quotes encoded. */
+export function attributeText(text: string): string {
+  return tsTemplateText(text).replace(/"/g, '&quot;');
+}
+
 /** A declared name as one segment of a `data-testid`: anything but letters, digits, `_` and `-` becomes `-`. */
 export function testIdSegment(name: string): string {
   return name.replace(/[^A-Za-z0-9_-]/g, '-');

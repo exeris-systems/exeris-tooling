@@ -28,7 +28,7 @@ import {
   type ListFilterKind,
 } from './field-render.js';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MAX_SEARCH_LENGTH, filterProperties, searchableProperties, type ListQueryKind } from './list-query.js';
-import { tsSingleQuoted, tsTemplateText } from './ts-literal.js';
+import { attributeText, tsSingleQuoted, tsTemplateText } from './ts-literal.js';
 import { actionLabel } from './action-label.js';
 import { entityViews } from './entity-views.js';
 import { fileHeaderLines } from '../file-header.js';
@@ -759,8 +759,8 @@ export class ListGenerator implements CodeGenerator {
       `          #searchBox`,
       `          type="search"`,
       `          (change)="setSearch(searchBox.value)"`,
-      `          placeholder="Search ${tsTemplateText(pluralName.toLowerCase())}"`,
-      `          aria-label="Search ${tsTemplateText(pluralName.toLowerCase())}"`,
+      `          placeholder="Search ${attributeText(pluralName.toLowerCase())}"`,
+      `          aria-label="Search ${attributeText(pluralName.toLowerCase())}"`,
       `          maxlength="${MAX_SEARCH_LENGTH}"`,
       `          data-testid="list-search"`,
       `          class="${FILTER_INPUT_CLASS}"`,

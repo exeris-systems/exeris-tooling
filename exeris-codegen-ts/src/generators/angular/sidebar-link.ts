@@ -8,7 +8,7 @@
  */
 
 import { ownRequirement } from '../../core/route-requirements.js';
-import { testIdSegment, tsTemplateText } from './ts-literal.js';
+import { attributeText, testIdSegment, tsTemplateText } from './ts-literal.js';
 
 /** The class list of the sidebar's icon on a link, and the shape every link shares. */
 const LINK_ACTIVE = 'bg-indigo-100 dark:bg-indigo-900 text-exeris-primary-hover dark:text-indigo-200';
@@ -22,11 +22,6 @@ const BADGE_TONES: Readonly<Record<string, string>> = {
 };
 const BADGE_BASE = 'ml-auto inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium';
 const SEPARATOR = '<div role="separator" class="my-2 border-t border-gray-200 dark:border-gray-700"></div>';
-
-/** Text placed in a double-quoted attribute of the emitted template. */
-export function attributeText(text: string): string {
-  return tsTemplateText(text).replace(/"/g, '&quot;');
-}
 
 /** A query key or value as it sits inside a single-quoted literal of a template binding. */
 function paramText(text: string): string {
@@ -115,7 +110,7 @@ export function renderSidebarLink(item: SidebarLink): string {
 
   const badge = item.badge?.trim();
   const badgeHtml = badge && !isBadgeExpression(badge)
-    ? `\n              <span data-testid="nav-badge-${testIdSegment(item.label)}" class="${BADGE_BASE} ${BADGE_TONES[item.badgeColor ?? 'accent'] ?? BADGE_TONES.accent}">${tsTemplateText(badge)}</span>`
+    ? `\n              <span data-testid="nav-badge-${testIdSegment(item.label)}" class="${BADGE_BASE} ${BADGE_TONES[item.badgeColor ?? 'accent'] ?? BADGE_TONES.accent}">${attributeText(badge)}</span>`
     : '';
 
   const link = `

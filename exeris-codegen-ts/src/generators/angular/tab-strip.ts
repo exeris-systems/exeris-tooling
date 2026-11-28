@@ -9,8 +9,7 @@
 
 import type { DomainMetadata, UITabMetadata } from '../../models/domain-model.js';
 import { declaredIconSpan } from './declared-icon.js';
-import { testIdSegment, tsSingleQuoted, tsTemplateText } from './ts-literal.js';
-import { attributeText } from './sidebar-link.js';
+import { attributeText, testIdSegment, tsSingleQuoted, tsTemplateText } from './ts-literal.js';
 
 const TAB_BUTTON_CLASS = 'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors';
 const TAB_ACTIVE_CLASS = 'border-exeris-primary text-exeris-primary font-semibold';
