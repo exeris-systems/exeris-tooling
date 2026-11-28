@@ -107,7 +107,7 @@ export class FormGenerator implements CodeGenerator {
     const searchablePicker = pickerFields.some((r) => r.form.picker!.searchable);
     lines.push(`import { Component, ChangeDetectionStrategy, input, output, signal, computed, ${searchablePicker ? 'linkedSignal, ' : ''}effect, inject } from '@angular/core';`);
     lines.push("import { rxResource } from '@angular/core/rxjs-interop';");
-    lines.push(`import { ${signalFormsImports(validation).join(', ')} } from '@angular/forms/signals';`);
+    lines.push(`import { ${signalFormsImports(validation, createFields.length > 0).join(', ')} } from '@angular/forms/signals';`);
     lines.push("import { ActivatedRoute, Router } from '@angular/router';");
     const rxjsImports = [
       ...(blobFields.length > 0 ? ['firstValueFrom'] : []),
@@ -152,7 +152,10 @@ export class FormGenerator implements CodeGenerator {
     lines.push('@Component({');
     lines.push(`  selector: 'app-${kebabName}-form',`);
     lines.push('  standalone: true,');
-    lines.push('  imports: [FormField],');
+    // `FormField` is used by the `[formField]` binding of a control; a form with none declares no import.
+    if (createFields.length > 0) {
+      lines.push('  imports: [FormField],');
+    }
     lines.push('  changeDetection: ChangeDetectionStrategy.OnPush,');
     lines.push('  template: `');
     // Loading and error of the by-id load mirror the detail view's markup.
@@ -904,8 +907,8 @@ const SIGNAL_FORMS_IMPORT_ORDER = [
   'disabled',
 ] as const;
 
-function signalFormsImports(validation: FormValidation): string[] {
-  const always = new Set(['form', 'FormField', 'submit']);
+function signalFormsImports(validation: FormValidation, hasControls: boolean): string[] {
+  const always = new Set(hasControls ? ['form', 'FormField', 'submit'] : ['form', 'submit']);
   return SIGNAL_FORMS_IMPORT_ORDER.filter((name) => always.has(name) || validation.used.has(name));
 }
 
