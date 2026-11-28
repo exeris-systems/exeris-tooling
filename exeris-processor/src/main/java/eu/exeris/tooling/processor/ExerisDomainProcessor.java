@@ -342,12 +342,13 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     /** Why each unconsumed {@code @NavMenu} attribute is listed in {@link #INERT_ATTRIBUTES}. */
     private static final String NAV_MENU_NOT_EMITTED =
             "the value reaches NavMenuMetadata in the JSON, and no generator consumes it: the emitted "
-                    + "navigation consumes group, label, icon, order, groupOrder and hidden";
+                    + "navigation consumes every NavMenu attribute but roles";
 
     /** Why each unconsumed {@code @Tab} attribute is listed in {@link #INERT_ATTRIBUTES}. */
     private static final String TAB_NOT_EMITTED =
             "the value reaches UITabMetadata in the JSON, and no generator consumes it: the emitted "
-                    + "presentation consumes name, label, order, icon and member fields";
+                    + "presentation consumes name, label, order, icon, lazy, badgeField, badgeColor, disabled, "
+                    + "cssClass and member fields";
 
     /**
      * Why these registries exist: every SDK annotation is
@@ -740,24 +741,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                     "UIGroupMetadata carries no CSS class, and no emitted component applies it"),
             new InertAttribute("UIGroup", "visibleWhen",
                     "visibility conditions are not modeled on UIGroupMetadata and no generator reads them"),
-            new InertAttribute("NavMenu", "parent", NAV_MENU_NOT_EMITTED),
             new InertAttribute("NavMenu", "roles", NAV_MENU_NOT_EMITTED),
-            new InertAttribute("NavMenu", "permissions", NAV_MENU_NOT_EMITTED),
-            new InertAttribute("NavMenu", "badge", NAV_MENU_NOT_EMITTED),
-            new InertAttribute("NavMenu", "badgeColor", NAV_MENU_NOT_EMITTED),
-            new InertAttribute("NavMenu", "tooltip", NAV_MENU_NOT_EMITTED),
-            new InertAttribute("NavMenu", "openInNewTab", NAV_MENU_NOT_EMITTED),
-            new InertAttribute("NavMenu", "routePath", NAV_MENU_NOT_EMITTED),
-            new InertAttribute("NavMenu", "queryParams", NAV_MENU_NOT_EMITTED),
-            new InertAttribute("NavMenu", "expanded", NAV_MENU_NOT_EMITTED),
-            new InertAttribute("NavMenu", "divider", NAV_MENU_NOT_EMITTED),
-            new InertAttribute("Tab", "lazy", TAB_NOT_EMITTED),
-            new InertAttribute("Tab", "badgeField", TAB_NOT_EMITTED),
-            new InertAttribute("Tab", "badgeColor", TAB_NOT_EMITTED),
-            new InertAttribute("Tab", "disabled", TAB_NOT_EMITTED),
             new InertAttribute("Tab", "disabledWhen", TAB_NOT_EMITTED),
             new InertAttribute("Tab", "visibleWhen", TAB_NOT_EMITTED),
-            new InertAttribute("Tab", "cssClass", TAB_NOT_EMITTED),
             new InertAttribute(DOMAIN_EVENT, "description",
                     "it is extracted into DomainEventMetadata.description and reaches the JSON, but "
                             + "no emitter renders it"),

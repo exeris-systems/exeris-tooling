@@ -6608,7 +6608,7 @@ class ExerisDomainProcessorTest {
                     @ExerisDomain(module = "core", path = "/widgets")
                     public class Widget { private java.util.UUID id;
                         @Field(label = "Name")
-                        @Tab(name = "general", lazy = true)
+                        @Tab(name = "general", visibleWhen = "status == 1")
                         private String name;
                     }
                     """);
@@ -6617,7 +6617,7 @@ class ExerisDomainProcessorTest {
             assertThat(warnings(compilation, UNREAD)).isEmpty();
             assertThat(warnings(compilation, INERT))
                     .singleElement()
-                    .satisfies(m -> assertThat(m).contains("@Tab.lazy is set")
+                    .satisfies(m -> assertThat(m).contains("@Tab.visibleWhen is set")
                             .contains("no code generator consumes it"));
         }
 
@@ -6917,19 +6917,52 @@ class ExerisDomainProcessorTest {
                             import eu.exeris.sdk.annotation.Tab;
 
                             @ExerisDomain(module = "sales", path = "/orders")
-                            @NavMenu(tooltip = "Orders tooltip")
+                            @NavMenu(roles = {"ADMIN"})
                             public class Order {
                                 private java.util.UUID id;
 
                                 @Field(label = "Name")
-                                @Tab(name = "general", badgeField = "badgeCount")
+                                @Tab(name = "general", visibleWhen = "status == 1")
                                 private String name;
                             }
                             """));
 
             assertThat(compilation).succeeded();
-            assertThat(compilation).hadWarningContaining("@NavMenu.tooltip is set but no code generator consumes it");
-            assertThat(compilation).hadWarningContaining("@Tab.badgeField is set but no code generator consumes it");
+            assertThat(compilation).hadWarningContaining("@NavMenu.roles is set but no code generator consumes it");
+            assertThat(compilation).hadWarningContaining("@Tab.visibleWhen is set but no code generator consumes it");
+        }
+
+        @Test
+        @DisplayName("Strict mode does not report the @NavMenu and @Tab attributes the TS emitter consumes")
+        void strictModeIsSilentOnConsumedAttributes() {
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true", METADATA_ONLY)
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(JavaFileObjects.forSourceString("com.example.Order", """
+                            package com.example;
+
+                            import eu.exeris.sdk.annotation.ExerisDomain;
+                            import eu.exeris.sdk.annotation.Field;
+                            import eu.exeris.sdk.annotation.NavMenu;
+                            import eu.exeris.sdk.annotation.Tab;
+
+                            @ExerisDomain(module = "sales", path = "/orders")
+                            @NavMenu(parent = "Billing", permissions = {"order:read"}, badge = "NEW",
+                                    badgeColor = "warn", tooltip = "Orders", openInNewTab = true,
+                                    routePath = "/orders/open", queryParams = "a=1", expanded = true,
+                                    divider = NavMenu.Divider.AFTER)
+                            public class Order {
+                                private java.util.UUID id;
+
+                                @Field(label = "Name")
+                                @Tab(name = "general", lazy = true, badgeField = "name", badgeColor = "accent",
+                                        disabled = true, cssClass = "p-2")
+                                private String name;
+                            }
+                            """));
+
+            assertThat(compilation).succeeded();
+            assertThat(compilation).hadWarningCount(0);
         }
     }
 

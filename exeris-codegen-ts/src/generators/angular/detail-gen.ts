@@ -20,7 +20,6 @@ import type { BackendType } from '../../core/backend-strategy.js';
 import { declaresPrimaryKey, primaryKeyField } from '../../core/primary-key.js';
 import { outPath } from '../../core/paths.js';
 import { testIdSegment, tsSingleQuoted, tsTemplateText } from './ts-literal.js';
-import { declaredIconSpan } from './declared-icon.js';
 import { auditFieldNames, updateVersionField } from '../api/type-gen.js';
 import { fieldRenderContext, isEnumField, resolveFieldRenders, toTitleCase, type FieldRenderModel } from './field-render.js';
 import { filterProperties } from './list-query.js';
@@ -28,6 +27,17 @@ import { backReference, foreignKeyParam, simpleEntityName } from '../../core/rel
 import type { FieldMetadata, RelationshipMetadata } from '../../models/domain-model.js';
 import { entityExitRoute, entityViews } from './entity-views.js';
 import { fileHeaderLines } from '../file-header.js';
+import {
+  LOADED_TABS_MEMBER,
+  TAB_BADGE_MEMBER,
+  hasLazyTab,
+  hasTabBadge,
+  initialTab,
+  lazyPanelGuard,
+  tabButton,
+  tabPanelOpen,
+} from './tab-strip.js';
+import { actionLabel } from './action-label.js';
 
 function renderDetailSection(params: {
   isCollapsible: boolean;
@@ -117,6 +127,7 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`  signal,`);
     lines.push(`  computed,`);
     lines.push(`  input,`);
+    if (hasLazyTab(domain.uiMetadata?.tabs ?? [])) lines.push(`  linkedSignal,`);
     lines.push(`} from '@angular/core';`);
     lines.push(`import { rxResource } from '@angular/core/rxjs-interop';`);
     const panelRows = systemPanelRows(domain);
@@ -167,6 +178,9 @@ export class DetailGenerator implements CodeGenerator {
           .sort((a, b) => a.order - b.order || a.index - b.index)
           .map(({ tab }) => tab)
       : [];
+
+    const lazyTabs = hasLazyTab(sortedTabs);
+    const tabBadges = hasTabBadge(domain, sortedTabs);
 
     const hasGroups = (domain.uiMetadata?.groups?.length ?? 0) > 0;
     const sortedGroups = hasGroups
@@ -428,10 +442,7 @@ export class DetailGenerator implements CodeGenerator {
     } else {
       lines.push('        <div role="tablist" aria-label="Detail Tabs" class="flex border-b border-gray-200 dark:border-gray-700 mb-6 gap-2">');
       for (const t of sortedTabs) {
-        const tabName = t.name ?? '';
-        const tabLabel = tsTemplateText(t.label || t.name || '');
-        const iconSpan = t.icon ? declaredIconSpan(t.icon, 'mr-2') : '';
-        lines.push(`          <button type="button" role="tab" id="tab-${testIdSegment(tabName)}" aria-controls="panel-${testIdSegment(tabName)}" [attr.aria-selected]="activeTab() === '${tsSingleQuoted(tabName)}'" (click)="activeTab.set('${tsSingleQuoted(tabName)}')" data-testid="tab-${testIdSegment(tabName)}" class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors cursor-pointer" [class]="activeTab() === '${tsSingleQuoted(tabName)}' ? 'border-exeris-primary text-exeris-primary font-semibold' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:border-gray-300'">${iconSpan}${tabLabel}</button>`);
+        lines.push(tabButton(domain, t, '          ', 'entity()'));
       }
       lines.push('        </div>');
 
@@ -439,7 +450,8 @@ export class DetailGenerator implements CodeGenerator {
       for (const t of sortedTabs) {
         const tabName = t.name ?? '';
         const tabFields = t.fields ?? [];
-        lines.push(`        <div role="tabpanel" id="panel-${testIdSegment(tabName)}" aria-labelledby="tab-${testIdSegment(tabName)}" [hidden]="activeTab() !== '${tsSingleQuoted(tabName)}'" data-testid="tabpanel-${testIdSegment(tabName)}">`);
+        lines.push(tabPanelOpen(t, '        ', ''));
+        const panelStart = lines.length;
         let isFirstInTab = true;
         if (!hasGroups) {
           const tFields = (t.fields ?? []).map((fn) => displayFields.find((df) => df.name === fn)).filter((f): f is FieldRenderModel => f !== undefined);
@@ -467,6 +479,11 @@ export class DetailGenerator implements CodeGenerator {
             const mtClass = isFirstInTab ? '' : ' mt-8';
             lines.push(...renderDetailSection({ isCollapsible: false, heading: 'Details', ariaLabelledBy: 'details-title', fieldsMember: member, mtClass, renderDlRows, blobList: tabUngroupedBlobs }));
           }
+        }
+        if (t.lazy === true) {
+          const guard = lazyPanelGuard(t, '          ');
+          lines.splice(panelStart, 0, guard.open);
+          lines.push(guard.close);
         }
         lines.push('        </div>');
       }
@@ -564,7 +581,9 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`  readonly id = input.required<string>();`);
     lines.push(`  readonly displayFields = DISPLAY_FIELDS;`);
     if (hasTabs) {
-      lines.push(`  readonly activeTab = signal<string>('${tsSingleQuoted(sortedTabs[0].name ?? '')}');`);
+      lines.push(`  readonly activeTab = signal<string>('${tsSingleQuoted(initialTab(sortedTabs).name ?? '')}');`);
+      if (lazyTabs) lines.push(...LOADED_TABS_MEMBER);
+      if (tabBadges) lines.push(...TAB_BADGE_MEMBER);
       for (const prop of tabClassProperties) {
         lines.push(`  readonly ${prop.member} = ${prop.constName};`);
       }
@@ -907,7 +926,7 @@ function detailActions(domain: DomainMetadata): DetailAction[] {
     .filter((action) => !action.streaming && (action.params ?? []).length === 0)
     .map((action) => {
       const methodName = DslMapper.toMethodName(action.name);
-      return { methodName, kebabName: DslMapper.toKebabCase(action.name), label: tsTemplateText(toTitleCase(methodName)) };
+      return { methodName, kebabName: DslMapper.toKebabCase(action.name), label: tsTemplateText(actionLabel(action, methodName)) };
     });
 }
 

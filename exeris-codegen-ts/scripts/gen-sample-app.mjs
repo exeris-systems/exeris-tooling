@@ -319,20 +319,32 @@ const domains = [
   }),
   // Consignment lays its fields out in @Tab strips: two tabs by order with icons,
   // and a field in no tab after the tab strip, in the form and the detail view.
+  // Its tabs set every presentation attribute: a disabled tab the strip skips on open, a panel
+  // class, and a lazy tab with a count badge. Its menu entry sits in a submenu behind a
+  // permission, with a badge, a tooltip, a divider and a query, and its search box and renamed
+  // action button are compiled here only.
   d({
     entityName: 'Consignment',
+    navMenu: {
+      group: 'Logistics', parent: 'Freight', expanded: true, permissions: ['consignment:read'],
+      badge: 'NEW', badgeColor: 'primary', tooltip: 'Goods in transit', openInNewTab: true,
+      queryParams: 'state=open&page=1', divider: 'AFTER',
+    },
     fields: [
       { name: 'id', type: 'java.util.UUID' },
-      { name: 'reference', type: 'String', required: true, inCreate: true, inUpdate: true },
+      { name: 'reference', type: 'String', required: true, searchable: true, inCreate: true, inUpdate: true },
       { name: 'sender', type: 'String', required: true, inCreate: true, inUpdate: true },
       { name: 'recipient', type: 'String', required: true, inCreate: true, inUpdate: true },
       { name: 'instructions', type: 'String', inCreate: true, inUpdate: true },
+      { name: 'parcels', type: 'java.lang.Integer', inCreate: true, inUpdate: true },
     ],
+    actions: [{ name: 'dispatch', methodName: 'dispatch', displayName: 'Send it out' }],
     uiMetadata: {
-      listView: true, detailView: true, createForm: true, editForm: true,
+      listView: true, detailView: true, createForm: true, editForm: true, searchable: true,
       tabs: [
-        { name: 'parties', label: 'Parties', order: 1, icon: '👥', fields: ['sender', 'recipient'] },
-        { name: 'details', label: 'Details', order: 2, icon: '📋', fields: ['reference'] },
+        { name: 'sealed', label: 'Sealed', order: 0, disabled: true, fields: [] },
+        { name: 'parties', label: 'Parties', order: 1, icon: '👥', cssClass: 'p-2', fields: ['sender', 'recipient'] },
+        { name: 'details', label: 'Details', order: 2, icon: '📋', lazy: true, badgeField: 'parcels', badgeColor: 'warn', fields: ['reference', 'parcels'] },
       ],
     },
   }),

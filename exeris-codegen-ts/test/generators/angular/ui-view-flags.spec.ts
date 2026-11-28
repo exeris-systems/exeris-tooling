@@ -2,14 +2,16 @@
  * The entity-level `@UI` view switches decide which pages, routes, links and controls exist.
  *
  * Pinned:
- *   - absent `uiMetadata` and `uiMetadata` with every switch on emit the same files, byte for byte;
+ *   - absent `uiMetadata` and `uiMetadata` with every switch on but searchable emit the same files,
+ *     byte for byte;
  *   - listView=false: no list component, list route, sidebar link or barrel export, the default
  *     redirect skips the entity, and the detail and form leave to the app root;
  *   - detailView=false: no detail component or route, no View link, a foreign key to the entity
  *     renders as text, and the form leaves to the list;
  *   - createForm=false / editForm=false: no route and no button for that form; the form component
  *     is emitted while either is on, and neither component nor export when both are off;
- *   - no search box whatever searchable says (the list route has no search parameter, ADR-096);
+ *   - searchable=true on an entity with a searchable field: the list shows a search box that sends
+ *     the route's `search`; searchable=false or unset, or no searchable field: no box;
  *     filterable=false: no filter control and no filter row.
  */
 
@@ -74,9 +76,9 @@ const SHELL = 'src/app/app.component.ts';
 const BARREL = 'src/app/index.ts';
 
 describe('@UI view switches — defaults', () => {
-  it('emits the same files, byte for byte, with no uiMetadata and with every switch on', () => {
+  it('emits the same files, byte for byte, with no uiMetadata and with every switch on but searchable', () => {
     const absent = emit();
-    const on = emit(ALL_ON);
+    const on = emit({ ...ALL_ON, searchable: false });
     expect([...on.keys()]).toEqual([...absent.keys()]);
     for (const [path, content] of absent) {
       expect(on.get(path), path).toBe(content);
@@ -188,13 +190,38 @@ describe('@UI(createForm = false) / @UI(editForm = false)', () => {
 });
 
 describe('@UI(searchable) / @UI(filterable = false)', () => {
-  it('no search box is emitted, searchable or not', () => {
-    for (const ui of [{ searchable: true }, { searchable: false }]) {
+  it('searchable=true shows a search box that sends the route\'s search term', () => {
+    const list = file(emit({ searchable: true }), LIST);
+    expect(list).toContain('data-testid="list-search"');
+    expect(list).toContain('(change)="setSearch(searchBox.value)"');
+    expect(list).toContain("...(this.searchText() !== '' ? { search: this.searchText() } : {})");
+    expect(list).toContain('data-testid="filter-pinned"');
+  });
+
+  it('searchable=false or unset shows no search box', () => {
+    for (const ui of [{ searchable: false }, {}, undefined]) {
       const list = file(emit(ui), LIST);
-      expect(list).not.toContain('search-input');
-      expect(list).not.toContain('onSearch');
-      expect(list).toContain('data-testid="filter-pinned"');
+      expect(list).not.toContain('list-search');
+      expect(list).not.toContain('searchText');
     }
+  });
+
+  it('shows no search box when no field is searchable, since the route refuses a term then', () => {
+    const noSearchable = DomainMetadataSchema.parse({
+      packageName: 'com.shop',
+      entityName: 'Tag',
+      fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'label', type: 'String' }],
+      uiMetadata: { searchable: true },
+    });
+    const out = new Map(buildGeneratedFiles([noSearchable], [], DEFAULT_CONFIG).map((f) => [f.path, f.content]));
+    expect(file(out, LIST)).not.toContain('list-search');
+  });
+
+  it('keeps the search box when filterable=false removes the filters', () => {
+    const list = file(emit({ searchable: true, filterable: false }), LIST);
+    expect(list).toContain('data-testid="list-search"');
+    expect(list).not.toContain('filter-pinned');
+    expect(list).toContain('<!-- Filters -->');
   });
 
   it('filterable=false drops the filter controls and the filter row, whatever the fields say', () => {

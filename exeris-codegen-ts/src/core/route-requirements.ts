@@ -76,14 +76,14 @@ export function actionRequirementFor(
   return rows.find((row) => row.entity === entity && row.method === 'POST' && row.action === action)?.requirement;
 }
 
-type AccessDeclaring = { readonly routeAccess?: 'PUBLIC' | 'AUTHENTICATED'; readonly permissions?: readonly string[] };
+export type AccessDeclaring = { readonly routeAccess?: 'PUBLIC' | 'AUTHENTICATED'; readonly permissions?: readonly string[] };
 
 /**
  * One element's requirement from its own declarations: `PUBLIC` admits anyone, a non-empty
  * `permissions` is any-of over them (repeats dropped, declaration order kept), `AUTHENTICATED`
  * without permissions needs an identity, and nothing yields no requirement.
  */
-function ownRequirement(element: AccessDeclaring): RouteRequirement | undefined {
+export function ownRequirement(element: AccessDeclaring): RouteRequirement | undefined {
   if (element.routeAccess === 'PUBLIC') return { kind: 'permitAll' };
   const scopes = [...new Set(element.permissions ?? [])];
   if (scopes.length > 0) return { kind: 'anyScope', scopes };

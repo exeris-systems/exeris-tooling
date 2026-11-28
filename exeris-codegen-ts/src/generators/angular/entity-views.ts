@@ -11,9 +11,9 @@
  * say: an entity without a detail page can still be fetched by id, and one without a create form
  * can still be created through its service.
  *
- * `exportable` is not resolved: nothing exports on either side. Nor is `searchable`: no list search
- * box is emitted. The list route's `search` is offered by the service and used by the relationship
- * picker, over the fields `@Field(searchable)` marks, not by this switch.
+ * `exportable` is not resolved: nothing exports on either side. Nor is `searchable`: the list reads it
+ * on its own, and shows its search box only when it is explicitly `true` and a field is searchable.
+ * The list route's `search` matches the fields `@Field(searchable)` marks.
  */
 
 import type { DomainMetadata } from '../../models/domain-model.js';
