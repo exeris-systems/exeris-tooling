@@ -153,6 +153,32 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     private static final String PERMISSIONS_ATTRIBUTE = "permissions";
     private static final String BADGE_COLOR_ATTRIBUTE = "badgeColor";
     private static final String NAV_MENU = "NavMenu";
+    /** Attribute, annotation and FQN names read from more than two places in this processor. */
+    private static final String GRAPH = "Graph";
+    private static final String GRAPH_EDGE = "GraphEdge";
+    private static final String GRAPH_PROPERTY = "GraphProperty";
+    private static final String RELATIONSHIP = "Relationship";
+    private static final String VALIDATION = "Validation";
+    private static final String AGGREGATE_ATTRIBUTE = "aggregate";
+    private static final String ASYNC_ATTRIBUTE = "async";
+    private static final String CACHE_REGION_ATTRIBUTE = "cacheRegion";
+    private static final String CACHE_TTL_ATTRIBUTE = "cacheTtl";
+    private static final String CACHEABLE_ATTRIBUTE = "cacheable";
+    private static final String DATA_TYPE_ATTRIBUTE = "dataType";
+    private static final String VALIDATION_FQN = "eu.exeris.sdk.annotation.Validation";
+    private static final String FULL_TEXT_SEARCH_ATTRIBUTE = "fullTextSearch";
+    private static final String GRAPHQL_API_ATTRIBUTE = "graphqlApi";
+    private static final String INTERNAL_CLIENT_ATTRIBUTE = "internalClient";
+    private static final String MODULE_ATTRIBUTE = "module";
+    private static final String PARALLEL_ATTRIBUTE = "parallel";
+    private static final String REST_API_ATTRIBUTE = "restApi";
+    private static final String SEARCH_CONFIG_ATTRIBUTE = "searchConfig";
+    private static final String SEARCHABLE_ATTRIBUTE = "searchable";
+    private static final String STRATEGY_ATTRIBUTE = "strategy";
+    private static final String TIMEOUT_ATTRIBUTE = "timeout";
+    private static final String UNIQUE_ATTRIBUTE = "unique";
+    private static final String VALIDATION_ATTRIBUTE = "validation";
+    private static final String WEIGHTED_ATTRIBUTE = "weighted";
     /** The simple name of the SDK annotation that declares a domain event. */
     private static final String DOMAIN_EVENT = "DomainEvent";
 
@@ -257,6 +283,33 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     private static final String QUERY_PARAM_NOT_EXTRACTED =
             "the processor does not read it, so it never reaches ActionParamMetadata and no generator "
                     + "can honour it";
+
+    /** Note for an attribute that no emitter reads, whatever the processor does with it. */
+    private static final String NOT_EMITTED = "no emitter reads it, so setting it changes no emitted output";
+
+    /**
+     * Note for every {@code @Validation} entry in {@link #INERT_ATTRIBUTES}: the processor carries
+     * only the bounds, the length limits and the pattern into {@code FieldMetadata}, and reads
+     * {@code required} and {@code validateOn} as deprecated fallbacks.
+     */
+    private static final String VALIDATION_NOT_EXTRACTED =
+            "the processor does not read it, so it never reaches FieldMetadata and no emitter can "
+                    + "honour it; the constraints that reach output are min, max, minLength, maxLength "
+                    + "and pattern";
+
+    /**
+     * Note for every {@code @Graph} entry in {@link #INERT_ATTRIBUTES}: the processor reads only
+     * {@code nodeClass} off the type, and takes the properties and edges from {@code @GraphProperty}
+     * and {@code @GraphEdge}.
+     */
+    private static final String GRAPH_NOT_EMITTED =
+            "the processor reads only nodeClass off @Graph, so this attribute never reaches "
+                    + "GraphMetadata and no emitter can honour it";
+
+    /** Note for a {@code @View} attribute carried into {@code ViewMetadata} that the view generator ignores. */
+    private static final String VIEW_ATTRIBUTE_NOT_EMITTED =
+            "it is carried into ViewMetadata and the TypeScript view generator does not read it, "
+                    + "so the generated view ignores it";
 
     /** Closing clause on every strict-mode diagnostic — it is opt-in, so say so at the point of use. */
     private static final String STRICT_SUFFIX = ". (reported because -Aexeris.strict is enabled)";
@@ -384,19 +437,14 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * is NOT an annotation attribute — several such accessors exist with no
      * matching annotation element, and they are deliberately absent here.
      *
-     * <p><strong>Second carve-out: an attribute blocked upstream is not inert, and does not
-     * belong here.</strong> {@code @SagaStep.parallel} is the live case — extracted, carried by
-     * {@code SagaStepMetadata.parallel()}, read by no emitter, so it passes every test above and
-     * an entry for it would look obviously correct. It would still be wrong. The emitted flow is
-     * a strict linear chain because the kernel {@code FlowDefinition} has no way to express
-     * concurrent steps; until it does, the chain is the only correct compilation available, and
-     * registering the attribute would record a missing kernel contract as neglect by a generator
-     * that has nothing else it could emit. {@code @SagaStep.waitForAll} and {@code .failFast}
-     * share the cause and are additionally uncarried. When the kernel grows the contract, the
-     * generators consume all three — no entry to delete, because none was ever added.
-     * {@code @SagaStep.timeout} is the same shape: extracted, read by no emitter, and the kernel's
-     * {@code FlowStepDescriptor} has no per-step deadline to compile it into — only the flow as a
-     * whole carries a timeout, which {@code @Saga.timeout} reaches.
+     * <p><strong>An attribute blocked upstream is registered, and its note names the missing
+     * contract.</strong> {@code @SagaStep.parallel} and {@code .timeout} are extracted, carried by
+     * {@code SagaStepMetadata}, and read by no emitter. The emitted flow is a strict linear chain
+     * because the kernel {@code FlowDefinition} cannot express concurrent steps, and the kernel's
+     * {@code FlowStepDescriptor} has no per-step deadline: only the flow as a whole carries a
+     * timeout, which {@code @Saga.timeout} reaches. Setting either attribute still changes nothing in
+     * the output, so the registry records it, and the note says why no generator could honour it.
+     * {@code @SagaStep.waitForAll} and {@code .failFast} are not carried by the AST at all.
      *
      * <p>{@code Saga} and {@code SagaStep} do have call sites, on the one extraction path both a
      * standalone {@code @Saga} class and an {@code @ExerisDomain} entity carrying {@code @Saga} go
@@ -429,8 +477,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "destination: the kernel decides a route on scopes and never on roles, "
                             + "and mapping ROLE_x onto a scope would stand up a second authority "
                             + "model at the edge. Roles resolve at the method level through the "
-                            + "kernel's own @RequiresRole (kernel ADR-014). What this attribute "
-                            + "should compile into here, if anything, is undecided (T53)"),
+                            + "kernel's own @RequiresRole (kernel ADR-014). The SDK removes this "
+                            + "attribute at 1.0, so use permissions, or @RequiresRole on the method"),
             new InertAttribute("ActionParam", "description",
                     "the value reaches ActionParamMetadata in the JSON, but no emitter renders "
                             + "it — action-parameter generation reads only the parameter name and type"),
@@ -438,7 +486,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                     "the value reaches ActionParamMetadata in the JSON, but no emitter renders "
                             + "it — action-parameter generation reads only the parameter name and type"),
             new InertAttribute("QueryParam", "transform", QUERY_PARAM_NOT_EXTRACTED),
-            new InertAttribute("QueryParam", "validation", QUERY_PARAM_NOT_EXTRACTED),
+            new InertAttribute("QueryParam", VALIDATION_ATTRIBUTE, QUERY_PARAM_NOT_EXTRACTED),
             new InertAttribute("QueryParam", "validationMessage", QUERY_PARAM_NOT_EXTRACTED),
             new InertAttribute("QueryParam", "type", QUERY_PARAM_NOT_EXTRACTED),
             new InertAttribute("QueryParam", "elementType", QUERY_PARAM_NOT_EXTRACTED),
@@ -474,9 +522,11 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "readOnly and leaves it out of the create/update DTOs, and the generated "
                             + "repository stamps the bound tenant, refuses a different one with 400 and "
                             + "never updates it. The TypeScript create/update types "
-                            + "leave it out too, except on an entity with no systemFields block, where "
-                            + "they keep it marked @deprecated until exeris-tooling 0.10.0 removes it. "
-                            + "The entity itself, owner included, is still what a read answers with"),
+                            + "leave it out too, except on an entity with no systemFields block. "
+                            + "The entity itself, owner included, is still what a read answers with. "
+                            + "The coverage plan's disposition is that the default false drops the "
+                            + "tenant field from read responses, the OpenAPI response schema and the "
+                            + "TypeScript read type"),
             new InertAttribute("TenantId", "scopeUniqueConstraints",
                     "the annotation's role — which field plays it — is extracted (C1) and "
                             + "reaches the schema and the repository. This attribute is not: "
@@ -531,9 +581,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                     "the annotation's role — which field plays it — is extracted (C1) and "
                             + "reaches the schema and the repository. This attribute is not: "
                             + "SystemFieldsMetadata carries one field name per role and has no component "
-                            + "for it, so setting it changes no emitted output. Retention is a runtime "
-                            + "scheduler rather than an emission concern — HLA places it in "
-                            + "exeris-caps-soft-delete"),
+                            + "for it, so setting it changes no emitted output. A purge is a scheduled "
+                            + "job, and kernel ADR-057 Amendment A1 issues no principal for one at 1.0, "
+                            + "so the coverage plan proposes it outside the 1.0 freeze, on the same gate as @Schedule"),
             new InertAttribute("SoftDeleteTimestamp", "clearOnRestore",
                     "the annotation's role — which field plays it — is extracted (C1) and "
                             + "reaches the schema and the repository. This attribute is not: "
@@ -619,7 +669,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "field, so neither this nested @UI nor a standalone one on the field "
                             + "reaches the metadata. A field's presentation facet arrives with "
                             + "@View's field facet"),
-            new InertAttribute("Field", "validation",
+            new InertAttribute("Field", VALIDATION_ATTRIBUTE,
                     FIELD_NOT_EXTRACTED + "The nested @Validation is never read. A standalone "
                             + "@Validation on the same field is read and reaches the emitted "
                             + "constraints — move the rules there"),
@@ -803,7 +853,219 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             new InertAttribute(DOMAIN_EVENT, "alertOnFailure", DOMAIN_EVENT_NOT_EXTRACTED),
             new InertAttribute(DOMAIN_EVENT, "traceSampleRate", DOMAIN_EVENT_NOT_EXTRACTED),
             new InertAttribute(DOMAIN_EVENT, "disableInTests", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute(DOMAIN_EVENT, "mockConsumer", DOMAIN_EVENT_NOT_EXTRACTED));
+            new InertAttribute(DOMAIN_EVENT, "mockConsumer", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("Action", ASYNC_ATTRIBUTE,
+                    "it is carried in ActionMetadata.async and no emitter reads it, so every action "
+                            + "is served the same way whatever it says"),
+            new InertAttribute("Action", "bulk", NOT_EMITTED),
+            new InertAttribute("Action", "closeAfter", NOT_EMITTED),
+            new InertAttribute("Action", "confirm", NOT_EMITTED),
+            new InertAttribute("Action", "debounce", NOT_EMITTED),
+            new InertAttribute("Action", "errorMessage", NOT_EMITTED),
+            new InertAttribute("Action", "location", NOT_EMITTED),
+            new InertAttribute("Action", "maxConcurrent", NOT_EMITTED),
+            new InertAttribute("Action", "order", NOT_EMITTED),
+            new InertAttribute("Action", "realTimeUpdates", NOT_EMITTED),
+            new InertAttribute("Action", "redirectTo", NOT_EMITTED),
+            new InertAttribute("Action", "refreshAfter", NOT_EMITTED),
+            new InertAttribute("Action", "showProgress", NOT_EMITTED),
+            new InertAttribute("Action", "showResultMessage", NOT_EMITTED),
+            new InertAttribute("Action", "successMessage", NOT_EMITTED),
+            new InertAttribute("Action", TIMEOUT_ATTRIBUTE, NOT_EMITTED),
+            new InertAttribute("Action", "ui", NOT_EMITTED),
+            new InertAttribute("Action", "variant", NOT_EMITTED),
+            new InertAttribute("Action", "visibleWhen", NOT_EMITTED),
+            new InertAttribute("ActionParam", "allowedFileTypes", NOT_EMITTED),
+            new InertAttribute("ActionParam", DATA_TYPE_ATTRIBUTE, NOT_EMITTED),
+            new InertAttribute("ActionParam", "defaultValueExpression", NOT_EMITTED),
+            new InertAttribute("ActionParam", "enabledWhen", NOT_EMITTED),
+            new InertAttribute("ActionParam", "format", NOT_EMITTED),
+            new InertAttribute("ActionParam", "gridSpan", NOT_EMITTED),
+            new InertAttribute("ActionParam", "group", NOT_EMITTED),
+            new InertAttribute("ActionParam", "helpText", NOT_EMITTED),
+            new InertAttribute("ActionParam", "icon", NOT_EMITTED),
+            new InertAttribute("ActionParam", "masked", NOT_EMITTED),
+            new InertAttribute("ActionParam", "maxFileSize", NOT_EMITTED),
+            new InertAttribute("ActionParam", "multipleFiles", NOT_EMITTED),
+            new InertAttribute("ActionParam", "nullable", NOT_EMITTED),
+            new InertAttribute("ActionParam", "optionIcons", NOT_EMITTED),
+            new InertAttribute("ActionParam", "optionLabelField", NOT_EMITTED),
+            new InertAttribute("ActionParam", "optionLabels", NOT_EMITTED),
+            new InertAttribute("ActionParam", "optionValueField", NOT_EMITTED),
+            new InertAttribute("ActionParam", "options", NOT_EMITTED),
+            new InertAttribute("ActionParam", "optionsExpression", NOT_EMITTED),
+            new InertAttribute("ActionParam", "order", NOT_EMITTED),
+            new InertAttribute("ActionParam", "placeholder", NOT_EMITTED),
+            new InertAttribute("ActionParam", "relationship", NOT_EMITTED),
+            new InertAttribute("ActionParam", "requiredWhen", NOT_EMITTED),
+            new InertAttribute("ActionParam", "transformExpression", NOT_EMITTED),
+            new InertAttribute("ActionParam", "ui", NOT_EMITTED),
+            new InertAttribute("ActionParam", VALIDATION_ATTRIBUTE, NOT_EMITTED),
+            new InertAttribute("ActionParam", "visibleWhen", NOT_EMITTED),
+            new InertAttribute("ExerisDomain", AGGREGATE_ATTRIBUTE, NOT_EMITTED),
+            new InertAttribute("ExerisDomain", CACHE_REGION_ATTRIBUTE, NOT_EMITTED),
+            new InertAttribute("ExerisDomain", CACHE_TTL_ATTRIBUTE, NOT_EMITTED),
+            new InertAttribute("ExerisDomain", CACHEABLE_ATTRIBUTE, NOT_EMITTED),
+            new InertAttribute("ExerisDomain", FULL_TEXT_SEARCH_ATTRIBUTE, NOT_EMITTED),
+            new InertAttribute("ExerisDomain", GRAPHQL_API_ATTRIBUTE, NOT_EMITTED),
+            new InertAttribute("ExerisDomain", INTERNAL_CLIENT_ATTRIBUTE, NOT_EMITTED),
+            new InertAttribute("ExerisDomain", REST_API_ATTRIBUTE, NOT_EMITTED),
+            new InertAttribute("ExerisDomain", SEARCH_CONFIG_ATTRIBUTE, NOT_EMITTED),
+            new InertAttribute("ExerisDomain", "sensitive", NOT_EMITTED),
+            new InertAttribute("ExerisDomain", "tags", NOT_EMITTED),
+            new InertAttribute("ExerisDomain", "ui", NOT_EMITTED),
+            new InertAttribute("ExerisDomain", "validationMode", NOT_EMITTED),
+            new InertAttribute(GRAPH, "additionalLabels", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "alertOnSyncFailure", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "batchSync", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "cacheQueries", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, CACHE_REGION_ATTRIBUTE, GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, CACHE_TTL_ATTRIBUTE, GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "createIndexes", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "createSimilarityEdges", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "database", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "defaultMaxDepth", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "defaultMaxResults", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "embeddingService", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "emitMetrics", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "enableSimilarity", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "excludeEdgeTypes", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "excludeFromSync", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "excludeNodeLabels", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "fullTextAnalyzer", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "fullTextIndex", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "fullTextProperties", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "graphDataSource", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "graphName", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "graphSchema", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "graphqlExtensions", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "graphqlQueries", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "graphqlTypeName", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "idProperty", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "includeInEntityType", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "indexedProperties", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "invalidateCacheOnUpdate", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "maxSimilarResults", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "nodeType", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "queryAlertThreshold", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "queryLogLevel", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "recalculateSimilarityOnUpdate", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "similarityAlgorithm", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "similarityEdgeType", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "similarityFields", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "similaritySchedule", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "similarityThreshold", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "sourceTable", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "syncBatchSize", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "syncCondition", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "syncDlq", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "syncOnEvents", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "syncRetries", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "syncRetryDelay", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "syncTimeout", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "syncToGraph", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "syncType", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "tenantFilterInTraversals", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "traversalEdgeTypes", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "traversalNodeLabels", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "uniqueConstraint", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "useVectorEmbeddings", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH, "vectorDimensions", GRAPH_NOT_EMITTED),
+            new InertAttribute(GRAPH_EDGE, "description", NOT_EMITTED),
+            new InertAttribute(GRAPH_EDGE, "inverseType", NOT_EMITTED),
+            new InertAttribute(GRAPH_EDGE, "properties", NOT_EMITTED),
+            new InertAttribute(GRAPH_EDGE, "propertyMappings", NOT_EMITTED),
+            new InertAttribute(GRAPH_EDGE, "staticProperties", NOT_EMITTED),
+            new InertAttribute(GRAPH_EDGE, "upsert", NOT_EMITTED),
+            new InertAttribute(GRAPH_EDGE, WEIGHTED_ATTRIBUTE, NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "array", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "compositeIndex", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "compositeIndexOrder", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "defaultValue", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "description", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "embeddingService", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "excludeFromInitialSync", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "fullText", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "fullTextAnalyzer", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "fullTextBoost", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "fullTextIndex", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "graphType", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "hashed", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "indexType", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "indexed", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "masked", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "normalize", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "nullable", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "similarity", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "similarityMethod", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "similarityWeight", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "sync", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "syncOnEvents", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "tokenize", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "tokenizer", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "transform", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "transformer", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, UNIQUE_ATTRIBUTE, NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "vectorDimensions", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "vectorEmbedding", NOT_EMITTED),
+            new InertAttribute(GRAPH_PROPERTY, "vectorProperty", NOT_EMITTED),
+            new InertAttribute(RELATIONSHIP, "allowCreate", NOT_EMITTED),
+            new InertAttribute(RELATIONSHIP, "allowInlineCreate", NOT_EMITTED),
+            new InertAttribute(RELATIONSHIP, "allowInlineEdit", NOT_EMITTED),
+            new InertAttribute(RELATIONSHIP, "autocompleteThreshold", NOT_EMITTED),
+            new InertAttribute(RELATIONSHIP, "cascadeUpdate",
+                    "it reaches RelationshipMetadata.cascade, but no generator emits ON UPDATE "
+                            + "CASCADE: a foreign key's delete rule follows cascadeDelete alone"),
+            new InertAttribute(RELATIONSHIP, "dependsOn", NOT_EMITTED),
+            new InertAttribute(RELATIONSHIP, "dependsOnField", NOT_EMITTED),
+            new InertAttribute(RELATIONSHIP, "display", NOT_EMITTED),
+            new InertAttribute(RELATIONSHIP, "displayFields", NOT_EMITTED),
+            new InertAttribute(RELATIONSHIP, "displayTemplate", NOT_EMITTED),
+            new InertAttribute(RELATIONSHIP, "fetchType", NOT_EMITTED),
+            new InertAttribute(RELATIONSHIP, "filter", NOT_EMITTED),
+            new InertAttribute(RELATIONSHIP, "icon", NOT_EMITTED),
+            new InertAttribute(RELATIONSHIP, "labelField", NOT_EMITTED),
+            new InertAttribute(RELATIONSHIP, "orderBy", NOT_EMITTED),
+            new InertAttribute(RELATIONSHIP, "required", NOT_EMITTED),
+            new InertAttribute(RELATIONSHIP, "searchFields", NOT_EMITTED),
+            new InertAttribute(RELATIONSHIP, SEARCHABLE_ATTRIBUTE, NOT_EMITTED),
+            new InertAttribute("Saga", MODULE_ATTRIBUTE, NOT_EMITTED),
+            new InertAttribute("Saga", "tags", NOT_EMITTED),
+            new InertAttribute("SagaStep", "kind", NOT_EMITTED),
+            new InertAttribute("SagaStep", PARALLEL_ATTRIBUTE,
+                    "it is carried in SagaStepMetadata.parallel and no emitter reads it: the kernel "
+                            + "FlowDefinition cannot express concurrent steps, so the emitted flow is a "
+                            + "strict linear chain whatever it says"),
+            new InertAttribute("SagaStep", "tags", NOT_EMITTED),
+            new InertAttribute("SagaStep", TIMEOUT_ATTRIBUTE,
+                    "it is carried in SagaStepMetadata.timeout and no emitter reads it: the kernel "
+                            + "FlowStepDescriptor has no per-step deadline, and only the flow as a whole "
+                            + "carries a timeout, which @Saga.timeout sets"),
+            new InertAttribute("UIGroup", "icon",
+                    "it is carried into UIGroupMetadata and no emitter reads it, so the generated "
+                            + "group shows no icon"),
+            new InertAttribute(VALIDATION, "asyncValidator", VALIDATION_NOT_EXTRACTED),
+            new InertAttribute(VALIDATION, "customValidator", VALIDATION_NOT_EXTRACTED),
+            new InertAttribute(VALIDATION, "decimalMax", VALIDATION_NOT_EXTRACTED),
+            new InertAttribute(VALIDATION, "decimalMin", VALIDATION_NOT_EXTRACTED),
+            new InertAttribute(VALIDATION, "email", VALIDATION_NOT_EXTRACTED),
+            new InertAttribute(VALIDATION, "future", VALIDATION_NOT_EXTRACTED),
+            new InertAttribute(VALIDATION, "futureOrPresent", VALIDATION_NOT_EXTRACTED),
+            new InertAttribute(VALIDATION, "groups", VALIDATION_NOT_EXTRACTED),
+            new InertAttribute(VALIDATION, "message", VALIDATION_NOT_EXTRACTED),
+            new InertAttribute(VALIDATION, "negative", VALIDATION_NOT_EXTRACTED),
+            new InertAttribute(VALIDATION, "negativeOrZero", VALIDATION_NOT_EXTRACTED),
+            new InertAttribute(VALIDATION, "past", VALIDATION_NOT_EXTRACTED),
+            new InertAttribute(VALIDATION, "pastOrPresent", VALIDATION_NOT_EXTRACTED),
+            new InertAttribute(VALIDATION, "positive", VALIDATION_NOT_EXTRACTED),
+            new InertAttribute(VALIDATION, "positiveOrZero", VALIDATION_NOT_EXTRACTED),
+            new InertAttribute(VALIDATION, "url", VALIDATION_NOT_EXTRACTED),
+            new InertAttribute(VALIDATION, "uuid", VALIDATION_NOT_EXTRACTED),
+            new InertAttribute("View", "layout", VIEW_ATTRIBUTE_NOT_EMITTED),
+            new InertAttribute("View", "titleKey", VIEW_ATTRIBUTE_NOT_EMITTED),
+            new InertAttribute("PrimaryKey", STRATEGY_ATTRIBUTE,
+                    "the processor reads it only to refuse SEQUENCE, IDENTITY and NONE, which the "
+                            + "generated repository cannot honour; any other value changes no emitted output"));
 
     /**
      * Hand-maintained registry of whole type-level annotations that are extracted
@@ -840,6 +1102,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "KernelProviders.eventStreamReader() returns an Optional because a "
                             + "broker may not support replay, so generated code must handle "
                             + "absence rather than assume a binding"),
+            new InertAnnotation("eu.exeris.sdk.annotation.InternalApi", "InternalApi",
+                    "the processor reads only its presence, into InternalApiMetadata.internal, and "
+                            + "no generator reads that: the entity stays in the public OpenAPI document "
+                            + "and the TypeScript app, and its routes take no scope from it. Its "
+                            + "attributes (consumers, documented, rateLimit, requireMtls, timeout) "
+                            + "have no effect either"),
             new InertAnnotation("eu.exeris.sdk.annotation.security.Encrypted", "Encrypted",
                     "the processor does not extract it and no generator consumes it; it is "
                             + "deprecated for removal at 1.0.0. Kernel ADR-012 §4c.1 rules field-level "
@@ -880,10 +1148,10 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     private static final Set<String> EXTRACTED_ANNOTATIONS = Set.of(
             "Action", "ActionParam", "AuditCreatedAt", "AuditCreatedBy", "AuditUpdatedAt",
             "AuditUpdatedBy", "Bind", "Blob", "Block", "CapabilityLifecycle", "CapabilityModule",
-            DOMAIN_EVENT, "EventSourced", "ExerisDomain", "Field", "Graph", "GraphEdge",
-            "GraphProperty", "InternalApi", NAV_MENU, "PrimaryKey", "Provides", "QueryParam", "Region",
-            "Relationship", "Requires", "RouteAccess", "Saga", "SagaStep", "SharedScope", "SoftDelete",
-            "SoftDeleteTimestamp", "SoftDeletedBy", "Tab", "TenantId", "UI", "UIGroup", "Validation",
+            DOMAIN_EVENT, "EventSourced", "ExerisDomain", "Field", GRAPH, GRAPH_EDGE,
+            GRAPH_PROPERTY, "InternalApi", NAV_MENU, "PrimaryKey", "Provides", "QueryParam", "Region",
+            RELATIONSHIP, "Requires", "RouteAccess", "Saga", "SagaStep", "SharedScope", "SoftDelete",
+            "SoftDeleteTimestamp", "SoftDeletedBy", "Tab", "TenantId", "UI", "UIGroup", VALIDATION,
             "Version", "View");
 
     /**
@@ -1440,6 +1708,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         Map<String, Object> values = viewAnnotation != null
                 ? extractAnnotationValues(viewAnnotation)
                 : Map.of();
+        if (viewAnnotation != null) {
+            warnInertAttributes("View", values, element, viewAnnotation);
+        }
 
         // name is required on @View; fall back to the simple name defensively.
         String name = nonBlankOr(getString(values, "name", null),
@@ -1935,7 +2206,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         if (fieldValues.containsKey("required")) {
             return getBoolean(fieldValues, "required", false);
         }
-        AnnotationMirror validation = findAnnotation(field, "eu.exeris.sdk.annotation.Validation");
+        AnnotationMirror validation = findAnnotation(field, VALIDATION_FQN);
         return validation != null && getBoolean(extractAnnotationValues(validation), "required", false);
     }
 
@@ -2528,31 +2799,31 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         warnInertAttributes("ExerisDomain", values, element, annotation);
 
         // Identity
-        if (values.containsKey("module")) {
-            builder.module((String) values.get("module"));
+        if (values.containsKey(MODULE_ATTRIBUTE)) {
+            builder.module((String) values.get(MODULE_ATTRIBUTE));
         }
         if (values.containsKey("path")) {
             builder.path((String) values.get("path"));
         }
-        if (values.containsKey("aggregate")) {
-            builder.aggregate((String) values.get("aggregate"));
+        if (values.containsKey(AGGREGATE_ATTRIBUTE)) {
+            builder.aggregate((String) values.get(AGGREGATE_ATTRIBUTE));
         }
         if (values.containsKey("description")) {
             builder.description((String) values.get("description"));
         }
 
         // API Configuration
-        if (values.containsKey("restApi")) {
-            builder.restApi((Boolean) values.get("restApi"));
+        if (values.containsKey(REST_API_ATTRIBUTE)) {
+            builder.restApi((Boolean) values.get(REST_API_ATTRIBUTE));
         }
-        if (values.containsKey("graphqlApi")) {
-            builder.graphqlApi((Boolean) values.get("graphqlApi"));
+        if (values.containsKey(GRAPHQL_API_ATTRIBUTE)) {
+            builder.graphqlApi((Boolean) values.get(GRAPHQL_API_ATTRIBUTE));
         }
         if (values.containsKey("realTimeApi")) {
             builder.realTimeApi((Boolean) values.get("realTimeApi"));
         }
-        if (values.containsKey("internalClient")) {
-            builder.internalClient((Boolean) values.get("internalClient"));
+        if (values.containsKey(INTERNAL_CLIENT_ATTRIBUTE)) {
+            builder.internalClient((Boolean) values.get(INTERNAL_CLIENT_ATTRIBUTE));
         }
 
         // Data Management
@@ -2597,22 +2868,22 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         }
 
         // Caching
-        if (values.containsKey("cacheable")) {
-            builder.cacheable((Boolean) values.get("cacheable"));
+        if (values.containsKey(CACHEABLE_ATTRIBUTE)) {
+            builder.cacheable((Boolean) values.get(CACHEABLE_ATTRIBUTE));
         }
-        if (values.containsKey("cacheTtl")) {
-            builder.cacheTtl((String) values.get("cacheTtl"));
+        if (values.containsKey(CACHE_TTL_ATTRIBUTE)) {
+            builder.cacheTtl((String) values.get(CACHE_TTL_ATTRIBUTE));
         }
-        if (values.containsKey("cacheRegion")) {
-            builder.cacheRegion((String) values.get("cacheRegion"));
+        if (values.containsKey(CACHE_REGION_ATTRIBUTE)) {
+            builder.cacheRegion((String) values.get(CACHE_REGION_ATTRIBUTE));
         }
 
         // Search
-        if (values.containsKey("fullTextSearch")) {
-            builder.fullTextSearch((Boolean) values.get("fullTextSearch"));
+        if (values.containsKey(FULL_TEXT_SEARCH_ATTRIBUTE)) {
+            builder.fullTextSearch((Boolean) values.get(FULL_TEXT_SEARCH_ATTRIBUTE));
         }
-        if (values.containsKey("searchConfig")) {
-            builder.searchConfig((String) values.get("searchConfig"));
+        if (values.containsKey(SEARCH_CONFIG_ATTRIBUTE)) {
+            builder.searchConfig((String) values.get(SEARCH_CONFIG_ATTRIBUTE));
         }
 
         // Database. Stored as written, like the SDK's -io reader: a blank value means "derive
@@ -2683,7 +2954,14 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                     continue;
                 }
 
-                warnInertAttributes(role.annotation(), extractAnnotationValues(mirror), enclosed, mirror);
+                Map<String, Object> carrierValues = new LinkedHashMap<>(extractAnnotationValues(mirror));
+                String declaredStrategy = enumConstantName(carrierValues.get(STRATEGY_ATTRIBUTE));
+                if ("PrimaryKey".equals(role.annotation())
+                        && declaredStrategy != null && REFUSED_PRIMARY_KEY_STRATEGIES.contains(declaredStrategy)) {
+                    // A refused strategy has its own error; the audit would be a second diagnostic.
+                    carrierValues.remove(STRATEGY_ATTRIBUTE);
+                }
+                warnInertAttributes(role.annotation(), carrierValues, enclosed, mirror);
                 carriers.add((VariableElement) enclosed);
             }
             if (carriers.isEmpty()) {
@@ -2708,7 +2986,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             String annotated = carrier.getSimpleName().toString();
             if ("PrimaryKey".equals(role.annotation())) {
                 AnnotationMirror marker = findAnnotation(carrier, role.fqn());
-                String strategy = enumConstantName(extractAnnotationValues(marker).get("strategy"));
+                String strategy = enumConstantName(extractAnnotationValues(marker).get(STRATEGY_ATTRIBUTE));
                 if (strategy != null && REFUSED_PRIMARY_KEY_STRATEGIES.contains(strategy)) {
                     error(DiagnosticId.PRIMARY_KEY_STRATEGY_REFUSED,
                             refusedPrimaryKeyStrategyMessage(element.getSimpleName().toString(), annotated, strategy),
@@ -2902,6 +3180,10 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             // gating this call on @Field would suppress a warning for a field that
             // is nonetheless in the model.
             auditAnnotations(field);
+            AnnotationMirror validationMirror = findAnnotation(field, VALIDATION_FQN);
+            if (validationMirror != null) {
+                warnInertAttributes(VALIDATION, extractAnnotationValues(validationMirror), field, validationMirror);
+            }
 
             AnnotationMirror fieldAnnotation = findAnnotation(field, "eu.exeris.sdk.annotation.Field");
             AnnotationMirror blobAnnotation = findAnnotation(field, BLOB_FQN);
@@ -2965,14 +3247,14 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         if (values.containsKey("required")) {
             builder.required((Boolean) values.get("required"));
         }
-        if (values.containsKey("unique")) {
-            builder.unique((Boolean) values.get("unique"));
+        if (values.containsKey(UNIQUE_ATTRIBUTE)) {
+            builder.unique((Boolean) values.get(UNIQUE_ATTRIBUTE));
         }
         if (values.containsKey("indexed")) {
             builder.indexed((Boolean) values.get("indexed"));
         }
-        if (values.containsKey("searchable")) {
-            builder.searchable((Boolean) values.get("searchable"));
+        if (values.containsKey(SEARCHABLE_ATTRIBUTE)) {
+            builder.searchable((Boolean) values.get(SEARCHABLE_ATTRIBUTE));
         }
         if (values.containsKey("sortable")) {
             builder.sortable((Boolean) values.get("sortable"));
@@ -2992,8 +3274,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         // @Field.dataType — the front-presentation type hint (currency/percent/url/…).
         // The builder normalizes blank -> null, so an explicit "" default does not
         // survive on the wire under @JsonInclude(NON_DEFAULT) (determinism-safe).
-        if (values.containsKey("dataType")) {
-            builder.dataType((String) values.get("dataType"));
+        if (values.containsKey(DATA_TYPE_ATTRIBUTE)) {
+            builder.dataType((String) values.get(DATA_TYPE_ATTRIBUTE));
         }
 
         // Computed fields (only computed + computedFrom on @Field).
@@ -3018,7 +3300,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         }
 
         // Check for validation annotation
-        AnnotationMirror validationAnnotation = findAnnotation(field, "eu.exeris.sdk.annotation.Validation");
+        AnnotationMirror validationAnnotation = findAnnotation(field, VALIDATION_FQN);
         if (validationAnnotation != null) {
             Map<String, Object> validationValues = extractAnnotationValues(validationAnnotation);
             if (validationValues.containsKey("min")) {
@@ -3195,8 +3477,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         if (values.containsKey("httpMethod")) {
             builder.httpMethod((String) values.get("httpMethod"));
         }
-        if (values.containsKey("async")) {
-            builder.async((Boolean) values.get("async"));
+        if (values.containsKey(ASYNC_ATTRIBUTE)) {
+            builder.async((Boolean) values.get(ASYNC_ATTRIBUTE));
         }
 
         // ADR-044: the per-action streaming driver. @Action(streaming=true)
@@ -3723,6 +4005,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
             if (relAnnotation != null) {
                 Map<String, Object> values = extractAnnotationValues(relAnnotation);
+                warnInertAttributes(RELATIONSHIP, values, field, relAnnotation);
                 String name = field.getSimpleName().toString();
                 String targetEntity = resolveTargetEntity(values, field);
 
@@ -3821,7 +4104,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                     .detailView(getBoolean(values, "detailView", true))
                     .createForm(getBoolean(values, "createForm", true))
                     .editForm(getBoolean(values, "editForm", true))
-                    .searchable(getBoolean(values, "searchable", true))
+                    .searchable(getBoolean(values, SEARCHABLE_ATTRIBUTE, true))
                     .filterable(getBoolean(values, "filterable", true))
                     .exportable(getBoolean(values, "exportable", false));
         }
@@ -4029,6 +4312,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         }
 
         Map<String, Object> values = extractAnnotationValues(graphAnnotation);
+        warnInertAttributes(GRAPH, values, element, graphAnnotation);
 
         // nodeClass is the label in @Graph annotation
         String label = element.getSimpleName().toString();
@@ -4059,7 +4343,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             }
 
             Map<String, Object> values = extractAnnotationValues(propertyAnnotation);
-            warnInertAttributes("GraphProperty", values, enclosed, propertyAnnotation);
+            warnInertAttributes(GRAPH_PROPERTY, values, enclosed, propertyAnnotation);
 
             String fieldName = enclosed.getSimpleName().toString();
             String declaredName = getString(values, "name", null);
@@ -4115,6 +4399,11 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
             if (mirrors.isEmpty()) {
                 continue;
+            }
+
+            // Per mirror, so a repeated @GraphEdge is audited once per repeat, like its extraction.
+            for (AnnotationMirror mirror : mirrors) {
+                warnInertAttributes(GRAPH_EDGE, extractAnnotationValues(mirror), enclosed, mirror);
             }
 
             String fieldName = enclosed.getSimpleName().toString();
@@ -4178,8 +4467,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         String inverseType = blankToNull(getString(values, "inverseType", null));
         String description = blankToNull(getString(values, "description", null));
 
-        Boolean weighted = values.containsKey("weighted")
-                ? getBoolean(values, "weighted", false)
+        Boolean weighted = values.containsKey(WEIGHTED_ATTRIBUTE)
+                ? getBoolean(values, WEIGHTED_ATTRIBUTE, false)
                 : null;
 
         String weightField = blankToNull(getString(values, "weightField", null));
@@ -4295,8 +4584,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         if (values.containsKey("description")) {
             builder.description((String) values.get("description"));
         }
-        if (values.containsKey("timeout")) {
-            builder.timeout((String) values.get("timeout"));
+        if (values.containsKey(TIMEOUT_ATTRIBUTE)) {
+            builder.timeout((String) values.get(TIMEOUT_ATTRIBUTE));
         }
         if (values.containsKey("maxRetries")) {
             builder.maxRetries(getInt(values, "maxRetries", 0));
@@ -4647,11 +4936,11 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         if (values.containsKey("compensation")) {
             builder.compensation((String) values.get("compensation"));
         }
-        if (values.containsKey("timeout")) {
-            builder.timeout((String) values.get("timeout"));
+        if (values.containsKey(TIMEOUT_ATTRIBUTE)) {
+            builder.timeout((String) values.get(TIMEOUT_ATTRIBUTE));
         }
-        if (values.containsKey("parallel")) {
-            builder.parallel((Boolean) values.get("parallel"));
+        if (values.containsKey(PARALLEL_ATTRIBUTE)) {
+            builder.parallel((Boolean) values.get(PARALLEL_ATTRIBUTE));
         }
 
         return builder.build();
