@@ -419,7 +419,7 @@ function renderNode(
   // ACTION: a click handler calling the named action method.
   const actionAttr = source === 'ACTION' && binding?.ref ? ` (click)="${actionMethodName(binding.ref)}()"` : '';
 
-  if (node.children.length === 0 && !entityRead && !propsText) {
+  if (node.children.length === 0 && !entityRead && !propsText && !(iteration && isList)) {
     if (type === 'FORM') {
       lines.push(`${pad}<${tag} class="${cls}"${dataBlock}${actionAttr}>`);
       lines.push(`${pad}  <!-- TODO(@View): FORM block — leaf-field form emission defers to the existing form vocabulary (slice 2, RFC §5) -->`);
@@ -444,10 +444,13 @@ function renderNode(
   const renderChild = (child: ComponentNodeMetadata, i: number, childLevel: number): string[] =>
     renderNode(child, childLevel, ctx, `${where}.children[${i}]`, childVar);
   if (iteration) {
+    // A childless LIST shows the bound field of each row, when it binds one.
+    const rowText = node.children.length === 0 && binding?.path ? `{{ ${iteration.item}.${binding.path} }}` : '';
     lines.push(`${pad}  ${iteration.open}`);
     if (isList) {
       // One <li> per row: the children are the row's content.
       lines.push(`${pad}    <li>`);
+      if (rowText) lines.push(`${pad}      ${rowText}`);
       node.children.forEach((child, i) => lines.push(...renderChild(child, i, level + 3)));
       lines.push(`${pad}    </li>`);
     } else {
