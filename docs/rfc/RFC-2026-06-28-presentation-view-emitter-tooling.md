@@ -3,18 +3,18 @@ title: "RFC-2026-06-28: Presentation View Emitter Shape"
 type: rfc
 visibility: public
 owning-repo: exeris-tooling
-status: draft
+status: active
 ---
 
 # RFC-2026-06-28: What shape should the tooling `@View` presentation emitter take, now that the SDK ships the reserved presentation IR?
 
 | Field             | Value                                                                 |
 |:------------------|:----------------------------------------------------------------------|
-| **Status**        | **DRAFT** — first-slice proposal pending founder review. The **first slice has LANDED** under this DRAFT (PR #121, off `main`) per the founder go-ahead, mirroring how the SSE RFC-2026-06-22 slice 1 shipped before ratification. Opens build-gate condition (1) of [SDK RFC-2026-06-25](https://github.com/exeris-systems/exeris-sdk/blob/main/docs/rfc/RFC-2026-06-25-presentation-front-model.md). |
+| **Status**        | **ACCEPTED** (resolved by ADR-111, 2026-11-28). Slice 1 shipped in PR #121. |
 | **Author(s)**     | arkstack-dev                                                          |
 | **Date Opened**   | 2026-06-28                                                           |
-| **Date Closed**   | —                                                                    |
-| **Target ADR(s)** | TBD — the "presentation view emitter shape" ADR (sibling to [ADR-044](../adr/ADR-044-tooling-sse-stream-emitter-shape.md)) that ratifies this RFC's recommendation, reserved in `exeris-docs/adr-index.md` on acceptance. The leaf-field-facet follow-up has its own decision: [ADR-047](../adr/ADR-047-view-leaf-field-facet-and-ui-subsumption.md). |
+| **Date Closed**   | 2026-11-28                                                           |
+| **Target ADR(s)** | [ADR-111](../adr/ADR-111-view-emitter-shape-owned-routes-and-site-shell-typed-built-in-blocks-convention-resolved-custom-blocks.md) — the "presentation view emitter shape" ADR (sibling to [ADR-044](../adr/ADR-044-tooling-sse-stream-emitter-shape.md)) that ratifies this RFC's recommendation. The leaf-field-facet follow-up has its own decision: [ADR-047](../adr/ADR-047-view-leaf-field-facet-and-ui-subsumption.md). |
 | **Affected Repos**| `exeris-tooling` (processor extraction → `view_*.json`; the framework-neutral-IR → **Angular 22 signal-first emitter** in `exeris-codegen-ts`); `exeris-sdk` (consumes the IR shape it already owns — no change); `exeris-sdk-ui-kit` (a downstream consumer of the emitted front, not an emitter target owner) |
 | **Reviewers**     | —                                                                    |
 
@@ -40,7 +40,7 @@ Precedent this emitter mirrors, one-for-one:
 - SDK records `ViewMetadata` (`name/kind/route/title/titleKey/layout/regions`), `RegionMetadata` (`slot/components`), `ComponentNodeMetadata` (`type/customType/binding/props/children`(recursive)/`field`:`UIFieldMetadata`), `BindingMetadata` (`source/ref/path/expression/language`); enums `ViewKind` / `BlockType` / `BindSource`; `@JsonInclude(NON_NULL)` (deliberate, the boxed-zero trap).
 - Tooling: no `@View` in `@SupportedAnnotationTypes`; no `view_*.json`; no `ViewGenerator`; `ViewMetadataSchema` absent from codegen-ts `domain-model.ts`. `index.ts` already separates `enum_*` files by basename — `view_*` follows the same pattern.
 
-## Recommendation (first slice — DRAFT, provisional)
+## Recommendation (first slice — as shipped, fixed by ADR-111)
 
 ### 1. Class-structure-derived extraction (the authoring convention this slice fixes)
 The SDK resolved "class-structure-derived" but left the exact walk to the emitter RFC. This slice fixes it as:
@@ -71,6 +71,15 @@ A new `ViewGenerator` (a new `PAGE` `ArtifactType`) emits one **standalone, sign
 ### 5. Build-gate honesty
 This slice satisfies condition (1) (the emitter is authored) and uses the dog-food app's corpus as early condition-(2) validation. The **full** emitter (G1–G3/G6, the leaf-field forms, the `@UI` unification) remains gated on the Headless CMS SKU corpus — this RFC ships the *first slice* and the design, not the finished surface.
 
+## Decision Record
+
+| Field                | Value                                                                  |
+|:---------------------|:-----------------------------------------------------------------------|
+| **Outcome**          | ACCEPTED                                                               |
+| **Date**             | 2026-11-28                                                             |
+| **Resulting ADR(s)** | ADR-111                                                                |
+| **Notes**            | ADR-111 fixes the contract. Where §3 differs — an ENTITY binding reads the generated store, and a CUSTOM block's component is resolved by selector — ADR-111 holds. |
+
 ## Open questions / follow-ups
 - **G1 parameterised/relational binding** — the corpus's defining trait ("X of the current Y"); the highest-leverage post-slice fork (`@Bind(via=…, from=PARENT)` shape). Owner: this RFC's successor, gated on the SKU corpus.
 - **G2 `STREAM` binding** — pairs with the SSE emitter (ADR-044); cheap once added to `BindSource` (SDK).
@@ -81,4 +90,4 @@ This slice satisfies condition (1) (the emitter is authored) and uses the dog-fo
 
 ## Next action
 
-The **first slice has landed** behind the gates above (`feat/view-emitter-slice1` → PR #121, stacked on the ui-kit/appName scaffold PR #120, both off `main`), under this DRAFT per the founder's go-ahead — the same path the SSE RFC-2026-06-22 slice 1 took before ADR-044 ratified it. On **ACCEPT**: reserve the tooling "presentation view emitter shape" ADR number in `exeris-docs/adr-index.md` and author the emitter-shape ADR (sibling to ADR-044) fixing the now-shipped slice-1 shape as the contract and scoping the gated follow-ups (G1–G3/G6, the leaf-field facet via [ADR-047](../adr/ADR-047-view-leaf-field-facet-and-ui-subsumption.md), the `@UI` unification). The full emitter stays gated on the Headless CMS SKU corpus (condition 2).
+The first slice landed behind the gates above (`feat/view-emitter-slice1` → PR #121, stacked on the ui-kit/appName scaffold PR #120, both off `main`) under this RFC as a draft, the path the SSE RFC-2026-06-22 slice 1 took before ADR-044 ratified it. [ADR-111](../adr/ADR-111-view-emitter-shape-owned-routes-and-site-shell-typed-built-in-blocks-convention-resolved-custom-blocks.md) fixes the shipped shape as the contract and scopes the gated follow-ups (G1–G3/G6, the leaf-field facet via [ADR-047](../adr/ADR-047-view-leaf-field-facet-and-ui-subsumption.md), the `@UI` unification). The full emitter stays gated on the Headless CMS SKU corpus (condition 2).
