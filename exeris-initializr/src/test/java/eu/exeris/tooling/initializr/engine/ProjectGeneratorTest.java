@@ -93,7 +93,7 @@ class ProjectGeneratorTest {
                 <groupId>org.postgresql</groupId>
                             <artifactId>postgresql</artifactId>
                             <version>42.7.14</version>""");
-        assertThat(text(tree, "docker-compose.yml")).contains("POSTGRES_DB: order_service",
+        assertThat(text(tree, "docker-compose.yml")).contains("POSTGRES_DB: \"order_service\"",
                 "POSTGRES_USER: exeris", "POSTGRES_PASSWORD: exeris");
         assertThat(text(tree, "README.md")).contains(
                 "| `exeris.http.port` | `8080` |",
@@ -136,11 +136,20 @@ class ProjectGeneratorTest {
     }
 
     @Test
+    @DisplayName("a YAML word as artifactId is a quoted string in docker-compose.yml, and the README title is escaped")
+    void yamlWordAndMarkup() {
+        ProjectTree tree = ProjectGenerator.generate(new ProjectScaffoldRequest("com.example", "null", null,
+                "<script>x</script> & y", ProjectTopology.E2E, DatabaseType.POSTGRESQL, null), VERSIONS);
+        assertThat(text(tree, "docker-compose.yml")).contains("POSTGRES_DB: \"null\"", "\"-d\", \"null\"");
+        assertThat(text(tree, "README.md")).startsWith("# &lt;script&gt;x&lt;/script&gt; &amp; y\n");
+    }
+
+    @Test
     @DisplayName("the README documents the two passes, and that H2 builds and tests but runs no migration")
     void readmeH2() {
         String readme = text(generate(ProjectTopology.BACKEND_ONLY, DatabaseType.H2), "README.md");
         assertThat(readme)
-                .startsWith("# Orders & Co\n")
+                .startsWith("# Orders &amp; Co\n")
                 .contains("sh first-build.sh", "mvn -Dexeris.codegen.skip=true compile", "then `mvn verify`")
                 .contains("the H2 JDBC driver", "H2 builds the project and runs its generated tests",
                         "--database=postgresql", "com.example.order.service.Application")

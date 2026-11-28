@@ -94,6 +94,10 @@ class InitializrCliMainTest {
         assertThat(run("--artifact-id=.")).isEqualTo(2);
         assertThat(err()).startsWith("[Exeris] EXT-INIT-5001: ");
         err.reset();
+        assertThat(run("--artifact-id=demo.", "--zip=" + tmp.resolve("x.zip"))).isEqualTo(2);
+        assertThat(err()).startsWith("[Exeris] EXT-INIT-5001: artifactId must not end in a dot");
+        assertThat(tmp.resolve("x.zip")).doesNotExist();
+        err.reset();
         assertThat(run("--artifact-id=a/b")).isEqualTo(2);
         assertThat(err()).startsWith("[Exeris] EXT-INIT-5001: artifactId may hold only");
     }

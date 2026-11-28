@@ -83,6 +83,116 @@ class ModelTest {
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("name");
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"UUID", "Field", "ExerisDomain", "String"})
+    @DisplayName("refuses an entity named like a type the entity template refers to, and lists them")
+    void refusesReservedEntity(String entity) {
+        assertThat(ProjectScaffoldRequest.RESERVED_ENTITY_NAMES).contains(entity);
+        assertThatThrownBy(() -> request("com.example", "demo", null, null, entity))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("entity")
+                .hasMessageContaining("UUID");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"Con", "Nul", "Aux", "Prn", "Com1", "Lpt9", "CON"})
+    @DisplayName("refuses an entity that is a Windows device name, whatever its case")
+    void refusesDeviceEntity(String entity) {
+        assertThatThrownBy(() -> request("com.example", "demo", null, null, entity))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Windows device");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"java", "java.demo", "java.lang"})
+    @DisplayName("refuses a package that starts with the segment java")
+    void refusesJavaPackage(String pkg) {
+        assertThatThrownBy(() -> request("com.example", "demo", pkg, null, null))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("'java'");
+    }
+
+    @Test
+    @DisplayName("refuses a groupId that derives a package under java, and accepts a package that only begins with the letters")
+    void javaGroupId() {
+        assertThatThrownBy(() -> request("java", "demo", null, null, null))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("'java'");
+        assertThat(request("com.example", "demo", "javax.demo", null, null).packageName()).isEqualTo("javax.demo");
+        assertThat(request("com.example", "demo", "javafx.demo", null, null).packageName()).isEqualTo("javafx.demo");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"com.con.x", "a.NUL", "com1.demo", "LPT3"})
+    @DisplayName("refuses a package with a Windows device name as a segment, whatever its case")
+    void refusesDevicePackage(String pkg) {
+        assertThatThrownBy(() -> request("com.example", "demo", pkg, null, null))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Windows device");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"con", "NUL", "COM1", "Aux.txt", "lpt1"})
+    @DisplayName("refuses an artifactId or groupId that is a Windows device name, whatever its case")
+    void refusesDeviceMavenId(String value) {
+        assertThatThrownBy(() -> request("com.example", value, "com.example", null, null))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("artifactId");
+        assertThatThrownBy(() -> request(value, "demo", "com.example", null, null))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("groupId");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"console", "com10", "nulls", "my-con"})
+    @DisplayName("accepts an artifactId that only contains a device name")
+    void acceptsNearDeviceName(String value) {
+        assertThat(request("com.example", value, "com.example", null, null).artifactId()).isEqualTo(value);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"--version", "-rf", "_app", ".hidden"})
+    @DisplayName("refuses an artifactId that does not start with a letter or a digit")
+    void refusesArtifactIdStart(String value) {
+        assertThatThrownBy(() -> request("com.example", value, "com.example", null, null))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("artifactId");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"demo.", "a..", "a.b."})
+    @DisplayName("refuses an artifactId that ends in a dot")
+    void refusesArtifactIdTrailingDot(String value) {
+        assertThatThrownBy(() -> request("com.example", value, "com.example", null, null))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("artifactId")
+                .hasMessageContaining("dot");
+        assertThat(request("com.example", "a.b", "com.example", null, null).artifactId()).isEqualTo("a.b");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"com.$x", "com.a$b", "$"})
+    @DisplayName("refuses a package that holds a dollar sign")
+    void refusesDollarPackage(String pkg) {
+        assertThatThrownBy(() -> request("com.example", "demo", pkg, null, null))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("'$'");
+    }
+
+    @Test
+    @DisplayName("bounds the artifactId so its npm name stays within 214 characters")
+    void boundsArtifactId() {
+        int max = ProjectScaffoldRequest.MAX_ARTIFACT_ID_LENGTH;
+        assertThat(request("com.example", "a".repeat(max), "com.example", null, null).artifactId()).hasSize(max);
+        assertThatThrownBy(() -> request("com.example", "a".repeat(max + 1), "com.example", null, null))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("artifactId");
+        assertThat(max + "-frontend".length()).isLessThanOrEqualTo(214);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"a\uFFFEb", "a\uFFFFb", "a\u2028b", "a\u2029b", "a\u202Eb", "a\u2066b", "a\uD800b", "a\u0000b"})
+    @DisplayName("refuses a name with a character XML 1.0 forbids, a line separator or a bidirectional override")
+    void refusesNameCharacters(String name) {
+        assertThatThrownBy(() -> request("com.example", "demo", null, name, null))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("name");
+    }
+
+    @Test
+    @DisplayName("accepts a name with non-ASCII letters and a supplementary character")
+    void acceptsUnicodeName() {
+        assertThat(request("com.example", "demo", null, "Zażółć \uD83D\uDE00", null).name()).isEqualTo("Zażółć \uD83D\uDE00");
+    }
+
     @Test
     @DisplayName("finds topologies and databases by their exact command-line value")
     void cliValues() {

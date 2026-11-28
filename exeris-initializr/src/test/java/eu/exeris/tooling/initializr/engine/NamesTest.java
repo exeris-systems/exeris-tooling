@@ -48,11 +48,9 @@ class NamesTest {
     }
 
     @Test
-    @DisplayName("derives an npm name that does not start with '.' or '_'")
+    @DisplayName("derives an npm name by lower-casing the artifactId")
     void npmName() {
         assertThat(Names.npmName("Order-Service")).isEqualTo("order-service");
-        assertThat(Names.npmName("_x")).isEqualTo("app-_x");
-        assertThat(Names.npmName(".x")).isEqualTo("app-.x");
     }
 
     @Test

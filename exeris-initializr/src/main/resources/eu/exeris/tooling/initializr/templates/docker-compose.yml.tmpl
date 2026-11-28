@@ -3,7 +3,7 @@ services:
   postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_DB: {{databaseName}}
+      POSTGRES_DB: "{{databaseName}}"
       POSTGRES_USER: exeris
       POSTGRES_PASSWORD: exeris
     ports:

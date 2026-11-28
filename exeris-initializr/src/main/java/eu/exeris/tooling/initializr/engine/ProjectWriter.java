@@ -77,9 +77,12 @@ public final class ProjectWriter {
      * and moved into place, so a failed write leaves no archive behind.
      *
      * @param tree    the files to archive
-     * @param root    the directory every entry is placed under, a single path segment
+     * @param root    the directory every entry is placed under, a single path segment that is not
+     *                made only of dots, does not end in a dot or a space, holds no {@code :} and is not
+     *                a Windows device name before its first dot
      * @param archive the archive file
      * @param force   whether to replace an archive file that exists
+     * @throws IllegalArgumentException if {@code root} breaks the rule above; no archive is written
      * @throws TargetExistsException if {@code archive} exists and {@code force} is not set
      * @throws IOException           if creating a directory or writing the archive fails
      * @since 0.10

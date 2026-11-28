@@ -4,6 +4,8 @@ import eu.exeris.tooling.initializr.model.ProjectTree;
 import eu.exeris.tooling.initializr.model.ScaffoldFile;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -74,6 +76,24 @@ class ZipArchiveGeneratorTest {
         assertThatThrownBy(() -> ZipArchiveGenerator.write(TREE, "a/b", out)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> ZipArchiveGenerator.write(TREE, "a\\b", out)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> ZipArchiveGenerator.write(TREE, null, out)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {".", "..", "...", "demo.", "demo ", "a:b", "C:", "demo:", "CON", "nul", "Com1", "aux.txt", "LPT9.x"})
+    @DisplayName("refuses a root made only of dots, ending in a dot or a space, holding a colon, or starting with a Windows device name")
+    void refusesUnextractableRoot(String root) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        assertThatThrownBy(() -> ZipArchiveGenerator.write(TREE, root, out)).isInstanceOf(IllegalArgumentException.class);
+        assertThat(out.size()).isZero();
+    }
+
+    @Test
+    @DisplayName("accepts a root with an inner dot or space")
+    void acceptsInnerDot() throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ZipArchiveGenerator.write(TREE, "my.app v1", out);
+        ZipArchiveGenerator.write(TREE, "console", out);
+        assertThat(out.size()).isPositive();
     }
 
     private static byte[] zip(ProjectTree tree) throws IOException {
