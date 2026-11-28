@@ -75,7 +75,7 @@ export class EmployeeDirectoryPageComponent implements OnInit {
 }
 ```
 
-Each `@Region` is a `<section>` named by its slot, each `@Block` an element of its type. The `ENTITY` binding injects `EmployeeStore` and loads it; the `ACTION` binding becomes a click handler for you to fill in. `@View(route = "/people")` becomes the page's route, which `app.routes.ts` spreads in and also uses as the default redirect.
+Each `@Region` is a `<section>` named by its slot, each `@Block` an element of its type. The `ENTITY` binding injects `EmployeeStore` and loads it; the `ACTION` binding becomes a click handler for you to fill in. `@View(route = "/people")` becomes the page's route, which the owned `src/app/app.routes.generated.ts` holds, rewritten on every run, and also uses as the default redirect; the seed `app.routes.ts` only spreads it in, so a view added to the metadata is routed by the next generation.
 
 ### 3. Read the screens of an entity
 
@@ -89,7 +89,7 @@ Generated: `src/app/components/employee-form.component.ts`, the tab list (adapte
   <button type="button" role="tab" id="tab-employment" aria-controls="panel-employment" [attr.aria-selected]="activeTab() === 'employment'" (click)="activeTab.set('employment')" data-testid="tab-employment">Employment</button>
 ```
 
-Inside each tab panel a group is a `<details>` element, open unless the group declares `collapsed = true`, as `contact` does. `@NavMenu(group = "People", label = "Employees", icon = "badge")` puts the entity's list under a `People` heading in the shell's navigation, `src/app/app.component.ts`. A Material icon name such as `badge` renders as a glyph of the Material Symbols font, which the scaffold installs as the `material-symbols` package and imports in `src/styles.css`; any other icon text, an emoji for example, renders as itself. The forms are Signal Forms ([ADR-093](../adr/ADR-093-emitted-forms-are-signal-forms.md)).
+Inside each tab panel a group is a `<details>` element, open unless the group declares `collapsed = true`, as `contact` does. `@NavMenu(group = "People", label = "Employees", icon = "badge")` puts the entity's list under a `People` heading in the shell's navigation, the owned `src/app/shell/app-shell.component.ts`. A Material icon name such as `badge` renders as a glyph of the Material Symbols font, which the scaffold installs as the `material-symbols` package and imports in `src/styles.css`; any other icon text, an emoji for example, renders as itself. The forms are Signal Forms ([ADR-093](../adr/ADR-093-emitted-forms-are-signal-forms.md)).
 
 ### 4. Point the application at the backend
 

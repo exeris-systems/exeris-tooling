@@ -14,7 +14,7 @@
 import { Command } from 'commander';
 import pc from 'picocolors';
 import { writeFileSync, existsSync, readFileSync } from 'node:fs';
-import { basename, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { planOrphans, planWrites, writeGeneratedFiles, type WriteAction } from './output/writer.js';
 import { loadConfig, cliOverrides, initConfig, type GeneratorConfig } from './config.js';
 import { findMetadataFiles, loadMetadataFamilies } from './models/metadata-files.js';
@@ -191,6 +191,33 @@ function warnKeptProxyStart(plan: ReadonlyArray<{ readonly path: string; readonl
   );
 }
 
+/**
+ * A kept `app.routes.ts` that does not import `app.routes.generated` holds the routes it was written
+ * with: a view added to the metadata gets no route, and the shell and the prerender list are unused.
+ * The run does not fail; it names the entry that carries the edit.
+ */
+function warnKeptRoutesSeed(
+  config: GeneratorConfig,
+  outputPath: string,
+  plan: ReadonlyArray<{ readonly path: string; readonly action: WriteAction }>,
+): void {
+  if (!config.scaffold) return;
+  const entry = plan.find((e) => e.path === 'src/app/app.routes.ts');
+  if (entry?.action !== 'keep-seed' && entry?.action !== 'skip-unowned') return;
+  let kept: string;
+  try {
+    kept = readFileSync(join(outputPath, entry.path), 'utf-8');
+  } catch {
+    return;
+  }
+  if (kept.includes('app.routes.generated')) return;
+  console.log(
+    pc.yellow('src/app/app.routes.ts was kept and does not import app.routes.generated.'),
+    'Routes derived from the metadata are written to app.routes.generated.ts on every run, and a view added later is not routed until app.routes.ts spreads generatedRoutes.',
+    'See docs/migration/0.12.0/ts-07-view-routes-and-navigation-owned.md.',
+  );
+}
+
 async function runGenerate(config: GeneratorConfig): Promise<void> {
   const inputPath = resolve(process.cwd(), config.inputPath);
   const outputPath = resolve(process.cwd(), config.outputPath);
@@ -272,6 +299,7 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
     }
     warnKeptCsrScaffold(config, dryPlan);
     warnKeptProxyStart(dryPlan);
+    warnKeptRoutesSeed(config, outputPath, dryPlan);
     const orphans = planOrphans(outputPath, generatedFiles, SEED_PATHS);
     for (const path of orphans.prune) {
       console.log(pc.dim('  Would prune:'), path);
@@ -291,6 +319,7 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
     const count = (action: WriteAction): number => plan.filter((entry) => entry.action === action).length;
     warnKeptCsrScaffold(config, plan);
     warnKeptProxyStart(plan);
+    warnKeptRoutesSeed(config, outputPath, plan);
 
     for (const entry of plan) {
       if (entry.action === 'create' || entry.action === 'rewrite') {

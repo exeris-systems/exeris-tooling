@@ -54,9 +54,11 @@ describe('backend-less emission — a view-only app', () => {
       'package.json',
       'src/app/app.component.ts',
       'src/app/app.config.ts',
+      'src/app/app.routes.generated.ts',
       'src/app/app.routes.ts',
       'src/app/pages/home.component.ts',
       'src/app/pages/home.route.ts',
+      'src/app/shell/app-shell.component.ts',
       'src/environments/environment.development.ts',
       'src/environments/environment.ts',
       'src/favicon.ico',
@@ -112,10 +114,10 @@ describe('backend-less emission — a view-only app', () => {
   });
 
   it('routes the view and redirects to it', () => {
-    const routes = content(files, 'src/app/app.routes.ts');
-    expect(routes).toContain("import { homeRoutes } from './pages/home.route';");
-    expect(routes).toContain('...homeRoutes,');
-    expect(routes).toContain("redirectTo: 'home'");
+    const generated = content(files, 'src/app/app.routes.generated.ts');
+    expect(generated).toContain("import { homeRoutes } from './pages/home.route';");
+    expect(generated).toContain('...homeRoutes,');
+    expect(content(files, 'src/app/app.routes.ts')).toContain("redirectTo: 'home'");
   });
 
   it('is deterministic: two runs are byte-identical', () => {
@@ -160,7 +162,8 @@ describe('backend-less emission — an app with neither entity nor view', () => 
   it('emits an empty route table with no self-redirect', () => {
     const routes = content(files, 'src/app/app.routes.ts');
     expect(routes).not.toContain('redirectTo');
-    expect(routes).toContain('export const routes: Routes = [\n];');
+    expect(routes).toContain('export const routes: Routes = [\n  ...generatedRoutes,');
+    expect(content(files, 'src/app/app.routes.generated.ts')).toContain('children: [\n    ],');
   });
 });
 

@@ -3,9 +3,11 @@
  * `Routes` array, and under `render: 'ssg'`, `view.routes.server.ts` exporting the prerenderable
  * view routes as a `ServerRoute[]` array.
  *
- * Emitted when the scaffold is off. The scaffold's `app.routes.ts` and `app.routes.server.ts` spread
- * each per-view route const itself; without it the routes files belong to the consumer, which then
- * imports one array instead of one const per view and keeps its own list in step with the views.
+ * Emitted when the scaffold is off. With the scaffold on, the owned `app.routes.generated.ts` and
+ * `app.routes.server.generated.ts` spread each per-view route const, and the seeds `app.routes.ts`
+ * and `app.routes.server.ts` spread those; without the scaffold the routes files belong to the
+ * consumer, which imports one array instead of one const per view and keeps no list of its own in
+ * step with the views.
  *
  * The files sit at the root of the generated tree, where `app.routes.ts` and `app.routes.server.ts`
  * sit with the scaffold on, so they name each per-view route by the same specifier the app shell

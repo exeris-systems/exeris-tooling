@@ -176,22 +176,22 @@ describe('buildGeneratedFiles — presentation IR (@View) flows to src/app/pages
     expect(noViews.some((f) => f.path.startsWith('src/app/pages/'))).toBe(false);
   });
 
-  it('wires the view route into the app shell — app.routes.ts imports + spreads the page route (RFC §5 route assembly)', () => {
-    const routes = at('src/app/app.routes.ts')!;
-    expect(routes, 'src/app/app.routes.ts missing').toBeDefined();
+  it('wires the view route into the app shell — app.routes.generated.ts imports + spreads the page route (RFC §5 route assembly)', () => {
+    const routes = at('src/app/app.routes.generated.ts')!;
+    expect(routes, 'src/app/app.routes.generated.ts missing').toBeDefined();
     // The per-view route const is imported from ./pages/<kebab>.route and spread
     // into the routes array — the standalone front can now navigate to the @View page.
     expect(routes.content).toContain("import { dashboardRoutes } from './pages/dashboard.route';");
     expect(routes.content).toContain('...dashboardRoutes,');
-    // A PAGE view also wins the default redirect over the first entity.
-    expect(routes.content).toContain("redirectTo: 'dashboard'");
+    // A PAGE view also wins the default redirect over the first entity, in the seed.
+    expect(at('src/app/app.routes.ts')!.content).toContain("redirectTo: 'dashboard'");
   });
 
-  it('leaves app.routes.ts free of any pages import when no views are supplied (additive)', () => {
+  it('leaves app.routes.generated.ts free of any pages import when no views are supplied (additive)', () => {
     const noViews = buildGeneratedFiles([domain({ entityName: 'Order' })], [], DEFAULT_CONFIG);
-    const routes = noViews.find((f) => f.path === 'src/app/app.routes.ts')!;
+    const routes = noViews.find((f) => f.path === 'src/app/app.routes.generated.ts')!;
     expect(routes.content).not.toContain('./pages/');
-    expect(routes.content).toContain("redirectTo: 'orders'");
+    expect(noViews.find((f) => f.path === 'src/app/app.routes.ts')!.content).toContain("redirectTo: 'orders'");
   });
 });
 
@@ -341,7 +341,7 @@ describe('buildGeneratedFiles — detail components', () => {
   // loaded the FORM — so "View" opened an editor — and `:id/edit` matched no route at all,
   // because the emitted table carries no wildcard.
   it('routes :id to the detail view and :id/edit to the form', () => {
-    const routes = at(buildGeneratedFiles([order], [], DEFAULT_CONFIG), 'src/app/app.routes.ts');
+    const routes = at(buildGeneratedFiles([order], [], DEFAULT_CONFIG), 'src/app/app.routes.generated.ts');
     expect(routes).toContain("path: 'orders/:id'");
     expect(routes).toContain('m.OrderDetailComponent');
     expect(routes).toContain("path: 'orders/:id/edit'");
@@ -380,13 +380,13 @@ describe('buildGeneratedFiles — detail components', () => {
     });
     const files = buildGeneratedFiles([parent, line], [], DEFAULT_CONFIG);
     expect(at(files, 'src/app/components/order-detail.component.ts')).toContain('<a routerLink="/order-lines"');
-    expect(at(files, 'src/app/app.routes.ts')).toContain("path: 'order-lines'");
+    expect(at(files, 'src/app/app.routes.generated.ts')).toContain("path: 'order-lines'");
   });
 
   it('gives every link the emitted list renders a matching route', () => {
     const files = buildGeneratedFiles([order], [], DEFAULT_CONFIG);
     const list = at(files, 'src/app/components/order-list.component.ts');
-    const routes = at(files, 'src/app/app.routes.ts');
+    const routes = at(files, 'src/app/app.routes.generated.ts');
 
     expect(list).toContain('[routerLink]="[item.id]"');
     expect(list).toContain(`[routerLink]="[item.id, 'edit']"`);
@@ -733,7 +733,7 @@ describe('buildGeneratedFiles — types resolved against the app\'s entities and
 
 describe('buildGeneratedFiles — declared route access guards pages and live views (ADR-105)', () => {
   const GUARDS = 'src/app/core/route-guards.ts';
-  const ROUTES = 'src/app/app.routes.ts';
+  const ROUTES = 'src/app/app.routes.generated.ts';
   const contentAt = (files: { path: string; content: string }[], path: string): string => {
     const file = files.find((f) => f.path === path);
     expect(file, path).toBeDefined();

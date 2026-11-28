@@ -183,7 +183,7 @@ describe.each(Object.entries(apps))('the %s app is Tailwind v4 only', (_name, fi
   });
 
   it('the shell header carries shadow-sm, not the bare v3 shadow', () => {
-    expect(fileAt(files, 'src/app/app.component.ts')).toContain('<header class="bg-white dark:bg-gray-800 shadow-sm">');
+    expect(fileAt(files, 'src/app/shell/app-shell.component.ts')).toContain('<header class="bg-white dark:bg-gray-800 shadow-sm">');
   });
 });
 

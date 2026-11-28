@@ -93,6 +93,8 @@ describe('generateAppStructure — static skeleton', () => {
     ['src/app/app.config.ts', false],
     ['src/app/app.component.ts', false],
     ['src/app/app.routes.ts', false],
+    ['src/app/shell/app-shell.component.ts', true],
+    ['src/app/app.routes.generated.ts', true],
   ] as const)('emits %s with overwritable=%s', (path, overwritable) => {
     const f = files.find((x) => x.path === path);
     expect(f, `missing ${path}`).toBeDefined();
@@ -233,7 +235,7 @@ describe('generateAppStructure — @exeris/ui-kit token wiring (T25)', () => {
       expect(f.content, `bg-indigo-600 leaked into ${f.path}`).not.toContain('bg-indigo-600');
     }
     // The brand button uses the exeris primary token + its hover token.
-    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    const comp = fileAt(files, 'src/app/shell/app-shell.component.ts')!;
     expect(comp.content).toContain('text-exeris-primary-hover');
   });
 });
@@ -243,9 +245,9 @@ describe('generateAppStructure — @exeris/ui-kit token wiring (T25)', () => {
 describe('generateAppStructure — configurable appName (T7/U5)', () => {
   it('defaults to "Exeris Foundation" (logo, index title, route titles, package name)', () => {
     const files = generateAppStructure([domain({ entityName: 'Order' })], [], cfg());
-    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    const comp = fileAt(files, 'src/app/shell/app-shell.component.ts')!;
     const html = fileAt(files, 'src/index.html')!;
-    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    const routes = fileAt(files, 'src/app/app.routes.generated.ts')!;
     const pkg = fileAt(files, 'package.json')!;
     expect(comp.content).toContain('🚀 Exeris Foundation');
     expect(comp.content).toContain("title = 'Exeris Foundation';");
@@ -260,9 +262,9 @@ describe('generateAppStructure — configurable appName (T7/U5)', () => {
       [],
       cfg({ appName: 'Acme Portal' }),
     );
-    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    const comp = fileAt(files, 'src/app/shell/app-shell.component.ts')!;
     const html = fileAt(files, 'src/index.html')!;
-    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    const routes = fileAt(files, 'src/app/app.routes.generated.ts')!;
     const pkg = fileAt(files, 'package.json')!;
     const ng = fileAt(files, 'angular.json')!;
     // Logo + Angular component title field.
@@ -301,7 +303,7 @@ describe('generateAppStructure — configurable appName (T7/U5)', () => {
       cfg({ appName: `O'Hara <Labs>` }),
     );
     const html = fileAt(files, 'src/index.html')!;
-    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    const comp = fileAt(files, 'src/app/shell/app-shell.component.ts')!;
     // HTML text: angle brackets escaped, no raw tag injected into the title.
     expect(html.content).toContain('&lt;Labs&gt;');
     expect(html.content).not.toContain('<Labs>');
@@ -316,13 +318,12 @@ describe('generateAppStructure — empty domain set', () => {
   const files = generateAppStructure([], [], cfg());
 
   it('app.routes.ts emits no redirect when there is no destination to redirect to', () => {
-    const routes = fileAt(files, 'src/app/app.routes.ts')!;
-    expect(routes.content).not.toContain('redirectTo');
-    expect(routes.content).toContain('export const routes: Routes = [\n];');
+    expect(fileAt(files, 'src/app/app.routes.ts')!.content).not.toContain('redirectTo');
+    expect(fileAt(files, 'src/app/app.routes.ts')!.content).toContain('export const routes: Routes = [\n  ...generatedRoutes,');
   });
 
   it('app.component.ts header still renders without any nav links', () => {
-    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    const comp = fileAt(files, 'src/app/shell/app-shell.component.ts')!;
     expect(comp.content).toContain('🚀 Exeris Foundation');
     expect(comp.content).not.toContain('routerLink="/');
   });
@@ -365,12 +366,11 @@ describe('generateAppStructure — multi-domain wiring', () => {
   const files = generateAppStructure(domains, enums, cfg());
 
   it('app.routes.ts redirects to the FIRST domain (kebab + plural "s")', () => {
-    const routes = fileAt(files, 'src/app/app.routes.ts')!;
-    expect(routes.content).toContain("redirectTo: 'orders'");
+    expect(fileAt(files, 'src/app/app.routes.ts')!.content).toContain("redirectTo: 'orders'");
   });
 
   it('app.routes.ts emits list / new / :id routes for each domain', () => {
-    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    const routes = fileAt(files, 'src/app/app.routes.generated.ts')!;
     expect(routes.content).toContain("path: 'orders'");
     expect(routes.content).toContain("path: 'orders/new'");
     expect(routes.content).toContain("path: 'orders/:id'");
@@ -381,7 +381,7 @@ describe('generateAppStructure — multi-domain wiring', () => {
   });
 
   it('app.component.ts sidebar emits a router link per domain', () => {
-    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    const comp = fileAt(files, 'src/app/shell/app-shell.component.ts')!;
     expect(comp.content).toContain('routerLink="/orders"');
     expect(comp.content).toContain('routerLink="/products"');
   });
@@ -439,15 +439,15 @@ describe('generateAppStructure — multi-domain wiring', () => {
 describe('generateAppStructure — nav label pluralisation', () => {
   it('takes the SDK plural for label, route, sidebar link, redirect and list-page tab title', () => {
     const files = generateAppStructure([domain({ entityName: 'Colony' })], [], cfg());
-    const comp = fileAt(files, 'src/app/app.component.ts')!;
-    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    const comp = fileAt(files, 'src/app/shell/app-shell.component.ts')!;
+    const routes = fileAt(files, 'src/app/app.routes.generated.ts')!;
     expect(comp.content).toContain('Colonies\n            </a>');
     expect(routes.content).toContain("path: 'colonies'");
     expect(routes.content).toContain("path: 'colonies/new'");
     expect(routes.content).toContain("path: 'colonies/:id'");
     expect(routes.content).toContain("path: 'colonies/:id/edit'");
     expect(comp.content).toContain('routerLink="/colonies"');
-    expect(routes.content).toContain("redirectTo: 'colonies'");
+    expect(fileAt(files, 'src/app/app.routes.ts')!.content).toContain("redirectTo: 'colonies'");
     expect(routes.content).toContain("title: 'Colonies - Exeris Foundation'");
     // The /new, /:id and /:id/edit titles use the singular.
     expect(routes.content).toContain("title: 'New Colony - Exeris Foundation'");
@@ -459,7 +459,7 @@ describe('generateAppStructure — nav label pluralisation', () => {
   it('adds es after s, x, z, ch and sh — an already-plural name included', () => {
     const files = generateAppStructure(
       ['Address', 'Box', 'Branch', 'News'].map((entityName) => domain({ entityName })), [], cfg());
-    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    const routes = fileAt(files, 'src/app/app.routes.generated.ts')!;
     for (const segment of ['addresses', 'boxes', 'branches', 'newses']) {
       expect(routes.content).toContain(`path: '${segment}'`);
     }
@@ -469,7 +469,7 @@ describe('generateAppStructure — nav label pluralisation', () => {
 
   it('appends "s" to entity names not already plural', () => {
     const files = generateAppStructure([domain({ entityName: 'Order' })], [], cfg());
-    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    const comp = fileAt(files, 'src/app/shell/app-shell.component.ts')!;
     expect(comp.content).toContain('Orders\n            </a>');
   });
 });
@@ -488,13 +488,13 @@ describe('generateAppStructure — getEntityIcon lookup', () => {
     ['Payment', '💳'],
   ] as const)('uses %s → %s', (entityName, icon) => {
     const files = generateAppStructure([domain({ entityName })], [], cfg());
-    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    const comp = fileAt(files, 'src/app/shell/app-shell.component.ts')!;
     expect(comp.content).toContain(icon);
   });
 
   it('falls back to 📁 for entity names not in the lookup table', () => {
     const files = generateAppStructure([domain({ entityName: 'Widget' })], [], cfg());
-    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    const comp = fileAt(files, 'src/app/shell/app-shell.component.ts')!;
     expect(comp.content).toContain('📁');
   });
 });
@@ -552,7 +552,7 @@ describe('generateAppStructure — @View route assembly', () => {
       cfg(),
       [view({ name: 'ProductLanding', kind: 'PAGE', route: '/products', title: 'Products' })],
     );
-    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    const routes = fileAt(files, 'src/app/app.routes.generated.ts')!;
     // Lazy route const is imported from ./pages/<kebab>.route (the file the
     // ViewGenerator emits) and spread into the routes array.
     expect(routes.content).toContain(
@@ -571,10 +571,9 @@ describe('generateAppStructure — @View route assembly', () => {
       cfg(),
       [view({ name: 'ProductLanding', kind: 'PAGE', route: '/products' })],
     );
-    const routes = fileAt(files, 'src/app/app.routes.ts')!;
     // The view route path (leading slash stripped) wins the redirect.
-    expect(routes.content).toContain("redirectTo: 'products'");
-    expect(routes.content).not.toContain("redirectTo: 'orders'");
+    expect(fileAt(files, 'src/app/app.routes.ts')!.content).toContain("redirectTo: 'products'");
+    expect(fileAt(files, 'src/app/app.routes.ts')!.content).not.toContain("redirectTo: 'orders'");
   });
 
   it('keeps the entity-based default redirect when no PAGE view exists (non-PAGE views still route)', () => {
@@ -584,9 +583,9 @@ describe('generateAppStructure — @View route assembly', () => {
       cfg(),
       [view({ name: 'SidePanel', kind: 'SECTION', route: '/panel' })],
     );
-    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    const routes = fileAt(files, 'src/app/app.routes.generated.ts')!;
     // SECTION is not a top-level destination → redirect stays on the first entity.
-    expect(routes.content).toContain("redirectTo: 'orders'");
+    expect(fileAt(files, 'src/app/app.routes.ts')!.content).toContain("redirectTo: 'orders'");
     // …but the view route is still imported + spread (it is routable on its own).
     expect(routes.content).toContain("import { sidePanelRoutes } from './pages/side-panel.route';");
     expect(routes.content).toContain('...sidePanelRoutes,');
@@ -602,7 +601,7 @@ describe('generateAppStructure — @View route assembly', () => {
         view({ name: 'SidePanel', kind: 'SECTION', route: '/panel' }),
       ],
     );
-    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    const comp = fileAt(files, 'src/app/shell/app-shell.component.ts')!;
     // PAGE view → a router link at its effective route path, labelled by title.
     expect(comp.content).toContain('routerLink="/products"');
     expect(comp.content).toContain('Products');
@@ -612,7 +611,7 @@ describe('generateAppStructure — @View route assembly', () => {
 
   it('sorts views deterministically (by route path, then name) — order-independent of input', () => {
     const mk = (views: ViewMetadata[]) =>
-      fileAt(generateAppStructure([], [], cfg(), views), 'src/app/app.routes.ts')!.content;
+      fileAt(generateAppStructure([], [], cfg(), views), 'src/app/app.routes.generated.ts')!.content;
     const a = view({ name: 'Alpha', kind: 'PAGE', route: '/alpha' });
     const z = view({ name: 'Zeta', kind: 'PAGE', route: '/zeta' });
     // Both input orderings yield the same emitted file.
@@ -624,7 +623,7 @@ describe('generateAppStructure — @View route assembly', () => {
 
   it('breaks ties on the view name when two views share a route path', () => {
     const mk = (views: ViewMetadata[]) =>
-      fileAt(generateAppStructure([], [], cfg(), views), 'src/app/app.routes.ts')!.content;
+      fileAt(generateAppStructure([], [], cfg(), views), 'src/app/app.routes.generated.ts')!.content;
     // Same effective route path → the secondary key (view name, code-unit order) decides.
     const bravo = view({ name: 'Bravo', kind: 'PAGE', route: '/dup' });
     const alpha = view({ name: 'Alpha', kind: 'PAGE', route: '/dup' });
@@ -640,9 +639,8 @@ describe('generateAppStructure — @View route assembly', () => {
       cfg(),
       [view({ name: 'Dashboard', kind: 'PAGE', route: '/dashboard' })],
     );
-    const routes = fileAt(files, 'src/app/app.routes.ts')!;
-    expect(routes.content).toContain("redirectTo: 'dashboard'");
-    expect(routes.content).not.toContain("redirectTo: '/dashboard'");
+    expect(fileAt(files, 'src/app/app.routes.ts')!.content).toContain("redirectTo: 'dashboard'");
+    expect(fileAt(files, 'src/app/app.routes.ts')!.content).not.toContain("redirectTo: '/dashboard'");
   });
 
   it('falls back to the kebab name when a PAGE view declares no route', () => {
@@ -652,20 +650,20 @@ describe('generateAppStructure — @View route assembly', () => {
       cfg(),
       [view({ name: 'HomeScreen', kind: 'PAGE' })],
     );
-    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    const routes = fileAt(files, 'src/app/app.routes.generated.ts')!;
     expect(routes.content).toContain("import { homeScreenRoutes } from './pages/home-screen.route';");
-    expect(routes.content).toContain("redirectTo: 'home-screen'");
+    expect(fileAt(files, 'src/app/app.routes.ts')!.content).toContain("redirectTo: 'home-screen'");
   });
 
   it('zero views → app.routes.ts AND app.component.ts byte-identical to the 3-arg call (additive guard)', () => {
     const domains = [domain({ entityName: 'Order' }), domain({ entityName: 'Product' })];
     const legacy = generateAppStructure(domains, [], cfg());
     const withEmptyViews = generateAppStructure(domains, [], cfg(), []);
-    for (const path of ['src/app/app.routes.ts', 'src/app/app.component.ts'] as const) {
+    for (const path of ['src/app/app.routes.generated.ts', 'src/app/shell/app-shell.component.ts'] as const) {
       expect(fileAt(withEmptyViews, path)!.content).toBe(fileAt(legacy, path)!.content);
     }
     // No view-route artefacts leak into the zero-view output.
-    const routes = fileAt(withEmptyViews, 'src/app/app.routes.ts')!;
+    const routes = fileAt(withEmptyViews, 'src/app/app.routes.generated.ts')!;
     expect(routes.content).not.toContain('./pages/');
     expect(routes.content).not.toContain('...');
   });
@@ -676,7 +674,7 @@ describe('generateAppStructure — @View route assembly', () => {
 describe('generateAppStructure — @NavMenu sidebar', () => {
   it('none declared → shell output is byte-identical to legacy call', () => {
     const list = [domain({ entityName: 'Order' }), domain({ entityName: 'Product' })];
-    const comp = fileAt(generateAppStructure(list, [], cfg()), 'src/app/app.component.ts')!;
+    const comp = fileAt(generateAppStructure(list, [], cfg()), 'src/app/shell/app-shell.component.ts')!;
     expect(comp.content).not.toContain('data-testid="nav-group-');
     expect(comp.content).toContain('routerLink="/orders"');
     expect(comp.content).toContain('routerLink="/products"');
@@ -687,7 +685,7 @@ describe('generateAppStructure — @NavMenu sidebar', () => {
       entityName: 'Order',
       navMenu: { group: 'Sa`les', groupIcon: '<b>', label: 'Or${x}ders', icon: '{{x}}' },
     });
-    const comp = fileAt(generateAppStructure([d1], [], cfg()), 'src/app/app.component.ts')!;
+    const comp = fileAt(generateAppStructure([d1], [], cfg()), 'src/app/shell/app-shell.component.ts')!;
     expect(comp.content).not.toContain('Sa`les');
     expect(comp.content).not.toContain('<b>');
     expect(comp.content).not.toContain('${x}');
@@ -708,7 +706,7 @@ describe('generateAppStructure — @NavMenu sidebar', () => {
       entityName: 'Invoice',
       navMenu: { group: 'Sales', groupOrder: 2, label: 'Invoices' },
     });
-    const comp = fileAt(generateAppStructure([d1, d2, d3], [], cfg()), 'src/app/app.component.ts')!;
+    const comp = fileAt(generateAppStructure([d1, d2, d3], [], cfg()), 'src/app/shell/app-shell.component.ts')!;
 
     // CRM (groupOrder 1) comes before Sales (groupOrder 2)
     const crmIdx = comp.content.indexOf('data-testid="nav-group-CRM"');
@@ -735,7 +733,7 @@ describe('generateAppStructure — @NavMenu sidebar', () => {
       entityName: 'Quote',
       navMenu: { group: 'Sales', order: 2, icon: '📝', label: 'Quotes' },
     });
-    const comp = fileAt(generateAppStructure([d1, d2, d3], [], cfg()), 'src/app/app.component.ts')!;
+    const comp = fileAt(generateAppStructure([d1, d2, d3], [], cfg()), 'src/app/shell/app-shell.component.ts')!;
 
     const orderIdx = comp.content.indexOf('Client Orders');
     const invoiceIdx = comp.content.indexOf('Billings');
@@ -762,8 +760,8 @@ describe('generateAppStructure — @NavMenu sidebar', () => {
       navMenu: { hidden: true, group: 'Internal' },
     });
     const files = generateAppStructure([visible, hidden], [], cfg());
-    const comp = fileAt(files, 'src/app/app.component.ts')!;
-    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    const comp = fileAt(files, 'src/app/shell/app-shell.component.ts')!;
+    const routes = fileAt(files, 'src/app/app.routes.generated.ts')!;
 
     // Not in sidebar
     expect(comp.content).toContain('routerLink="/orders"');
@@ -787,7 +785,7 @@ describe('generateAppStructure — @NavMenu sidebar', () => {
       entityName: 'Order',
       navMenu: { group: 'Sales', order: 1, label: 'Orders' },
     });
-    const comp = fileAt(generateAppStructure([ungroupedNoNav, ungroupedWithNav, grouped], [], cfg()), 'src/app/app.component.ts')!;
+    const comp = fileAt(generateAppStructure([ungroupedNoNav, ungroupedWithNav, grouped], [], cfg()), 'src/app/shell/app-shell.component.ts')!;
 
     const catIdx = comp.content.indexOf('Categories');
     const prodIdx = comp.content.indexOf('Products');
@@ -810,7 +808,7 @@ describe('generateAppStructure — declared Material icon names', () => {
       entityName: 'Employee',
       navMenu: { group: 'People', groupIcon: ' groups ', label: 'Employees', icon: ' badge ' },
     });
-    const comp = fileAt(generateAppStructure([employee], [], cfg()), 'src/app/app.component.ts')!;
+    const comp = fileAt(generateAppStructure([employee], [], cfg()), 'src/app/shell/app-shell.component.ts')!;
 
     expect(comp.content).toContain(`${iconSpan('badge')}\n              Employees`);
     expect(comp.content).toContain(`${iconSpan('groups')}People`);
@@ -843,7 +841,7 @@ describe('generateAppStructure — declared Material icon names', () => {
     });
     const files = generateAppStructure([order], [], cfg());
 
-    const comp = fileAt(files, 'src/app/app.component.ts')!.content;
+    const comp = fileAt(files, 'src/app/shell/app-shell.component.ts')!.content;
     expect(comp).toContain('<span class="mr-3 text-xl">🛒</span>');
     expect(comp).not.toContain('material-symbols');
     expect(fileAt(files, 'package.json')!.content).not.toContain('material-symbols');
@@ -857,7 +855,7 @@ describe('generateAppStructure — app.routes.ts guards each page by its route r
   const routesOf = (domains: DomainMetadata[], rows: readonly RouteRequirementRow[], views: ViewMetadata[] = []): string =>
     fileAt(
       generateAppStructure(domains, [], cfg(), views, { ...BACKEND_SCAFFOLD_NEEDS, routeRequirements: rows }),
-      'src/app/app.routes.ts',
+      'src/app/app.routes.generated.ts',
     )!.content;
   /** The route object of `path` in the emitted array, from its opening brace to its closing one. */
   const page = (routes: string, path: string): string => {
@@ -923,7 +921,7 @@ describe('generateAppStructure — app.routes.ts guards each page by its route r
     expect(routesOf(open, deriveRouteRequirements(open))).toBe(none);
     expect(none).not.toContain('route-guards');
     expect(none).not.toContain('canActivate');
-    expect(fileAt(generateAppStructure(open, [], cfg()), 'src/app/app.routes.ts')!.content).toBe(none);
+    expect(fileAt(generateAppStructure(open, [], cfg()), 'src/app/app.routes.generated.ts')!.content).toBe(none);
   });
 
   it('puts the guard import before the view route imports', () => {

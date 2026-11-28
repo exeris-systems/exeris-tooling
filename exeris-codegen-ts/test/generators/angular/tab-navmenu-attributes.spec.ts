@@ -34,7 +34,7 @@ function domain(overrides: Partial<DomainMetadata> & { entityName: string }): Do
 
 function shell(domains: DomainMetadata[]): string {
   const files = generateAppStructure(domains, [], DEFAULT_CONFIG);
-  return files.find((f) => f.path === 'src/app/app.component.ts')!.content;
+  return files.find((f) => f.path === 'src/app/shell/app-shell.component.ts')!.content;
 }
 
 describe('@NavMenu presentation attributes', () => {
@@ -110,7 +110,7 @@ describe('@NavMenu presentation attributes', () => {
     ]);
     expect(html).toContain("@if (auth.hasAnyPermission(['order:read', 'order:admin'])) {");
     expect(html.match(/hasAnyPermission/g)).toHaveLength(1);
-    expect(html).toContain("import { AuthService } from './core/auth.service';");
+    expect(html).toContain("import { AuthService } from '../core/auth.service';");
     expect(html).toContain('protected readonly auth = inject(AuthService);');
   });
 

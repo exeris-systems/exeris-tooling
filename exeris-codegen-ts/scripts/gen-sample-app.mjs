@@ -16,6 +16,12 @@
  * `--ssg` generates the view-only shape with `render: 'ssg'`, plus a parameterised page, so the
  * build prerenders the param-less pages to HTML and leaves the parameterised one to the browser.
  *
+ * `--grow` is the `--ssg` shape written in two passes through the CLI's writer: the first pass
+ * writes the pages, the second adds a `Pricing` view to the metadata and writes again over the
+ * same output. It fails unless every seed the first pass wrote is byte-identical after the second,
+ * so the build that follows shows the added page routed, listed and prerendered with no edit to a
+ * seed.
+ *
  * Preserves an existing node_modules (only rewrites src/ + config files) so local
  * re-runs don't force a reinstall.
  */
@@ -28,12 +34,13 @@ const here = dirname(fileURLToPath(import.meta.url));
 const dist = join(here, '..', 'dist');
 
 const args = process.argv.slice(2);
-const ssg = args.includes('--ssg');
+const grow = args.includes('--grow');
+const ssg = grow || args.includes('--ssg');
 const viewOnly = ssg || args.includes('--view-only');
 const out = resolve(args.find((a) => !a.startsWith('--')) ?? '.fe-sample');
 
 // pathToFileURL: a bare Windows path (D:\…) is an unsupported ESM import scheme.
-const { buildGeneratedFiles } = await import(pathToFileURL(join(dist, 'orchestrator.js')).href);
+const { buildGeneratedFiles, SEED_PATHS } = await import(pathToFileURL(join(dist, 'orchestrator.js')).href);
 const { DomainMetadataSchema, ViewMetadataSchema } = await import(pathToFileURL(join(dist, 'models/domain-model.js')).href);
 
 // The schema reads an absent `inCreate` / `inUpdate` as `false` (the wire form omits a false), so
@@ -43,6 +50,7 @@ const parseOffered = (o) =>
     ...o,
     fields: o.fields?.map((f) => ({ inCreate: true, inUpdate: true, ...f })),
   });
+const { writeGeneratedFiles } = await import(pathToFileURL(join(dist, 'output/writer.js')).href);
 const { DEFAULT_CONFIG } = await import(pathToFileURL(join(dist, 'config.js')).href);
 
 const d = (o) => parseOffered({ packageName: 'com.shop', ...o });
@@ -541,18 +549,46 @@ if (ssg) {
 }
 
 // It has no entity, so no spec to run: generated with the default (tests off) shape.
-const files = viewOnly
-  ? [...buildGeneratedFiles([], [], ssg ? { ...viewOnlyConfig, render: 'ssg', sitemap: true, siteUrl: 'https://example.com/docs' } : viewOnlyConfig, views, []), statTile]
-  : buildGeneratedFiles(domains, enums, config, [], peers);
+const viewOnlyFiles = (viewList) =>
+  [...buildGeneratedFiles([], [], ssg ? { ...viewOnlyConfig, render: 'ssg', sitemap: true, siteUrl: 'https://example.com/docs' } : viewOnlyConfig, viewList, []), statTile];
+const files = viewOnly ? viewOnlyFiles(views) : buildGeneratedFiles(domains, enums, config, [], peers);
 
-// Rewrite src/ (preserve node_modules); overwrite root config files in place.
-rmSync(join(out, 'src'), { recursive: true, force: true });
-for (const f of files) {
-  const full = join(out, f.path);
-  mkdirSync(dirname(full), { recursive: true });
-  writeFileSync(full, f.content);
+if (grow) {
+  // The CLI's write path, run twice over one output: the second run is the regeneration of an
+  // app whose metadata gained a view.
+  rmSync(join(out, 'src'), { recursive: true, force: true });
+  rmSync(join(out, '.exeris-codegen-manifest'), { force: true });
+  const options = { overwrite: false, seedPaths: SEED_PATHS };
+  writeGeneratedFiles(out, files, options);
+  const seeds = files.filter((f) => SEED_PATHS.has(f.path)).map((f) => f.path);
+  const before = new Map(seeds.map((p) => [p, readFileSync(join(out, p), 'utf-8')]));
+  const added = ViewMetadataSchema.parse({
+    name: 'Pricing',
+    regions: [{ components: [{ type: 'RICH_TEXT', binding: { source: 'STATIC' }, props: 'Pricing' }] }],
+  });
+  const second = viewOnlyFiles([...views, added]);
+  writeGeneratedFiles(out, second, options);
+  for (const [p, content] of before) {
+    if (readFileSync(join(out, p), 'utf-8') !== content) {
+      console.error(`gen-sample-app --grow — seed ${p} changed on the second pass`);
+      process.exit(1);
+    }
+  }
+  if (before.size === 0) {
+    console.error('gen-sample-app --grow — the first pass wrote no seed to compare');
+    process.exit(1);
+  }
+  console.log(`gen-sample-app — wrote ${second.length} files in two passes to ${out}; ${before.size} seeds unchanged`);
+} else {
+  // Rewrite src/ (preserve node_modules); overwrite root config files in place.
+  rmSync(join(out, 'src'), { recursive: true, force: true });
+  for (const f of files) {
+    const full = join(out, f.path);
+    mkdirSync(dirname(full), { recursive: true });
+    writeFileSync(full, f.content);
+  }
+  console.log(`gen-sample-app — wrote ${files.length} files to ${out}`);
 }
-console.log(`gen-sample-app — wrote ${files.length} files to ${out}`);
 
 // The emitted package.json pins `@exeris/ui-kit@^0.2.1`, the coordinate on the public npm
 // registry, which installs without a token. OPTIONAL local escape hatch: set

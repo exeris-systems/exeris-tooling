@@ -364,5 +364,11 @@
     "since": "0.12",
     "adr": "ADR-092",
     "justification": "Additive: both keys are optional with no default, so a config that sets neither regenerates byte-identical output and init writes neither. With render ssg, the scaffold on and sitemap true, the run writes src/sitemap.xml (the prerendered PAGE views under siteUrl) and src/robots.txt, and angular.json copies both to the build output. sitemap true without siteUrl, or with a siteUrl that is not an absolute http(s) URL, throws SitemapConfigError before any file is written."
+  },
+  {
+    "signature": "app.routes.ts, app.component.ts, app.routes.server.ts (seeds): the entity routes, the view routes, the sidebar and the prerender list leave them; + app.routes.generated.ts (generatedRoutes, notFoundRoutes), + shell/app-shell.component.ts (AppShellComponent), + app.routes.server.generated.ts (generatedServerRoutes, render ssg), all rewritten on every run; the seeds compose them; exeris-gen generate: + warning when a kept app.routes.ts does not import app.routes.generated",
+    "since": "0.12",
+    "adr": "ADR-111",
+    "justification": "A route, a sidebar link or a prerendered path derived from the metadata sat in a file written once, so a view added later had none of them unless the app was regenerated with --overwrite. They move to files the generator writes on every run, and the seeds only import and compose them. An app generated earlier keeps the seeds it has: its views and entities stay routed as before, a view added after the move is not routed until the seeds import the owned files, and the CLI says so. A fresh app has the same pages, routes, sidebar and prerendered paths as before, except that the sidebar and the main element now sit in AppShellComponent, a parent of the entity and view routes. docs/migration/0.12.0/ts-07-view-routes-and-navigation-owned.md carries the step."
   }
 ]

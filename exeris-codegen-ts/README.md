@@ -233,6 +233,11 @@ next run, the previous manifest decides what it may replace and delete.
 `core/auth.service.ts`. `proxy.conf.json`, which the scaffold does not write, is treated as
 a seed: an app that has one keeps it, and the run drops it from the manifest.
 
+**Owned scaffold files** are rewritten on every run from the metadata: `src/app/app.routes.generated.ts`
+(every route, with its guards), `src/app/shell/app-shell.component.ts` (the navigation) and, under
+`render: 'ssg'`, `src/app/app.routes.server.generated.ts`. The seeds `app.routes.ts` and
+`app.component.ts` only compose them.
+
 | On disk | Without `--overwrite` | With `--overwrite` |
 |---|---|---|
 | absent | written, then owned | written, then owned |
@@ -340,12 +345,15 @@ With `"render": "ssg"` (or `--render ssg`) the scaffold is a static site: `ng bu
 file for each page it can render at build time, and a static file host serves them. The default,
 `"csr"`, is a browser-only app.
 
-`ssg` adds three files, each a seed:
+`ssg` adds four files, three of them seeds and one owned:
 
 - `src/main.server.ts`, the server entry the build bootstraps for each prerendered route;
 - `src/app/app.config.server.ts`, the browser configuration plus
   `provideServerRendering(withRoutes(serverRoutes))`;
-- `src/app/app.routes.server.ts`, the render mode of every route.
+- `src/app/app.routes.server.ts`, which spreads the owned file below and ends with the `**` client
+  fallback;
+- `src/app/app.routes.server.generated.ts`, owned: rewritten on every run, it holds the render mode of
+  every route derived from the metadata.
 
 and changes four: `angular.json` (`"server": "src/main.server.ts"`, `"outputMode": "static"`),
 `package.json` (`@angular/ssr`, `@angular/platform-server`), `tsconfig.app.json` (the server entry)
@@ -366,9 +374,9 @@ The server routes decide what is prerendered:
 `index.csr.html`, the browser shell, for the rest; configure the host to serve `index.csr.html` for a
 path with no file of its own. No server bundle is produced.
 
-The server routes are a seed, written from the metadata of the first `ssg` run: a page added later
-is rendered in the browser until you add its entry. Switching an existing app from `csr` to `ssg`
-writes the three new files, but keeps the four changed seeds as they are; merge their `ssg` form
+The render modes are in the owned `app.routes.server.generated.ts`, so a page added to the metadata
+is routed, listed and prerendered by the next run, with no edit to a seed. Switching an existing app
+from `csr` to `ssg` writes the four new files, but keeps the four changed seeds as they are; merge their `ssg` form
 (regenerate into an empty directory to see it) or rerun with `--overwrite`. Until `@angular/ssr`
 is installed the build fails on the new files, and until `angular.json` names the server entry it
 prerenders nothing. A run under `ssg` that keeps an existing `angular.json`, as a seed or as a file
@@ -569,11 +577,11 @@ registers no interceptor.
 
 The same condition emits `core/route-guards.ts`, two functional `CanActivateFn` guards over
 `AuthService`: `requireAuthenticated` and `requireAnyPermission(...permissions)`, any-of. In
-`app.routes.ts` each entity page is guarded by the requirement of the backend route it calls first
+the owned `app.routes.generated.ts` each entity page is guarded by the requirement of the backend route it calls first
 (list `GET {base}`, detail `GET {base}/{id}`, create `POST {base}`, edit `PUT {base}/{id}`); a
 public or undeclared route's page has no guard. A refused navigation returns `false`; no sign-in
-route is generated. `app.routes.ts` is a seed, so an existing app adds the `canActivate` entries
-itself.
+route is generated. The guards are rewritten with the file on every run, so a change to the
+declared access reaches them without an edit to `app.routes.ts`, the seed that spreads it.
 
 The stream clients use `fetch` or `EventSource`, not `HttpClient`, so the interceptor does not reach
 them. A live-view client whose stream routes demand identity sends the token itself (see
